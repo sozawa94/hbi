@@ -161,8 +161,8 @@ program main
     allocate(y(2*NCELL),yscal(2*NCELL),dydx(2*NCELL))
   case('2dn')
     allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL))
-  case('2dnv')
-    allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL))
+  !case('2dnv')
+  !  allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL))
   end select
 
   allocate(vmax(NCELLg),vmaxin(NcELLg))
@@ -171,9 +171,9 @@ program main
   if(my_rank.eq.0) write(*,*) 'Generating mesh'
   if(my_rank.eq.0) then
     select case(problem)
-    case('2dp','2dpv')
+    case('2dp')
       call coordinate2dp(NCELLg,ds,xel,xer,xcol)
-    case('2dn','2dnv') !geometry file is necessary
+    case('2dn') !geometry file is necessary
       call coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang)
     case('3dp')
       call coordinate3d(imax,jmax,ds,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
@@ -386,7 +386,7 @@ program main
     select case(problem)
     case('2dp','3dp')
       do i=1,NCELL
-        y(2*i-1) = dlog(vel(i))
+        y(2*i-1) = phi(i)
         y(2*i) = tau(i)
       end do
 
@@ -395,21 +395,6 @@ program main
         y(3*i-2) = phi(i)
         y(3*i-1) = tau(i)
         y(3*i)=sigma(i)
-      end do
-
-    case('2dpv')
-      do i=1,NCELL
-        y(3*i-2) = dlog(vel(i))
-        y(3*i-1) = tau(i)
-        y(3*i)=eff(i)
-      end do
-
-    case('2dnv')
-      do i=1,NCELL
-        y(4*i-3) = dlog(vel(i))
-        y(4*i-2) = tau(i)
-        y(4*i-1)=sigma(i)
-        y(4*i) =eff(i)
       end do
       ! call MPI_SCATTERv(yg,3*rcounts,3*displs,MPI_REAL8,y,3*NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
 
@@ -430,9 +415,10 @@ program main
       ! call MPI_ALLGATHERv(y,2*NCELL,MPI_REAL8,yG,2*rcounts,2*displs,                &
       ! &     MPI_REAL8,MPI_COMM_WORLD,ierr)
       do i = 1, NCELL
-        vel(i) = exp(y(2*i-1))
+        phi(i) = y(2*i-1)
         tau(i) = y(2*i)
         disp(i) = disp(i)+exp(y(2*i-1))*dtdid
+        vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
         mu(i)=tau(i)/sigma(i)
       end do
     case('2dn')
@@ -446,24 +432,6 @@ program main
         vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
         !s(i)=a(i)*dlog(2.d0*vref/vel(i)*dsinh(tau(i)/sigma(i)/a(i)))
         !s(i)=exp((tau(i)/sigma(i)-mu0-a(i)*dlog(vel(i)/vref))/b(i))
-        mu(i)=tau(i)/sigma(i)
-      end do
-
-    case('2dpv')
-      do i = 1, NCELL
-        vel(i) = exp(y(3*i-2))
-        tau(i) = y(3*i-1)
-        eff(i) =y(3*i)
-        disp(i) = disp(i)+exp(y(3*i-2))*dtdid
-        mu(i)=tau(i)/sigma(i)
-      end do
-    case('2dnv')
-      do i = 1, NCELL
-        vel(i) = exp(y(4*i-3))
-        tau(i) = y(4*i-2)
-        sigma(i) = y(4*i-1)
-        eff(i) = y(4*i)
-        disp(i) = disp(i)+exp(y(4*i-3))*dtdid
         mu(i)=tau(i)/sigma(i)
       end do
 
@@ -729,13 +697,13 @@ contains
       end do
 
       close(15)
-    case('2dpv','2dnv')
-      factor=rigid/(2.d0*pi*(1.d0-pois))
-      edge=-ds*NCELLg
-      do i=1,NCELLg
-        taudotg(i)=vpl*factor*(1.d0/xcol(i)-1.d0/(xcol(i)-edge))
-        sigdotG(i)=0d0
-      end do
+    !case('2dpv','2dnv')
+    !  factor=rigid/(2.d0*pi*(1.d0-pois))
+    !  edge=-ds*NCELLg
+    !  do i=1,NCELLg
+    !    taudotg(i)=vpl*factor*(1.d0/xcol(i)-1.d0/(xcol(i)-edge))
+    !    sigdotG(i)=0d0
+    !  end do
     end select
   end subroutine
 
