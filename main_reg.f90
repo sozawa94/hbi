@@ -188,6 +188,7 @@ program main
   end do
   call random_seed(put=seed(:))
 
+  write(*,*) 'MPI communication'
   !MPI communication
   select case(problem)
   case('2dp')
@@ -325,7 +326,7 @@ program main
     sigma(i)=sigma0
     tau(i)=mu(i)*sigma(i)*sign(vel(i),1.d0)/vel(i)
     phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
-    !write(*,*) tau(i),vel(i),phi(i)
+    write(*,*) tau(i),vel(i),phi(i)
   end do
 
   !for FDMAP-BIEM simulation
@@ -368,7 +369,17 @@ program main
   !outv=1d-6
   slipping=.false.
   eventcount=0
+   !call MPI_ALLGATHERv(sigma,NCELL,MPI_REAL8,sigmaG,rcounts,displs, MPI_REAL8,MPI_COMM_WORLD,ierr)
+    !call MPI_ALLGATHERv(tau,NCELL,MPI_REAL8,tauG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+    !call MPI_ALLGATHERv(vel,NCELL,MPI_REAL8,velG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+    !call MPI_ALLGATHERv(mu,NCELL,MPI_REAL8,muG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+    !call MPI_ALLGATHERv(disp,NCELL,MPI_REAL8,dispG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
 
+  !do i=1,NCELLg
+  !  write(50,'(8e15.6,i6)') xcol(i),ycol(i),velG(i),tauG(i),sigmaG(i),muG(i),dispG(i),x,k
+  !end do
+  !write(50,*)  
+  
   do k=1,NSTEP1
     dttry = dtnxt
 
