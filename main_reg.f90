@@ -417,8 +417,9 @@ program main
       do i = 1, NCELL
         phi(i) = y(2*i-1)
         tau(i) = y(2*i)
-        disp(i) = disp(i)+exp(y(2*i-1))*dtdid
+        !disp(i) = disp(i)+exp(y(2*i-1))*dtdid
         vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
+        disp(i)=disp(i)+vel(i)+dtdid
         mu(i)=tau(i)/sigma(i)
       end do
     case('2dn')
@@ -428,8 +429,9 @@ program main
         phi(i) = y(3*i-2)
         tau(i) = y(3*i-1)
         sigma(i) = y(3*i)
-        disp(i) = disp(i) + exp( y(3*i-2) )*dtdid
+        !disp(i) = disp(i) + exp( y(3*i-2) i)*dtdid
         vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
+        disp(i)=disp(i)+vel(i)*dtdid
         !s(i)=a(i)*dlog(2.d0*vref/vel(i)*dsinh(tau(i)/sigma(i)/a(i)))
         !s(i)=exp((tau(i)/sigma(i)-mu0-a(i)*dlog(vel(i)/vref))/b(i))
         mu(i)=tau(i)/sigma(i)
@@ -491,7 +493,7 @@ program main
           write(50,*)
         case('2dp','2dn')
           do i=1,NCELLg
-            write(50,'(9e15.6,i6)') xcol(i),ycol(i),velG(i),tauG(i),sigmaG(i),muG(i),dispG(i),sG(i),x,k
+            write(50,'(8e15.6,i6)') xcol(i),velG(i),tauG(i),sigmaG(i),muG(i),dispG(i),sG(i),x,k
           end do
           write(50,*)
         end select
@@ -660,7 +662,7 @@ contains
     integer::i
     do i=1,NCELLg
       ag(i)=a0
-      if(abs(i-NCELLg/2).gt.NCELLg/4) ag(i)=0.024d0
+      !if(abs(i-NCELLg/2).gt.NCELLg/4) ag(i)=0.024d0
       bg(i)=b0
       dcg(i)=dc0
       vcg(i)=vc0
@@ -943,7 +945,7 @@ contains
         dvdtau=2*vref*exp(-phitmp(i)/a(i))*cosh(tautmp(i)/sigmatmp(i)/a(i))/(a(i)*sigmatmp(i))
         dvdsig=2*vref*exp(-phitmp(i)/a(i))*cosh(tautmp(i)/sigmatmp(i)/a(i))*tautmp(i)/(a(i)*sigmatmp(i)**2)
         dvdphi=2*vref*exp(-phitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
-        dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(dvdphi*phitmp(i)*dvdsig*sigmatmp(i))
+        dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(-dvdphi*phitmp(i)*dvdsig*sigmatmp(i))
         dtaudt(i)=dtaudt(i)/(1d0+0.5d0*rigid/vs*dvdtau)
       end if
     end do
