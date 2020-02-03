@@ -763,9 +763,10 @@ contains
     select case(problem)
     case('2dp','3dp')
       do i = 1, NCELL
-        veltmp(i) = exp (y(2*i-1))
+        phitmp(i) = y(2*i-1)
         tautmp(i) = y(2*i)
         sigmatmp(i)=sigma(i)
+        veltmp(i) = 2*vref*exp(-phitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))
       enddo
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
       call MPI_ALLGATHERv(veltmp,NCELL,MPI_REAL8,veltmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
@@ -815,63 +816,6 @@ contains
         sum_gs(i)=sum_gs(i)+taudot(i)
         sum_gn(i)=sum_gn(i)+sigdot(i)
       end do
-
-
-    case('2dpv')
-      do i = 1, NCELL
-        veltmp(i) = exp (y(3*i-2))
-        tautmp(i) = y(3*i-1)
-        efftmp(i) = y(3*i)
-        sigmatmp(i) = sigma(i)
-      enddo
-      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-      call MPI_ALLGATHERv(veltmp,NCELL,MPI_REAL8,veltmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-      call MPI_ALLGATHERv(efftmp,NCELL,MPI_REAL8,efftmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-
-      !matrix-vector mutiplation
-      select case(load)
-      case(0)
-        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG-efftmpG/tr)
-      case(1)
-        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG-vpl)
-      end select
-      !call MPI_SCATTERv(sum_gsG,NCELL,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      do i=1,NCELL
-        sum_gn(i)=0.d0
-        sum_gs(i)=sum_gs(i)+taudot(i)
-      end do
-
-
-    case('2dnv')
-      do i = 1, NCELL
-        veltmp(i) = exp (y(4*i-3))
-        tautmp(i) = y(4*i-2)
-        sigmatmp(i) = y(4*i-1)
-        efftmp(i) = y(4*i)
-      enddo
-      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-      call MPI_ALLGATHERv(Veltmp,NCELL,MPI_REAL8,veltmpG,rcounts,displs,                &
-      &     MPI_REAL8,MPI_COMM_WORLD,ierr)
-
-      !matrix-vector mutiplation
-      st_bemv%v='s'
-      !veltmp=1.d-6
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
-      !if(my_rank.eq.0) write(*,*) sum_gs
-      !stop
-      st_bemv%v='n'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxpn,st_bemv,st_ctl,sum_gnG,veltmpG)
-      !if(my_rank.eq.10) write(*,*) sum_gn(1)
-
-      call MPI_SCATTERv(sum_gsG,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      call MPI_SCATTERv(sum_gnG,rcounts,displs,MPI_REAL8,sum_gn,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-
-      do i=1,NCELL
-        sum_gs(i)=sum_gs(i)+taudot(i)
-        sum_gn(i)=sum_gn(i)+sigdot(i)
-      end do
-
 
     end select
 
@@ -924,16 +868,10 @@ contains
     select case(law)
       ! aging law (Linker & Dieterich, 1992)
     case('a')
-      select case(problem)
-      case('2dp','2dn','3dp')
         call deriv_a(sum_gs,sum_gn,veltmp,tautmp,sigmatmp,dlnvdt,dtaudt,dsigdt)
-      case('2dpv','2dnv')
-        call deriv_va(sum_gs,sum_gn,veltmp,tautmp,sigmatmp,efftmp,dlnvdt,dtaudt,dsigdt,deffdt)
-      end select
       ! slip law
     case('s')
       call deriv_s(sum_gs,sum_gn,veltmp,tautmp,sigmatmp,dlnvdt,dtaudt,dsigdt)
-
       ! RFL in FDMAP (Dunham+ 2011)
     case('d')
       call deriv_d(sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,dphidt,dtaudt,dsigdt)
@@ -943,7 +881,7 @@ contains
     select case(problem)
     case('2dp','3dp')
       do i = 1, NCELL
-        dydx(2*i-1) = dlnvdt( i )
+        dydx(2*i-1) = dphidt( i )
         dydx(2*i) = dtaudt( i )
       enddo
     case('2dn')
@@ -951,19 +889,6 @@ contains
         dydx(3*i-2) = dphidt( i )
         dydx(3*i-1) = dtaudt( i )
         dydx(3*i) = dsigdt( i )
-      enddo
-    case('2dpv')
-      do i = 1, NCELL
-        dydx(3*i-2) = dlnvdt( i )
-        dydx(3*i-1) = dtaudt( i )
-        dydx(3*i) = deffdt( i )
-      enddo
-    case('2dnv')
-      do i = 1, NCELL
-        dydx(4*i-3) = dlnvdt( i )
-        dydx(4*i-2) = dtaudt( i )
-        dydx(4*i-1) = dsigdt( i )
-        dydx(4*i) =deffdt(i)
       enddo
     end select
 
