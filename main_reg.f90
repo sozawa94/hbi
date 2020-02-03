@@ -139,22 +139,27 @@ program main
   allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),mu(NCELL),s(NCELL),disp(NCELL),ac(NCELL),eff(NCELL))
   allocate(phiG(NCELL),velG(NCELLg),tauG(NCELLg),sigmaG(NCELLg),dispG(NCELLg),muG(NCELLg),sg(NCELLg),acG(NCELLg),idisp(NCELLg),effG(NCELLg))
   select case(problem)
-  case('2dp','2dpv')
+  case('2dp')
     allocate(xcol(NCELLg),xel(NCELLg),xer(NCELLg))
-  case('2dn','2dnv')
+    xcol=0d0;xel=0d0;xer=0d0
+  case('2dn')
     allocate(xcol(NCELLg),ycol(NCELLg),ang(NCELLg))
     allocate(xel(NCELLg),xer(NCELLg),yel(NCELLg),yer(NCELLg))
+    xcol=0d0;ycol=0d0;ang=0d0;xel=0d0;xer=0d0;yel=0d0;yer=0d0
   case('3dp')
     allocate(xcol(NCELLg),zcol(NCELLg))
     allocate(xs1(NCELLg),xs2(NCELLg),xs3(NCELLg),xs4(NCELLg))
     allocate(zs1(NCELLg),zs2(NCELLg),zs3(NCELLg),zs4(NCELLg))
     allocate(xcoll(NCELL),zcoll(NCELL))
+    xcol=0d0; zcol=0d0
+    xs1=0d0; xs2=0d0; xs3=0d0; xs4=0d0
+    zs1=0d0; zs2=0d0; zs3=0d0; zs4=0d0
   end select
 
   select case(problem)
   case('2dp','3dp')
     allocate(y(2*NCELL),yscal(2*NCELL),dydx(2*NCELL))
-  case('2dn','2dpv')
+  case('2dn')
     allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL))
   case('2dnv')
     allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL))
@@ -213,12 +218,12 @@ program main
   lrtrn=HACApK_init(NCELLg,st_ctl,st_bemv,icomm)
   allocate(coord(NCELLg,3))
   select case(problem)
-  case('2dp','2dpv')
+  case('2dp')
     allocate(st_bemv%xcol(NCELLg),st_bemv%xel(NCELLg),st_bemv%xer(NCELLg))
     st_bemv%xcol=xcol;st_bemv%xel=xel;st_bemv%xer=xer
     st_bemv%problem=problem
 
-  case('2dn','2dnv')
+  case('2dn')
     allocate(st_bemv%xcol(NCELLg),st_bemv%xel(NCELLg),st_bemv%xer(NCELLg))
     allocate(st_bemv%ycol(NCELLg),st_bemv%yel(NCELLg),st_bemv%yer(NCELLg),st_bemv%ang(NCELLg))
     st_bemv%xcol=xcol;st_bemv%xel=xel;st_bemv%xer=xer
@@ -248,7 +253,7 @@ program main
   !generate kernel (H-matrix aprrox)
   if(my_rank.eq.0) write(*,*) 'Generating kernel'
   select case(problem)
-  case('2dp','2dpv')
+  case('2dp')
     do i=1,NCELLg
       coord(i,1)=xcol(i)
       coord(i,2)=0.d0
@@ -257,7 +262,7 @@ program main
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,1d-4)
 
-  case('2dn','2dnv')
+  case('2dn')
     do i=1,NCELLg
       coord(i,1)=xcol(i)
       coord(i,2)=ycol(i)
@@ -566,9 +571,9 @@ program main
 end if
 Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 select case(problem)
-case('2dp','3dp','2dpv')
+case('2dp','3dp')
   lrtrn=HACApK_free_leafmtxp(st_leafmtxps)
-case('2dn','2dnv')
+case('2dn')
   lrtrn=HACApK_free_leafmtxp(st_leafmtxps)
   lrtrn=HACApK_free_leafmtxp(st_leafmtxpn)
 end select
