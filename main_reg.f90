@@ -190,7 +190,11 @@ program main
 
   !MPI communication
   select case(problem)
-  case('2dp','2dn','2dpv','2dnv')
+  case('2dp')
+    call MPI_BCAST(xcol, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(xel, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(xer, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+  case('2dn')
     call MPI_BCAST(xcol, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
     call MPI_BCAST(ycol, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
     call MPI_BCAST(xel, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
