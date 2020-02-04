@@ -6,5 +6,6 @@ module mod_constant
  real(8),parameter::vref=1.d-9
  real(8),parameter::rigid=40d0
  real(8),parameter::vs=3.464d0
+ real(8),parameter::vp=6.d0
  !real(8),parameter::tr=1d12
 end module

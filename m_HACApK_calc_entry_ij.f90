@@ -18,10 +18,10 @@ contains
     integer::i,j
     type(st_HACApK_calc_entry) :: st_bemv
     select case(st_bemv%problem)
-    case('2dp','2dpv')
+    case('2dp')
       HACApK_entry_ij=matels2dp_ij(i,j,st_bemv%xcol,st_bemv%xel,st_bemv%xer)
 
-    case('2dn','2dnv')
+    case('2dn')
       select case(st_bemv%v)
 
       case('s')
@@ -31,6 +31,10 @@ contains
       case('n')
         HACApK_entry_ij=mateln2dn_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
         & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang)
+
+      ! case('xx')
+      !   HACApK_entry_ij=inte11(i,j,st_bemv%xcol,st_bemv%ycol,&
+      !   & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang)
 
       end select
 
@@ -193,5 +197,33 @@ contains
      factor=rigid/(2.d0*pi*(1.d0-pois))
      matels2dp_ij=factor*(1.d0/(xcol(i)-xer(j))-1.d0/(xcol(i)-xel(j)))
    end function matels2dp_ij
+
+
+   function inte12s(x1,x2)
+     implicit none
+     real(8)::x1,x2,t,ss,sp,inte,pa,inte12s,r
+     r=sqrt(x1**2+x2**2)
+     pa=vs/vp
+     inte12s=2*vs/pi*(1-pa**2)*x1*(x1**2-x2**2)/r**4
+     return
+   end function
+
+   function inte11s(x1,x2)
+     implicit none
+     real(8)::x1,x2,t,ss,sp,inte,pa,inte11s,r
+     r=sqrt(x1**2+x2**2)
+     pa=vs/vp
+     inte11s=-2*vs/pi*(1-pa**2)*x2*(3*x1**2+x2**2)/r**4
+     return
+   end function
+
+   function inte22s(x1,x2)
+     implicit none
+     real(8)::x1,x2,t,ss,sp,inte,pa,inte22s,r
+     r=sqrt(x1**2+x2**2)
+     pa=vs/vp
+     inte22s=2*vs/pi*(1-pa**2)*x2*(x1**2-x2**2)/r**4
+     return
+   end function
 
 endmodule m_HACApK_calc_entry_ij

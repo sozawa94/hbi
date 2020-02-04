@@ -16,7 +16,7 @@ program main
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
-  real(8)::vc0,mu0,dtinit,onset_time,tr,vw0,fw0
+  real(8)::vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin
   real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxevent
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds,amp,mui,strinit,velinit,velmax
   type(st_HACApK_lcontrol) :: st_ctl
@@ -26,9 +26,9 @@ program main
   real(8),allocatable ::coord(:,:),vmax(:)
   real(8),allocatable::ag(:),bg(:),dcg(:),vcg(:),fwg(:),vwg(:),taudotg(:),sigdotg(:)
   real(8),allocatable::a(:),b(:),dc(:),vc(:),fw(:),vw(:),ac(:),taudot(:),sigdot(:)
-  real(8),allocatable::vel(:),tau(:),sigma(:),disp(:),mu(:),s(:),sg(:),eff(:)
-  real(8),allocatable::velG(:),tauG(:),sigmaG(:),dispG(:),muG(:),acG(:),idisp(:),effG(:)
-  real(8),allocatable::xcol(:),ycol(:),zcol(:),phi(:),phiG(:)
+  real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:)
+  real(8),allocatable::phiG(:),velG(:),tauG(:),sigmaG(:),dispG(:),muG(:)
+  real(8),allocatable::xcol(:),ycol(:),zcol(:)
   real(8),allocatable::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
   real(8),allocatable::xel(:),xer(:),yel(:),yer(:),ang(:)
   real(8),allocatable::y(:),yscal(:),dydx(:),xcoll(:),zcoll(:),yg(:)
@@ -55,9 +55,9 @@ program main
   read(33,*) dum,problem
 
   select case(problem)
-  case('2dp','2dpv')
+  case('2dp')
     read(33,*) dum,NCELLg
-  case('2dn','2dnv')
+  case('2dn')
     read(33,*) dum,NCELLg
     read(33,*) dum,geofile
   case('3dp')
@@ -80,6 +80,7 @@ program main
   read(33,*) dum,nstep1 !maxmimum time step
   !read(33,*) dum,thec !stop when the eventcount exceeds this value
   read(33,*) dum,velmax !stop when slip rate exceeds this value
+  read(33,*) dum,velmin
 
   !physical parameters in calculation
   read(33,*) dum,law ! evolution law in RSF a: aging s: slip
@@ -93,7 +94,7 @@ program main
   read(33,*) dum,load !loading type 0: uniform stress 1: uniform slip deficit
   read(33,*) dum,sr !if load=0: stressing rate (sigma0/sec) load=1: unused
   read(33,*) dum,vpl !if load=1: loading velocity load=0: unused
-  read(33,*) dum,tr !viscoelastic relaxation
+  read(33,*) dum,tr !viscoelastic relaxation (unused)
   !read(33,*) dum,rigid !shear modulus normalized by sigma0
   !read(33,*) dum,vs !Swave speed (dc/s)
   !read(33,*) dum,pois !poisson ratio
@@ -101,9 +102,9 @@ program main
   !initial values
   read(33,*) dum,velinit !initial slip velocity
   read(33,*) dum,omega !initial omega=V*theta
-  read(33,*) dum,dtinit !initial time step
+  read(33,*) dum,dtinit !initial timestep
 
-  read(33,*) dum,eps !error allowance in time integration
+  read(33,*) dum,eps !error allowance in time integration in Runge-Kutta
   !read(*,*) amp
   !read(*,*) omega
 
@@ -136,8 +137,8 @@ program main
   !allocation
   allocate(a(NCELL),b(NCELL),dc(NCELL),vc(NCELL),fw(NCELL),vw(NCELL),taudot(NCELL),sigdot(NCELL))
   allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),vcg(NCELLg),fwg(NCELLg),vwg(NCELLg),taudotg(NCELLg),sigdotg(NCELLg))
-  allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),mu(NCELL),s(NCELL),disp(NCELL),ac(NCELL),eff(NCELL))
-  allocate(phiG(NCELL),velG(NCELLg),tauG(NCELLg),sigmaG(NCELLg),dispG(NCELLg),muG(NCELLg),sg(NCELLg),acG(NCELLg),idisp(NCELLg),effG(NCELLg))
+  allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
+  allocate(phiG(NCELLg),velG(NCELLg),tauG(NCELLg),sigmaG(NCELLg),dispG(NCELLg),muG(NCELLg))
   select case(problem)
   case('2dp')
     allocate(xcol(NCELLg),xel(NCELLg),xer(NCELLg))
@@ -309,8 +310,6 @@ program main
 
 
   !setting initial condition
-  !call initial(vel,tau,sigma)
-  theta=omega/velinit
   !mui=mu0+a0*dlog(velinit/vref)+b0*dlog(theta)
   !xc=0.5d0*imax*ds;zc=0.5d0*jmax*ds;dr=30*ds
 
@@ -319,14 +318,14 @@ program main
     !omega=omega*0.5d0+0.5d0
     !theta=omega/velinit
     !s(i)=omega+0.1d0*s(i)
-    s(i)=omega
-    theta=s(i)/velinit
-    mu(i)=mu0+(a(i)-b(i))*dlog(abs(velinit)/vref)
+    !mu(i)=mu0+(a(i)-b(i))*dlog(abs(velinit)/vref)
+    phi(i)=omega
+    mu(i)=a(i)*asinh(0.5d0*velinit/vref*exp(phi(i)/a(i)))
     vel(i)=velinit
     sigma(i)=sigma0
     tau(i)=mu(i)*sigma(i)*sign(vel(i),1.d0)/vel(i)
-    phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
-    write(*,*) tau(i),vel(i),phi(i)
+    !phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
+    !write(*,*) tau(i),vel(i),phi(i)
   end do
 
   !for FDMAP-BIEM simulation
@@ -364,7 +363,6 @@ program main
   time1=MPI_Wtime()
   x=0.d0 !x is time
   disp=0.d0
-  eff=0.d0
   dtnxt = dtinit
   !outv=1d-6
   slipping=.false.
@@ -378,8 +376,8 @@ program main
   !do i=1,NCELLg
   !  write(50,'(8e15.6,i6)') xcol(i),ycol(i),velG(i),tauG(i),sigmaG(i),muG(i),dispG(i),x,k
   !end do
-  !write(50,*)  
-  
+  !write(50,*)
+
   do k=1,NSTEP1
     dttry = dtnxt
 
@@ -419,7 +417,8 @@ program main
         tau(i) = y(2*i)
         !disp(i) = disp(i)+exp(y(2*i-1))*dtdid
         vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
-        disp(i)=disp(i)+vel(i)+dtdid
+        !write(*,*)vel(i),dtdid
+        disp(i)=disp(i)+vel(i)*dtdid
         mu(i)=tau(i)/sigma(i)
       end do
     case('2dn')
@@ -440,26 +439,18 @@ program main
     end select
 
     Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-    call MPI_ALLGATHERv(sigma,NCELL,MPI_REAL8,sigmaG,rcounts,displs,                &
-    &     MPI_REAL8,MPI_COMM_WORLD,ierr)
-    call MPI_ALLGATHERv(tau,NCELL,MPI_REAL8,tauG,rcounts,displs,                &
-    &     MPI_REAL8,MPI_COMM_WORLD,ierr)
-    call MPI_ALLGATHERv(vel,NCELL,MPI_REAL8,velG,rcounts,displs,                &
-    &     MPI_REAL8,MPI_COMM_WORLD,ierr)
-    call MPI_ALLGATHERv(mu,NCELL,MPI_REAL8,muG,rcounts,displs,                &
-    &     MPI_REAL8,MPI_COMM_WORLD,ierr)
-    call MPI_ALLGATHERv(disp,NCELL,MPI_REAL8,dispG,rcounts,displs,&
-    & MPI_REAL8,MPI_COMM_WORLD,ierr)
-    call MPI_ALLGATHERv(eff,NCELL,MPI_REAL8,effG,rcounts,displs,&
-    & MPI_REAL8,MPI_COMM_WORLD,ierr)
-    call MPI_ALLGATHERv(ac,NCELL,MPI_REAL8,acG,rcounts,displs,                &
-    &     MPI_REAL8,MPI_COMM_WORLD,ierr)
+    call MPI_ALLGATHERv(sigma,NCELL,MPI_REAL8,sigmaG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+    call MPI_ALLGATHERv(tau,NCELL,MPI_REAL8,tauG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+    call MPI_ALLGATHERv(vel,NCELL,MPI_REAL8,velG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+    call MPI_ALLGATHERv(mu,NCELL,MPI_REAL8,muG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+    call MPI_ALLGATHERv(disp,NCELL,MPI_REAL8,dispG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+    call MPI_ALLGATHERv(phi,NCELL,MPI_REAL8,phiG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
     !if(my_rank.eq.0) write(*,*) 'allgatherv'
 
     !output
     if(my_rank.eq.0) then
       time2= MPI_Wtime()
-      write(52,'(i6,f18.4,4e16.5,f16.4)')k,x,maxval(log10(abs(velG))),sum(dispG)/NCELLg,sum(muG)/NCELLg,sum(effG)/NCELLg,time2-time1
+      write(52,'(i6,f18.4,3e16.5,f16.4)')k,x,maxval(log10(abs(velG))),sum(dispG)/NCELLg,sum(muG)/NCELLg,time2-time1
       !do i=1,size(vmax)
       !  vmax(i)=max(vmax(i),velG(i))
       !  vmaxin(i)=k
@@ -493,7 +484,7 @@ program main
           write(50,*)
         case('2dp','2dn')
           do i=1,NCELLg
-            write(50,'(8e15.6,i6)') xcol(i),velG(i),tauG(i),sigmaG(i),muG(i),dispG(i),sG(i),x,k
+            write(50,'(i0,8e15.6,i6)') i,xcol(i),log10(abs(velG(i))),tauG(i),sigmaG(i),muG(i),dispG(i),phiG(i),x,k
           end do
           write(50,*)
         end select
@@ -536,7 +527,12 @@ program main
 
     !(2) slip velocity exceeds threshold (for nucleation)
     if(maxval(abs(velG)).gt.velmax) then
-      if(my_rank .eq. 0) write(*,*) 'slip rate exceeds threshold'
+      if(my_rank .eq. 0) write(*,*) 'slip rate above threshold'
+      exit
+    end if
+
+    if(maxval(abs(velG)).lt.velmin) then
+      if(my_rank .eq. 0) write(*,*) 'slip rate below threshold'
       exit
     end if
 
@@ -601,28 +597,13 @@ contains
     real(8),allocatable::data(:)
 
     open(20,file=geofile,access='stream')
-    inquire(20, size=file_size)
+    read(20) xel,xer,yel,yer
     !write(*, '(a, i12)') "file size = ", file_size
-    n=file_size/8
-    allocate(data(n))
-    !do while(.true.)
-      read(20) xr
-      read(20) yr
-      !do i=0,ncellg
-      !  read(20,*) xr(i),yr(i)
-      !end do
-    close(20)
 
-
-    do i=1,ncellg
-      xel(i)=xr(i-1)
-      xer(i)=xr(i)
-      yel(i)=2*yr(i-1)
-      yer(i)=2*yr(i)
+    do i=1,NCELLg
       ang(i)=datan((yer(i)-yel(i))/(xer(i)-xel(i)))
       xcol(i)=0.5d0*(xel(i)+xer(i))
       ycol(i)=0.5d0*(yel(i)+yer(i))
-      !write(*,*) xel(i),yer(i)
     end do
 
     ! open(14,file='top3.dat')
@@ -668,6 +649,7 @@ contains
       vcg(i)=vc0
       fwg(i)=fw0
       vwg(i)=vw0
+      !write(*,*)ag(i),bg(i),dcg(i)
     end do
 
   end subroutine
@@ -838,7 +820,7 @@ contains
     select case(law)
       ! aging law (Linker & Dieterich, 1992)
     case('a')
-        call deriv_a(sum_gs,sum_gn,veltmp,tautmp,sigmatmp,dlnvdt,dtaudt,dsigdt)
+      call deriv_a(sum_gs,sum_gn,veltmp,tautmp,sigmatmp,dlnvdt,dtaudt,dsigdt)
       ! slip law
     case('s')
       call deriv_s(sum_gs,sum_gn,veltmp,tautmp,sigmatmp,dlnvdt,dtaudt,dsigdt)
@@ -926,26 +908,34 @@ contains
     real(8)::fss,dvdtau,dvdsig,dvdphi
     !type(t_deriv),intent(in) ::
     real(8),intent(in)::sum_gs(:),sum_gn(:),phitmp(:),tautmp(:),sigmatmp(:),veltmp(:)
-    !real(8),intent(in)::a(:),b(:),dc(:)
-    !real(8),intent(in)::mu0,vref,vs,fw,vw,rigid
     real(8),intent(out)::dphidt(:),dtaudt(:),dsigdt(:)
     do i=1,size(sum_gs)
+      !write(*,*) 'vel',veltmp(i)
       dsigdt(i)=sum_gn(i)
+      !write(*,*) 'dsigdt',dsigdt(i)
 
       fss=mu0+(a(i)-b(i))*dlog(abs(veltmp(i))/vref)
-      fss=fw(i)+(fss-fw(i))/(1.d0+(veltmp(i)/vw(i))**8)**0.125d0 !flash heating
-      dphidt(i)=-abs(veltmp(i))/dc(i)*(abs(tautmp(i))/sigmatmp(i)-fss)
+      !fss=fw(i)+(fss-fw(i))/(1.d0+(veltmp(i)/vw(i))**8)**0.125d0 !flash heating
+      !slip law
+      !dphidt(i)=-abs(veltmp(i))/dc(i)*(abs(tautmp(i))/sigmatmp(i)-fss)
+      !aging law
+      dphidt(i)=b(i)*vref/dc(i)*exp((mu0-phitmp(i))/b(i))-abs(veltmp(i))/dc(i)
 
       dvdtau=2*vref*exp(-phitmp(i)/a(i))*cosh(tautmp(i)/sigmatmp(i)/a(i))/(a(i)*sigmatmp(i))
-      dvdsig=2*vref*exp(-phitmp(i)/a(i))*cosh(tautmp(i)/sigmatmp(i)/a(i))*tautmp(i)/(a(i)*sigmatmp(i)**2)
-      dvdphi=2*vref*exp(-phitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
-      dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(dvdphi*phitmp(i)*dvdsig*sigmatmp(i))
+      dvdsig=-2*vref*exp(-phitmp(i)/a(i))*cosh(tautmp(i)/sigmatmp(i)/a(i))*tautmp(i)/(a(i)*sigmatmp(i)**2)
+      !dvdphi=2*vref*exp(-phitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
+      dvdphi=-veltmp(i)/a(i)
+      !dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(dvdphi*phitmp(i)*dvdsig*sigmatmp(i))
+      dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(dvdphi*dphidt(i)+dvdsig*dsigdt(i))
       dtaudt(i)=dtaudt(i)/(1d0+0.5d0*rigid/vs*dvdtau)
+      !write(*,*) rigid/vs*dvdtau
       if(veltmp(i).le.0d0) then
         dvdtau=2*vref*exp(-phitmp(i)/a(i))*cosh(tautmp(i)/sigmatmp(i)/a(i))/(a(i)*sigmatmp(i))
-        dvdsig=2*vref*exp(-phitmp(i)/a(i))*cosh(tautmp(i)/sigmatmp(i)/a(i))*tautmp(i)/(a(i)*sigmatmp(i)**2)
+        dvdsig=-2*vref*exp(-phitmp(i)/a(i))*cosh(tautmp(i)/sigmatmp(i)/a(i))*tautmp(i)/(a(i)*sigmatmp(i)**2)
+        !sign ok?
         dvdphi=2*vref*exp(-phitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
-        dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(-dvdphi*phitmp(i)*dvdsig*sigmatmp(i))
+        !dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(-dvdphi*phitmp(i)*dvdsig*sigmatmp(i))
+        dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(dvdphi*dphidt(i)+dvdsig*dsigdt(i))
         dtaudt(i)=dtaudt(i)/(1d0+0.5d0*rigid/vs*dvdtau)
       end if
     end do
@@ -991,7 +981,7 @@ contains
       if(xnew-x<1.d-8) stop
     end do
 
-    hnext=min(3*h,SAFETY*h*(errmax_gb**PGROW),5d6)
+    hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW),5d6)
 
     hdid=h
     x=x+h

@@ -112,7 +112,7 @@ integer function HACApK_init(nd,st_ctl,st_bemv,icomma)
  character*32 logfile
  allocate(st_ctl%param(100))
  st_ctl%param(1:100)=0.0
- st_ctl%param(1) =0;        ! Print : 0:Only Error 1:STD 2:Dubug
+ st_ctl%param(1) =1;        ! Print : 0:Only Error 1:STD 2:Dubug
  st_ctl%param(9) =1;        ! 1:load balancer
  st_ctl%param(10)=1;        ! 1:fulfill the matrix  0: not fulfill
  st_ctl%param(11)=0;        ! 1:check accuracy of H-matrix 0: not check
