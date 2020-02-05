@@ -12,11 +12,11 @@ program main
   character(len=10):: sys_time(3)
   integer::NCELL, nstep1, lp, i,j,k,m,counts,interval,number,lrtrn,nl,NCELLg
   integer::clock,cr,counts2,imax,jmax,NCELLm,seedsize,icomm,np,ierr,my_rank,load,eventcount,thec
-  logical::slipping,outfield
+  logical::slipping,outfield,limitsigma
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
-  real(8)::vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin
+  real(8)::vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit
   real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxevent
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds,amp,mui,strinit,velinit,velmax
   type(st_HACApK_lcontrol) :: st_ctl
@@ -27,14 +27,14 @@ program main
   real(8),allocatable::ag(:),bg(:),dcg(:),vcg(:),fwg(:),vwg(:),taudotg(:),sigdotg(:)
   real(8),allocatable::a(:),b(:),dc(:),vc(:),fw(:),vw(:),ac(:),taudot(:),sigdot(:)
   real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:)
-  real(8),allocatable::phiG(:),velG(:),tauG(:),sigmaG(:),dispG(:),muG(:)
+  real(8),allocatable::phiG(:),velG(:),tauG(:),sigmaG(:),dispG(:),muG(:),ruptG(:)
   real(8),allocatable::xcol(:),ycol(:),zcol(:)
   real(8),allocatable::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
   real(8),allocatable::xel(:),xer(:),yel(:),yer(:),ang(:)
   real(8),allocatable::y(:),yscal(:),dydx(:),xcoll(:),zcoll(:),yg(:)
   real(8),allocatable::xr(:),yr(:),zr(:),ai(:,:)
   integer::r1,r2,r3,NVER,amari,out,kmax,loci,locj,loc,stat
-  integer,allocatable::displs(:),rcounts(:),vmaxin(:)
+  integer,allocatable::displs(:),rcounts(:),vmaxin(:),rupsG(:)
 
   !initialize
   icomm=MPI_COMM_WORLD
@@ -101,9 +101,9 @@ program main
 
   !initial values
   read(33,*) dum,velinit !initial slip velocity
-  read(33,*) dum,omega !initial omega=V*theta
+  read(33,*) dum,muinit !initial omega=V*theta
   read(33,*) dum,dtinit !initial timestep
-
+  read(33,*) dum,limitsigma
   read(33,*) dum,eps !error allowance in time integration in Runge-Kutta
   !read(*,*) amp
   !read(*,*) omega
@@ -138,7 +138,7 @@ program main
   allocate(a(NCELL),b(NCELL),dc(NCELL),vc(NCELL),fw(NCELL),vw(NCELL),taudot(NCELL),sigdot(NCELL))
   allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),vcg(NCELLg),fwg(NCELLg),vwg(NCELLg),taudotg(NCELLg),sigdotg(NCELLg))
   allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
-  allocate(phiG(NCELLg),velG(NCELLg),tauG(NCELLg),sigmaG(NCELLg),dispG(NCELLg),muG(NCELLg))
+  allocate(phiG(NCELLg),velG(NCELLg),tauG(NCELLg),sigmaG(NCELLg),dispG(NCELLg),muG(NCELLg),ruptG(NCELLg),rupsG(NCELLg))
   select case(problem)
   case('2dp')
     allocate(xcol(NCELLg),xel(NCELLg),xer(NCELLg))
@@ -310,23 +310,28 @@ program main
 
 
   !setting initial condition
+  call initcond(phiG,sigmaG,tauG)
+  call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+  call MPI_SCATTERv(tauG,rcounts,displs,MPI_REAL8,tau,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+  call MPI_SCATTERv(sigmaG,rcounts,displs,MPI_REAL8,sigma,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+  call MPI_SCATTERv(phiG,rcounts,displs,MPI_REAL8,phi,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
   !mui=mu0+a0*dlog(velinit/vref)+b0*dlog(theta)
   !xc=0.5d0*imax*ds;zc=0.5d0*jmax*ds;dr=30*ds
 
-  do i=1,NCELL
+  !do i=1,NCELL
     !call random_number(omega)
     !omega=omega*0.5d0+0.5d0
     !theta=omega/velinit
     !s(i)=omega+0.1d0*s(i)
     !mu(i)=mu0+(a(i)-b(i))*dlog(abs(velinit)/vref)
-    phi(i)=omega
-    mu(i)=a(i)*asinh(0.5d0*velinit/vref*exp(phi(i)/a(i)))
-    vel(i)=velinit
-    sigma(i)=sigma0
-    tau(i)=mu(i)*sigma(i)*sign(vel(i),1.d0)/vel(i)
+  !  phi(i)=omega
+  !  mu(i)=a(i)*asinh(0.5d0*velinit/vref*exp(phi(i)/a(i)))
+  !  vel(i)=velinit
+  !  sigma(i)=sigma0
+  !  tau(i)=mu(i)*sigma(i)*sign(vel(i),1.d0)/vel(i)
     !phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
     !write(*,*) tau(i),vel(i),phi(i)
-  end do
+  !end do
 
   !for FDMAP-BIEM simulation
   !call input_from_FDMAP()
@@ -337,6 +342,8 @@ program main
     open(52,file=fname)
     write(fname,'("output/",i0,".dat")') number
     open(50,file=fname)
+    write(fname,'("output/rupt",i0,".dat")') number
+    open(48,file=fname)
     open(19,file='job.log',position='append')
   end if
 
@@ -362,6 +369,8 @@ program main
   !start time integration
   time1=MPI_Wtime()
   x=0.d0 !x is time
+  ruptG=0d0
+  rupsG=0
   disp=0.d0
   dtnxt = dtinit
   !outv=1d-6
@@ -428,6 +437,11 @@ program main
         phi(i) = y(3*i-2)
         tau(i) = y(3*i-1)
         sigma(i) = y(3*i)
+        !artificial limit of normal stress motivated by plastic simulation
+        if(limitsigma) then
+          if(sigma(i).lt.30d0) sigma(i)=30d0
+          if(sigma(i).gt.170d0) sigma(i)=170d0
+        end if
         !disp(i) = disp(i) + exp( y(3*i-2) i)*dtdid
         vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
         disp(i)=disp(i)+vel(i)*dtdid
@@ -459,6 +473,12 @@ program main
 
       !for FDMAP
       !PsiG=ag*dlog(2.d0*vref/velG*dsinh(tauG/sigmaG/ag))
+      do i=1,NCELLg
+        if(velG(i).gt.0.05d0.and.ruptG(i).le.1d-6) then
+          ruptG(i)=x
+          rupsG(i)=k
+        end if
+      end do
 
 
       !output distribution control
@@ -542,6 +562,11 @@ program main
 
   !output for FDMAP communication
   !call output_to_FDMAP()
+  if(my_rank.eq.0) then
+    do i=1,NCELLg
+      write(48,'(3f16.4,i6)') xcol(i),ycol(i),ruptG(i),rupsG(i)
+    end do
+  end if
 
   200  if(my_rank.eq.0) then
   time2= MPI_Wtime()
@@ -562,6 +587,26 @@ lrtrn=HACApK_finalize(st_ctl)
 Call MPI_FINALIZE(ierr)
 stop
 contains
+  subroutine initcond(phiG,sigmaG,tauG)
+    implicit none
+    real(8),intent(out)::phiG(:),sigmaG(:),tauG(:)
+    real(8)::sxx0,sxy0,syy0,psi,theta
+    syy0=sigma0
+    sxy0=syy0*muinit
+    psi=45d0
+    sxx0=syy0*(1d0+2*sxy0/(syy0*dtan(2*psi/180d0*pi)))
+    write(*,*) 'sxx0,sxy0,syy0'
+    write(*,*) sxx0,sxy0,syy0
+    do i=1,size(velG)
+        tauG(i)=sxy0*cos(2*ang(i))+0.5d0*(sxx0-syy0)*sin(2*ang(i))
+        sigmaG(i)=sin(ang(i))**2*sxx0+cos(ang(i))**2*syy0+sxy0*sin(2*ang(i))
+        phiG(i)=ag(i)*dlog(2*vref/velinit*sinh(tauG(i)/sigmaG(i)/ag(i)))
+        omega=exp((PhiG(i)-mu0)/bG(i))*velinit/vref
+        !write(*,*) Omega
+    end do
+
+  end subroutine initcond
+
   subroutine coordinate3d(imax,jmax,ds,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
     implicit none
     integer,intent(in)::imax,jmax
@@ -666,21 +711,27 @@ contains
       taudotG=sr
       sigdotG=0d0
     case('2dn')
-      edge=ds*NCELLg/2
       open(15,file='sr')
       do i=1,NCELLg
-        v='s'
-        call kern(v,xcol(i),ycol(i),-99*edge,ycol(1),-edge,ycol(1),ang(i),0d0,ret1)
-        call kern(v,xcol(i),ycol(i),edge,ycol(NCELLg),99*edge,ycol(NCELLg),ang(i),0d0,ret2)
-        taudotG(i)=vpl*(ret1+ret2)
-        v='n'
-        call kern(v,xcol(i),ycol(i),-99*edge,ycol(1),-edge,ycol(1),ang(i),0d0,ret1)
-        call kern(v,xcol(i),ycol(i),edge,ycol(NCELLg),99*edge,ycol(NCELLg),ang(i),0d0,ret2)
-        sigdotG(i)=vpl*(ret1+ret2)
-        write(15,*) taudotG(i),sigdotG(i)
-      end do
+      select case(load)
+      case(0)
+        taudotG(i)=sr*cos(2*ang(i))
+        sigdotG(i)=sr*sin(2*ang(i))
+      case(1)
+        edge=ds*NCELLg/2
 
-      close(15)
+          v='s'
+          call kern(v,xcol(i),ycol(i),-99*edge,ycol(1),-edge,ycol(1),ang(i),0d0,ret1)
+          call kern(v,xcol(i),ycol(i),edge,ycol(NCELLg),99*edge,ycol(NCELLg),ang(i),0d0,ret2)
+          taudotG(i)=vpl*(ret1+ret2)
+          v='n'
+          call kern(v,xcol(i),ycol(i),-99*edge,ycol(1),-edge,ycol(1),ang(i),0d0,ret1)
+          call kern(v,xcol(i),ycol(i),edge,ycol(NCELLg),99*edge,ycol(NCELLg),ang(i),0d0,ret2)
+          sigdotG(i)=vpl*(ret1+ret2)
+      end select
+      write(15,*) taudotG(i),sigdotG(i)
+    end do
+    close(15)
     !case('2dpv','2dnv')
     !  factor=rigid/(2.d0*pi*(1.d0-pois))
     !  edge=-ds*NCELLg
@@ -981,7 +1032,7 @@ contains
       if(xnew-x<1.d-8) stop
     end do
 
-    hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW),5d6)
+    hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW),1d8)
 
     hdid=h
     x=x+h
