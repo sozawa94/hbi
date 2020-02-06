@@ -310,7 +310,17 @@ program main
 
 
   !setting initial condition
-  call initcond(phiG,sigmaG,tauG)
+  select case(problem)
+  case('2dp','3dp')
+   sigmaG=sigma0
+   tauG=sigmaG*muinit
+   PhiG=aG*dlog(2*vref/velinit*sinh(tauG/sigmaG/aG))
+   omega=exp((PhiG(1)-mu0)/bG(1))*velinit/vref/bG(1)
+   write(*,*) 'Omega',Omega
+  case('2dn')
+   call initcond(phiG,sigmaG,tauG)
+  end select
+  call add_nuclei(tauG)
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
   call MPI_SCATTERv(tauG,rcounts,displs,MPI_REAL8,tau,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
   call MPI_SCATTERv(sigmaG,rcounts,displs,MPI_REAL8,sigma,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
@@ -597,15 +607,24 @@ contains
     sxx0=syy0*(1d0+2*sxy0/(syy0*dtan(2*psi/180d0*pi)))
     write(*,*) 'sxx0,sxy0,syy0'
     write(*,*) sxx0,sxy0,syy0
+    open(16,file='initomega')
     do i=1,size(velG)
         tauG(i)=sxy0*cos(2*ang(i))+0.5d0*(sxx0-syy0)*sin(2*ang(i))
         sigmaG(i)=sin(ang(i))**2*sxx0+cos(ang(i))**2*syy0+sxy0*sin(2*ang(i))
         phiG(i)=ag(i)*dlog(2*vref/velinit*sinh(tauG(i)/sigmaG(i)/ag(i)))
-        omega=exp((PhiG(i)-mu0)/bG(i))*velinit/vref
-        !write(*,*) Omega
+        omega=exp((PhiG(i)-mu0)/bG(i))*velinit/vref/bG(i)
+        write(16,*) i,omega
     end do
+    close(16)
 
   end subroutine initcond
+
+
+  subroutine add_nuclei(tauG)
+    implicit none
+    real(8),intent(inout)::tauG(:)
+    tauG(2050:2200)=tauG(2050:2200)+8d0
+  end subroutine
 
   subroutine coordinate3d(imax,jmax,ds,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
     implicit none

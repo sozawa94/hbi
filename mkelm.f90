@@ -1,26 +1,51 @@
 program main
   !make meshes for "2dn" of hbi
   implicit none
-  integer::i,NCELLg,nm,ns(5),file_size,n,count,j,jmax
+  integer::i,NCELLg,nm,ns(15),file_size,n,count,j,jmax,seedsize
   real(8)::xel(100000),xer(100000),yel(100000),yer(100000)
-  real(8)::xr(10000),yr(10000)
+  real(8)::xr(40001),yr(40001)
+  real(8),parameter::pi=4.d0*atan(1.d0)
   real(8),allocatable::data(:)
-  real(8)::ds,xc(5),yc(5),r,amp
+  real(8)::ds,xc(15),yc(15),ang(15),r,amp,wid
   character(128)::geofile,type
+  integer,allocatable::seed(:)
+
+  call random_seed(size=seedsize)
+  allocate(seed(seedsize))
+  do i = 1, seedsize
+    call system_clock(count=seed(i))
+  end do
+  call random_seed(put=seed(:))
 
   xel=0d0;xer=0d0;yel=0d0;yer=0d0
   type='multi'
-  nm=3000
-  jmax=5
+
+  !parameters
+  nm=6000
+  jmax=size(ns)
   ds=0.025d0
-  amp=10.0
-  ns=(/500,300,200,200,200/)
-  xc=(/0.5,0.2,0.8,0.3,0.0/)
-  yc=(/0.05,-0.02,0.04,-0.03,-0.04/)
-  xc=xc*nm*ds
+  amp=0.5
+  wid=5.d-2
+
+  !length
+  !ns=(/300,300,300,300,300,200,200,200,200,200/)
+  ns(1:5)=300
+  ns(6:15)=200
+  call random_number(xc)
+  call random_number(yc)
+  yc=(yc-0.5d0)*wid
+  !write(*,*) yc
+  !xc=(/0.5,0.2,0.8,0.3,0.7/)
+  !yc=(/-0.06,0.0,0.03,-0.1,-0.02/)
+  !ang=(/0,10,-10,10,-10/)
+  call random_number(ang)
+  ang=(ang-0.5d0)*10
+  !ang=0d0
+  ang=ang/180*pi
+  xc=(xc-0.1d0)*nm*ds*1.2d0
   yc=yc*nm*ds
   !read rough dataset
-  geofile='alpha0.001Lmin2N5001seed1.curve'
+  geofile='40001seed17.curve'
   open(20,file=geofile,access='stream')
   inquire(20, size=file_size)
   n=file_size/8
@@ -33,32 +58,29 @@ program main
 
 
   select case(type)
-    case('multi')
-      do i=1,nm
-        xel(i)=ds*(i-1)
-        xer(i)=ds*i
-        yel(i)=amp*yr(i)!+r*0.0001d0
-        !call random_number(r)
-        yer(i)=amp*yr(i+1)!+r*0.0001d0
-        write(*,*) xel(i),yel(i)
-      end do
-      write(*,*)
-      count=nm
-      do j=1,jmax
-      !xc(j)=0.5*nm*ds
-      !yc(j)=0.05*nm*ds
-      !ns(j)=500
+  case('multi')
+    do i=1,nm
+      xel(i)=ds*(i-1)
+      xer(i)=ds*i
+      yel(i)=amp*yr(i)-i*amp*yr(nm)/nm!+r*0.0001d0
+      !call random_number(r)
+      yer(i)=amp*yr(i+1)-(i+1)*amp*yr(nm)/nm!+r*0.0001d0
+      write(*,*) xel(i),yel(i)
+    end do
+    write(*,*)
+    count=nm
+    do j=1,jmax
       do i=1,ns(j)
-        xel(count+i)=xc(j)+ds*(i-1)
-        xer(count+i)=xc(j)+ds*i
-        yel(count+i)=yc(j)+amp*yr(nm+i)!+r*0.0001d0
+        xel(count+i)=xc(j)+cos(ang(j))*ds*(i-1)
+        xer(count+i)=xc(j)+cos(ang(j))*ds*i
+        yel(count+i)=yc(j)+sin(ang(j))*ds*(i-1)+amp*(yr(count+i)-yr(count))!+r*0.0001d0
         !call random_number(r)
-        yer(count+i)=yc(j)+amp*yr(nm+i+1)!+r*0.0001d0
+        yer(count+i)=yc(j)+sin(ang(j))*ds*i+amp*(yr(count+i+1)-yr(count))!+r*0.0001d0
         write(*,*) xel(count+i),yel(count+i)
       end do
       write(*,*)
       count=count+ns(j)
-      end do
+    end do
   end select
   NCELLg=count
   !output
