@@ -11,12 +11,12 @@ program main
   integer:: date_time(8)
   character(len=10):: sys_time(3)
   integer::NCELL, nstep1, lp, i,j,k,m,counts,interval,number,lrtrn,nl,NCELLg
-  integer::clock,cr,counts2,imax,jmax,NCELLm,seedsize,icomm,np,ierr,my_rank,load,eventcount,thec
+  integer::clock,cr,counts2,imax,jmax,NCELLm,seedsize,icomm,np,ierr,my_rank,load,eventcount,thec,inloc
   logical::slipping,outfield,limitsigma
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
-  real(8)::vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit
+  real(8)::vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau
   real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxevent
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds,amp,mui,strinit,velinit,velmax
   type(st_HACApK_lcontrol) :: st_ctl
@@ -99,10 +99,13 @@ program main
   !read(33,*) dum,vs !Swave speed (dc/s)
   !read(33,*) dum,pois !poisson ratio
 
-  !initial values
+  !initial values & nucleation
   read(33,*) dum,velinit !initial slip velocity
   read(33,*) dum,muinit !initial omega=V*theta
   read(33,*) dum,dtinit !initial timestep
+  read(33,*) dum,intau !initial timestep
+  read(33,*) dum,inloc !initial timestep
+
   read(33,*) dum,limitsigma
   read(33,*) dum,eps !error allowance in time integration in Runge-Kutta
   !read(*,*) amp
@@ -320,7 +323,7 @@ program main
   case('2dn')
    call initcond(phiG,sigmaG,tauG)
   end select
-  call add_nuclei(tauG)
+  call add_nuclei(tauG,intau,inloc)
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
   call MPI_SCATTERv(tauG,rcounts,displs,MPI_REAL8,tau,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
   call MPI_SCATTERv(sigmaG,rcounts,displs,MPI_REAL8,sigma,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
@@ -620,10 +623,15 @@ contains
   end subroutine initcond
 
 
-  subroutine add_nuclei(tauG)
+  subroutine add_nuclei(tauG,intau,inloc)
     implicit none
+    real(8),intent(in)::intau
+    integer,intent(in)::inloc
     real(8),intent(inout)::tauG(:)
-    tauG(2050:2200)=tauG(2050:2200)+8d0
+    integer::lc
+    lc=int(0.1d0*rigid*(1.d0-pois)*dc0/(b0-a0)/sigma0/(xcol(2)-xcol(1)))
+    write(*,*) 'lc=',lc
+    tauG(inloc-lc:inloc+lc)=tauG(inloc-lc:inloc+lc)+intau
   end subroutine
 
   subroutine coordinate3d(imax,jmax,ds,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
