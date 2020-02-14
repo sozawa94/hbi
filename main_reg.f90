@@ -313,17 +313,20 @@ program main
 
 
   !setting initial condition
+  if(my_rank.eq.0) then
   select case(problem)
   case('2dp','3dp')
    sigmaG=sigma0
    tauG=sigmaG*muinit
-   PhiG=aG*dlog(2*vref/velinit*sinh(tauG/sigmaG/aG))
-   omega=exp((PhiG(1)-mu0)/bG(1))*velinit/vref/bG(1)
+   velG=tauG/abs(tauG)*velinit
+   PhiG=aG*dlog(2*vref/velG*sinh(tauG/sigmaG/aG))
+   omega=exp((PhiG(1)-mu0)/bG(1))*abs(velG(1))/vref/bG(1)
    write(*,*) 'Omega',Omega
   case('2dn')
    call initcond(phiG,sigmaG,tauG)
   end select
   call add_nuclei(tauG,intau,inloc)
+  end if
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
   call MPI_SCATTERv(tauG,rcounts,displs,MPI_REAL8,tau,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
   call MPI_SCATTERv(sigmaG,rcounts,displs,MPI_REAL8,sigma,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
@@ -487,7 +490,7 @@ program main
       !for FDMAP
       !PsiG=ag*dlog(2.d0*vref/velG*dsinh(tauG/sigmaG/ag))
       do i=1,NCELLg
-        if(velG(i).gt.0.05d0.and.ruptG(i).le.1d-6) then
+        if(velG(i).gt.0.01d0.and.ruptG(i).le.1d-6) then
           ruptG(i)=x
           rupsG(i)=k
         end if
@@ -511,13 +514,13 @@ program main
         select case(problem)
         case('3dp')
           do i=1,NCELLg
-            write(50,'(5e15.6,i7)') xcol(i),zcol(i),log10(velG(i)),muG(i),dispG(i),k
+            write(50,'(5e15.6,i0)') xcol(i),zcol(i),log10(velG(i)),muG(i),dispG(i),k
           end do
           write(50,*)
           write(50,*)
         case('2dp','2dn')
           do i=1,NCELLg
-            write(50,'(i0,8e15.6,i6)') i,xcol(i),log10(abs(velG(i))),tauG(i),sigmaG(i),muG(i),dispG(i),phiG(i),x,k
+            write(50,'(i0,8e15.6,i0)') i,xcol(i),log10(abs(velG(i))),tauG(i),sigmaG(i),muG(i),dispG(i),phiG(i),x,k
           end do
           write(50,*)
         end select
@@ -577,7 +580,7 @@ program main
   !call output_to_FDMAP()
   if(my_rank.eq.0) then
     do i=1,NCELLg
-      write(48,'(3f16.4,i6)') xcol(i),ycol(i),ruptG(i),rupsG(i)
+      write(48,'(3f16.4,i8)') xcol(i),ycol(i),ruptG(i),rupsG(i)
     end do
   end if
 
@@ -606,7 +609,7 @@ contains
     real(8)::sxx0,sxy0,syy0,psi,theta
     syy0=sigma0
     sxy0=syy0*muinit
-    psi=45d0
+    psi=37d0
     sxx0=syy0*(1d0+2*sxy0/(syy0*dtan(2*psi/180d0*pi)))
     write(*,*) 'sxx0,sxy0,syy0'
     write(*,*) sxx0,sxy0,syy0
@@ -614,9 +617,15 @@ contains
     do i=1,size(velG)
         tauG(i)=sxy0*cos(2*ang(i))+0.5d0*(sxx0-syy0)*sin(2*ang(i))
         sigmaG(i)=sin(ang(i))**2*sxx0+cos(ang(i))**2*syy0+sxy0*sin(2*ang(i))
-        phiG(i)=ag(i)*dlog(2*vref/velinit*sinh(tauG(i)/sigmaG(i)/ag(i)))
-        omega=exp((PhiG(i)-mu0)/bG(i))*velinit/vref/bG(i)
-        write(16,*) i,omega
+        !constant velocity
+        velg(i)=velinit*tauG(i)/abs(tauG(i))
+        phiG(i)=ag(i)*dlog(2*vref/velinit*sinh(abs(tauG(i))/sigmaG(i)/ag(i)))
+
+        !constant Phi
+        !phiG(i)=0.27d0
+        !velG(i)= 2*vref*exp(-phiG(i)/aG(i))*sinh(tauG(i)/sigmaG(i)/aG(i))
+        omega=exp((PhiG(i)-mu0)/bG(i))*velG(i)/vref/bG(i)
+        write(16,*) ang(i)*180/pi,omega,tauG(i)/sigmaG(i)
     end do
     close(16)
 
@@ -629,7 +638,7 @@ contains
     integer,intent(in)::inloc
     real(8),intent(inout)::tauG(:)
     integer::lc
-    lc=int(0.1d0*rigid*(1.d0-pois)*dc0/(b0-a0)/sigma0/(xcol(2)-xcol(1)))
+    lc=int(0.15d0*rigid*(1.d0-pois)*dc0/(b0-a0)/sigma0/(xcol(2)-xcol(1)))
     write(*,*) 'lc=',lc
     tauG(inloc-lc:inloc+lc)=tauG(inloc-lc:inloc+lc)+intau
   end subroutine
@@ -992,7 +1001,7 @@ contains
       dsigdt(i)=sum_gn(i)
       !write(*,*) 'dsigdt',dsigdt(i)
 
-      fss=mu0+(a(i)-b(i))*dlog(abs(veltmp(i))/vref)
+      !fss=mu0+(a(i)-b(i))*dlog(abs(veltmp(i))/vref)
       !fss=fw(i)+(fss-fw(i))/(1.d0+(veltmp(i)/vw(i))**8)**0.125d0 !flash heating
       !slip law
       !dphidt(i)=-abs(veltmp(i))/dc(i)*(abs(tautmp(i))/sigmatmp(i)-fss)
@@ -1011,7 +1020,8 @@ contains
         dvdtau=2*vref*exp(-phitmp(i)/a(i))*cosh(tautmp(i)/sigmatmp(i)/a(i))/(a(i)*sigmatmp(i))
         dvdsig=-2*vref*exp(-phitmp(i)/a(i))*cosh(tautmp(i)/sigmatmp(i)/a(i))*tautmp(i)/(a(i)*sigmatmp(i)**2)
         !sign ok?
-        dvdphi=2*vref*exp(-phitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
+        !dvdphi=2*vref*exp(-phitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
+        dvdphi=-veltmp(i)/a(i)
         !dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(-dvdphi*phitmp(i)*dvdsig*sigmatmp(i))
         dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(dvdphi*dphidt(i)+dvdsig*dsigdt(i))
         dtaudt(i)=dtaudt(i)/(1d0+0.5d0*rigid/vs*dvdtau)
