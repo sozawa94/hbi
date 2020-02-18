@@ -1,12 +1,14 @@
 module m_HACApK_calc_entry_ij
   !use m_matel_ij
   use mod_constant
+  use dtriangular
   type :: st_HACApK_calc_entry
     real*8,pointer :: ao(:)
     character(128)::problem
     integer :: nd,lp61
     real(8),pointer::xcol(:),ycol(:),zcol(:),xel(:),xer(:),yel(:),yer(:),ang(:)
     real(8),pointer::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
+    real(8),pointer::ys1(:),ys2(:),ys3(:)
     character(128)::v
   end type st_HACApK_calc_entry
 
@@ -22,26 +24,14 @@ contains
       HACApK_entry_ij=matels2dp_ij(i,j,st_bemv%xcol,st_bemv%xel,st_bemv%xer)
 
     case('2dn')
-      select case(st_bemv%v)
-
-      case('s')
-        HACApK_entry_ij=matels2dn_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
-        & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang)
-
-      case('n')
-        HACApK_entry_ij=mateln2dn_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
-        & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang)
-
-      ! case('xx')
-      !   HACApK_entry_ij=inte11(i,j,st_bemv%xcol,st_bemv%ycol,&
-      !   & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang)
-
-      end select
-
+      HACApK_entry_ij=matel2dn_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
+      & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang,st_bemv%v)
     case('3dp')
       HACApK_entry_ij=matel3dp_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
       & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
       & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
+    case('3dn')
+      HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v)
     end select
 
   end function HACApK_entry_ij
@@ -74,13 +64,13 @@ contains
     ret3dp = factor*(ret1+ret2+ret3)
   end function
 
-  real(8) function matels2dn_ij(i,j,xcol,ycol,xel,xer,yel,yer,ang)
+  real(8) function matel2dn_ij(i,j,xcol,ycol,xel,xer,yel,yer,ang,v)
     implicit none
     integer,intent(in)::i,j
     real(8),intent(in)::xcol(:),ycol(:),xel(:),xer(:),yel(:),yer(:),ang(:)
     !real(8),intent(in)::rigid,pois
     real(8)::xc,yc,xsl,ysl,xsr,ysr,angr,angs
-    character(128)::v
+    character(128),intent(in)::v
 
     !write(*,*) i,j
 
@@ -95,36 +85,9 @@ contains
     angr=ang(i)
     angs=ang(j)
     !write(*,*) i,j,xc,yc,angr,angs
-    v='s'
-    call kern(v,xc,yc,xsl,ysl,xsr,ysr,angr,angs,matels2dn_ij)
+    call kern(v,xc,yc,xsl,ysl,xsr,ysr,angr,angs,matel2dn_ij)
 
     !matels_ij=rets(xc,yc,xsl,ysl,xsr,ysr,angr,angs,rigid,pois)
-  end function
-
-  real(8) function mateln2dn_ij(i,j,xcol,ycol,xel,xer,yel,yer,ang)
-    implicit none
-    integer,intent(in)::i,j
-    real(8),intent(in)::xcol(:),ycol(:),xel(:),xer(:),yel(:),yer(:),ang(:)
-    !real(8),intent(in)::rigid,pois
-    real(8)::xc,yc,xsl,ysl,xsr,ysr,angr,angs
-    character(128)::v
-
-    !write(*,*) i,j
-
-    xc=xcol(i)
-    yc=ycol(i)
-    !  write(*,*) xc,yc
-    xsl=xel(j)
-    xsr=xer(j)
-    ysl=yel(j)
-    ysr=yer(j)
-
-    angr=ang(i)
-    angs=ang(j)
-    !write(*,*) i,j,xc,yc,angr,angs
-    v='n'
-    call kern(v,xc,yc,xsl,ysl,xsr,ysr,angr,angs,mateln2dn_ij)
-    !mateln_ij=retn(v,xc,yc,xsl,ysl,xsr,ysr,angr,angs,rigid,pois)
   end function
 
   subroutine kern(v,xc,yc,xsl,ysl,xsr,ysr,angr,angs,ret)
@@ -225,5 +188,35 @@ contains
      inte22s=2*vs/pi*(1-pa**2)*x2*(x1**2-x2**2)/r**4
      return
    end function
+
+  real(8) function matels1_ij(i,j,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,v)
+  integer,intent(in)::i,j
+  real(8),intent(in)::xcol(:),ycol(:),zcol(:),xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
+  character(128),intent(in)::v
+  real(8)::P1(3),P2(3),P3(3)
+  real(8)::Sxx,Syy,Szz,Sxy,Sxz,Syz
+
+  P1=(/xs1(j),ys1(j),zs1(j)/)
+  P2=(/xs2(j),ys2(j),zs2(j)/)
+  P3=(/xs3(j),ys3(j),zs3(j)/)
+
+  call TDstressFS(xcol(i),ycol(i),zcol(i),P1,P2,P3,1.d0,0.d0,0.d0,rigid,rigid,&
+    & Sxx,Syy,Szz,Sxy,Sxz,Syz)
+  select case('v')
+  case('xx')
+    matels1_ij=Sxx
+  case('yy')
+    matels1_ij=Syy
+  case('zz')
+    matels1_ij=Szz
+  case('xy')
+    matels1_ij=Sxy
+  case('xz')
+    matels1_ij=Sxz
+  case('yz')
+    matels1_ij=Syz
+  end select
+    return
+ end function matels1_ij
 
 endmodule m_HACApK_calc_entry_ij

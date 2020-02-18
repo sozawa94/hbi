@@ -180,7 +180,7 @@ program main
     case('2dn') !geometry file is necessary
       call coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang)
     case('3dp')
-      call coordinate3d(imax,jmax,ds,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
+      call coordinate3dp(imax,jmax,ds,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
     end select
   end if
 
@@ -514,13 +514,13 @@ program main
         select case(problem)
         case('3dp')
           do i=1,NCELLg
-            write(50,'(5e15.6,i0)') xcol(i),zcol(i),log10(velG(i)),muG(i),dispG(i),k
+            write(50,'(5e15.6,i10)') xcol(i),zcol(i),log10(velG(i)),muG(i),dispG(i),k
           end do
           write(50,*)
           write(50,*)
         case('2dp','2dn')
           do i=1,NCELLg
-            write(50,'(i0,8e15.6,i0)') i,xcol(i),log10(abs(velG(i))),tauG(i),sigmaG(i),muG(i),dispG(i),phiG(i),x,k
+            write(50,'(i0,8e15.6,i10)') i,xcol(i),log10(abs(velG(i))),tauG(i),sigmaG(i),muG(i),dispG(i),phiG(i),x,k
           end do
           write(50,*)
         end select
@@ -580,7 +580,7 @@ program main
   !call output_to_FDMAP()
   if(my_rank.eq.0) then
     do i=1,NCELLg
-      write(48,'(3f16.4,i8)') xcol(i),ycol(i),ruptG(i),rupsG(i)
+      write(48,'(3f16.4,i10)') xcol(i),ycol(i),ruptG(i),rupsG(i)
     end do
   end if
 
@@ -643,7 +643,55 @@ contains
     tauG(inloc-lc:inloc+lc)=tauG(inloc-lc:inloc+lc)+intau
   end subroutine
 
-  subroutine coordinate3d(imax,jmax,ds,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
+  subroutine coordinate2dp(NCELLg,ds,xel,xer,xcol)
+      implicit none
+      integer,intent(in)::NCELLg
+      real(8),intent(in)::ds
+      real(8),intent(out)::xel(:),xer(:),xcol(:)
+      integer::i,j,k
+
+      !flat fault with element size ds
+      do i=1,NCELLg
+        xel(i)=(i-1)*ds
+        xer(i)=i*ds
+        xcol(i)=0.5d0*(xel(i)+xer(i))
+        !write(14,'(3e16.6)') xcol(i),xel(i),xer(i)
+      enddo
+      !close(14)
+      return
+  end subroutine
+
+  subroutine coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang)
+    implicit none
+    integer,intent(in)::NCELLg
+    character(128),intent(in)::geofile
+    real(8),intent(out)::xel(:),xer(:),yel(:),yer(:),xcol(:),ycol(:),ang(:)
+    integer::i,j,k,file_size,n,Np,Nm,ncellf
+    real(8)::dx,xr(0:NCELLg),yr(0:NCELLg),nx(NCELLg),ny(NCELLg),r(NCELLg)
+    real(8),allocatable::data(:)
+
+    !reading mesh data from mkelm.f90
+    open(20,file=geofile,access='stream')
+    read(20) xel,xer,yel,yer
+
+    !computing local angles and collocation points
+    do i=1,NCELLg
+      ang(i)=datan((yer(i)-yel(i))/(xer(i)-xel(i)))
+      xcol(i)=0.5d0*(xel(i)+xer(i))
+      ycol(i)=0.5d0*(yel(i)+yer(i))
+    end do
+
+    !output to file
+    ! open(14,file='top3.dat')
+    ! do i=1,NCELLg
+    !   write(14,'(7e16.6)') xcol(i),ycol(i),ang(i),xel(i),xer(i),yel(i),yer(i)
+    ! end do
+    ! close(14)
+
+    return
+  end subroutine
+
+  subroutine coordinate3dp(imax,jmax,ds,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
     implicit none
     integer,intent(in)::imax,jmax
     real(8),intent(in)::ds
@@ -665,56 +713,23 @@ contains
         zs4(k)=zcol(k)-0.5d0*ds
       end do
     end do
+    return
+  end subroutine coordinate3dp
 
-  end subroutine coordinate3d
-
-  subroutine coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang)
+  subroutine coordinate3dn(NCELL,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3)
     implicit none
-    integer,intent(in)::NCELLg
-    character(128),intent(in)::geofile
-    real(8),intent(out)::xel(:),xer(:),yel(:),yer(:),xcol(:),ycol(:),ang(:)
-    integer::i,j,k,file_size,n,Np,Nm,ncellf
-    real(8)::dx,xr(0:NCELLg),yr(0:NCELLg),nx(NCELLg),ny(NCELLg),r(NCELLg)
-    real(8),allocatable::data(:)
+    integer,intent(in)::NCELL
+    real(8),intent(out)::xcol(:),ycol(:),zcol(:)
+    real(8),intent(out)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
+    integer::i,j,k,dum
 
-    open(20,file=geofile,access='stream')
-    read(20) xel,xer,yel,yer
-    !write(*, '(a, i12)') "file size = ", file_size
-
-    do i=1,NCELLg
-      ang(i)=datan((yer(i)-yel(i))/(xer(i)-xel(i)))
-      xcol(i)=0.5d0*(xel(i)+xer(i))
-      ycol(i)=0.5d0*(yel(i)+yer(i))
+    !reading mesh data from in_fgeom.dat of mkelm.c
+    open(20,file=geofile)
+    do i=1,NCELL
+    read(20,*) dum,xcol(i),ycol(i),zcol(i),xs1(i),ys1(i),zs1(i),xs2(i),ys2(i),zs2(i),xs3(i),ys3(i),zs3(i)
     end do
-
-    ! open(14,file='top3.dat')
-    ! do i=1,NCELLg
-    !   write(14,'(7e16.6)') xcol(i),ycol(i),ang(i),xel(i),xer(i),yel(i),yer(i)
-    ! end do
-    ! close(14)
-
     return
-  end subroutine
-
-
-  subroutine coordinate2dp(NCELLg,ds,xel,xer,xcol)
-    implicit none
-    integer,intent(in)::NCELLg
-    real(8),intent(in)::ds
-    real(8),intent(out)::xel(:),xer(:),xcol(:)
-    integer::i,j,k
-
-    !flat fault with element size ds
-    !open(14,file='top.dat')
-    do i=1,NCELLg
-      xel(i)=(i-1)*ds
-      xer(i)=i*ds
-      xcol(i)=0.5d0*(xel(i)+xer(i))
-      !write(14,'(3e16.6)') xcol(i),xel(i),xer(i)
-    enddo
-    !close(14)
-    return
-  end subroutine
+  end subroutine coordinate3dn
 
   subroutine params(problem,NCELLg,a0,b0,dc0,vc0,ag,bg,dcg,vcg,fwg,vwg)
     character(128),intent(in)::problem
@@ -734,6 +749,7 @@ contains
     end do
 
   end subroutine
+
   subroutine loading(problem,NCELLg,sr,taudotG,sigdotG)
     character(128),intent(in)::problem
     integer,intent(in)::NCELLg
