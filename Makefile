@@ -6,7 +6,7 @@ LDFLAGS = -mkl=parallel
 
 LINK=$(F90)
 
-OBJS= m_const.o HACApK_lib.o m_HACApK_calc_entry_ij.o m_HACApK_base.o m_HACApK_solve.o m_HACApK_use.o main_reg.o \
+OBJS= m_const.o TDstressFS.o HACApK_lib.o m_HACApK_calc_entry_ij.o m_HACApK_base.o m_HACApK_solve.o m_HACApK_use.o main_reg.o \
 
 
 TARGET=hbiem

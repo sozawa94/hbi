@@ -21,6 +21,8 @@ program main
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds,amp,mui,strinit,velinit,velmax
   type(st_HACApK_lcontrol) :: st_ctl
   type(st_HACApK_leafmtxp) :: st_leafmtxps,st_leafmtxpn
+  type(st_HACApK_leafmtxp) :: st_leafmtxp_xx,st_leafmtxp_xy,st_leafmtxp_yy
+  type(st_HACApK_leafmtxp) :: st_leafmtxp_xz,st_leafmtxp_yz,st_leafmtxp_zz
   type(st_HACApK_calc_entry) :: st_bemv
   !type(t_deriv)::
   real(8),allocatable ::coord(:,:),vmax(:)
@@ -29,10 +31,12 @@ program main
   real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:)
   real(8),allocatable::phiG(:),velG(:),tauG(:),sigmaG(:),dispG(:),muG(:),ruptG(:)
   real(8),allocatable::xcol(:),ycol(:),zcol(:)
-  real(8),allocatable::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
+  real(8),allocatable::xs1(:),xs2(:),xs3(:),xs4(:) !for 3dp
+  real(8),allocatable::zs1(:),zs2(:),zs3(:),zs4(:) !for 3dp
+  real(8),allocatable::ys1(:),ys2(:),ys3(:) !for 3dn
   real(8),allocatable::xel(:),xer(:),yel(:),yer(:),ang(:)
   real(8),allocatable::y(:),yscal(:),dydx(:),xcoll(:),zcoll(:),yg(:)
-  real(8),allocatable::xr(:),yr(:),zr(:),ai(:,:)
+  !real(8),allocatable::xr(:),yr(:),zr(:),ai(:,:)
   integer::r1,r2,r3,NVER,amari,out,kmax,loci,locj,loc,stat
   integer,allocatable::displs(:),rcounts(:),vmaxin(:),rupsG(:)
 
@@ -57,7 +61,7 @@ program main
   select case(problem)
   case('2dp')
     read(33,*) dum,NCELLg
-  case('2dn')
+  case('2dn','3dn')
     read(33,*) dum,NCELLg
     read(33,*) dum,geofile
   case('3dp')
@@ -158,6 +162,15 @@ program main
     xcol=0d0; zcol=0d0
     xs1=0d0; xs2=0d0; xs3=0d0; xs4=0d0
     zs1=0d0; zs2=0d0; zs3=0d0; zs4=0d0
+  case('3dn')
+    allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg))
+    allocate(xs1(NCELLg),xs2(NCELLg),xs3(NCELLg))
+    allocate(ys1(NCELLg),ys2(NCELLg),ys3(NCELLg))
+    allocate(zs1(NCELLg),zs2(NCELLg),zs3(NCELLg))
+    xcol=0d0; ycol=0d0; zcol=0d0
+    xs1=0d0; xs2=0d0; xs3=0d0
+    ys1=0d0; ys2=0d0; ys3=0d0
+    zs1=0d0; zs2=0d0; zs3=0d0
   end select
 
   select case(problem)
@@ -165,8 +178,8 @@ program main
     allocate(y(2*NCELL),yscal(2*NCELL),dydx(2*NCELL))
   case('2dn')
     allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL))
-  !case('2dnv')
-  !  allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL))
+  case('3dn')
+    allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL))
   end select
 
   allocate(vmax(NCELLg),vmaxin(NcELLg))
@@ -181,6 +194,8 @@ program main
       call coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang)
     case('3dp')
       call coordinate3dp(imax,jmax,ds,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
+    case('3dn')
+      call coordinate3dn(NCELLg,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3)
     end select
   end if
 
@@ -220,6 +235,19 @@ program main
     call MPI_BCAST(zs4, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
     call MPI_SCATTERv(xcol,rcounts,displs,MPI_REAL8,xcoll,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
     call MPI_SCATTERv(zcol,rcounts,displs,MPI_REAL8,zcoll,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+  case('3dn')
+    call MPI_BCAST(xcol, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(ycol, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(zcol, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(xs1, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(xs2, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(xs3, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(ys1, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(ys2, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(ys3, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(zs1, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(zs2, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+    call MPI_BCAST(zs3, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
   end select
 
 
@@ -256,6 +284,24 @@ program main
     st_bemv%zs4=zs4
     st_bemv%problem=problem
 
+  case('3dn')
+    allocate(st_bemv%xcol(NCELLg),st_bemv%ycol(NCELLg),st_bemv%zcol(NCELLg))
+    allocate(st_bemv%xs1(NCELLg),st_bemv%xs2(NCELLg),st_bemv%xs3(NCELLg))
+    allocate(st_bemv%ys1(NCELLg),st_bemv%ys2(NCELLg),st_bemv%ys3(NCELLg))
+    allocate(st_bemv%zs1(NCELLg),st_bemv%zs2(NCELLg),st_bemv%zs3(NCELLg))
+    st_bemv%xcol=xcol
+    st_bemv%ycol=ycol
+    st_bemv%zcol=zcol
+    st_bemv%xs1=xs1
+    st_bemv%xs2=xs2
+    st_bemv%xs3=xs3
+    st_bemv%ys1=ys1
+    st_bemv%ys2=ys2
+    st_bemv%ys3=ys3
+    st_bemv%zs1=zs1
+    st_bemv%zs2=zs2
+    st_bemv%zs3=zs3
+    st_bemv%problem=problem
   end select
 
 
@@ -278,10 +324,16 @@ program main
       coord(i,3)=0.d0
     end do
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-    st_bemv%v='s'
-    lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,1d-4)
-    st_bemv%v='n'
-    lrtrn=HACApK_generate(st_leafmtxpn,st_bemv,st_ctl,coord,1d-4)
+    ! st_bemv%v='s'
+    ! lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,1d-4)
+    ! st_bemv%v='n'
+    ! lrtrn=HACApK_generate(st_leafmtxpn,st_bemv,st_ctl,coord,1d-4)
+    st_bemv%v='xx'
+    lrtrn=HACApK_generate(st_leafmtxp_xx,st_bemv,st_ctl,coord,1d-4)
+    st_bemv%v='xy'
+    lrtrn=HACApK_generate(st_leafmtxp_xy,st_bemv,st_ctl,coord,1d-4)
+    st_bemv%v='yy'
+    lrtrn=HACApK_generate(st_leafmtxp_yy,st_bemv,st_ctl,coord,1d-4)
 
   case('3dp')
     do i=1,NCELLg
@@ -291,6 +343,27 @@ program main
     end do
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,1d-4)
+
+  case('2dn')
+    do i=1,NCELLg
+      coord(i,1)=xcol(i)
+      coord(i,2)=ycol(i)
+      coord(i,3)=zcol(i)
+    end do
+    call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+
+    st_bemv%v='xx'
+    lrtrn=HACApK_generate(st_leafmtxp_xx,st_bemv,st_ctl,coord,1d-4)
+    st_bemv%v='xy'
+    lrtrn=HACApK_generate(st_leafmtxp_xy,st_bemv,st_ctl,coord,1d-4)
+    st_bemv%v='yy'
+    lrtrn=HACApK_generate(st_leafmtxp_yy,st_bemv,st_ctl,coord,1d-4)
+    st_bemv%v='xz'
+    lrtrn=HACApK_generate(st_leafmtxp_xz,st_bemv,st_ctl,coord,1d-4)
+    st_bemv%v='yz'
+    lrtrn=HACApK_generate(st_leafmtxp_yz,st_bemv,st_ctl,coord,1d-4)
+    st_bemv%v='zz'
+    lrtrn=HACApK_generate(st_leafmtxp_zz,st_bemv,st_ctl,coord,1d-4)
   end select
 
   !setting frictional parameters
@@ -596,8 +669,18 @@ select case(problem)
 case('2dp','3dp')
   lrtrn=HACApK_free_leafmtxp(st_leafmtxps)
 case('2dn')
-  lrtrn=HACApK_free_leafmtxp(st_leafmtxps)
-  lrtrn=HACApK_free_leafmtxp(st_leafmtxpn)
+  !lrtrn=HACApK_free_leafmtxp(st_leafmtxps)
+  !lrtrn=HACApK_free_leafmtxp(st_leafmtxpn)
+  lrtrn=HACApK_free_leafmtxp(st_leafmtxp_xx)
+  lrtrn=HACApK_free_leafmtxp(st_leafmtxp_xy)
+  lrtrn=HACApK_free_leafmtxp(st_leafmtxp_yy)
+case('3dn')
+  lrtrn=HACApK_free_leafmtxp(st_leafmtxp_xx)
+  lrtrn=HACApK_free_leafmtxp(st_leafmtxp_xy)
+  lrtrn=HACApK_free_leafmtxp(st_leafmtxp_yy)
+  lrtrn=HACApK_free_leafmtxp(st_leafmtxp_xz)
+  lrtrn=HACApK_free_leafmtxp(st_leafmtxp_yz)
+  lrtrn=HACApK_free_leafmtxp(st_leafmtxp_zz)
 end select
 lrtrn=HACApK_finalize(st_ctl)
 Call MPI_FINALIZE(ierr)
@@ -721,12 +804,12 @@ contains
     integer,intent(in)::NCELL
     real(8),intent(out)::xcol(:),ycol(:),zcol(:)
     real(8),intent(out)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
-    integer::i,j,k,dum
+    integer::i,j,k
 
-    !reading mesh data from in_fgeom.dat of mkelm.c
+    !reading mesh data from in_fgeom.dat of mkelm.c of Ando's code
     open(20,file=geofile)
     do i=1,NCELL
-    read(20,*) dum,xcol(i),ycol(i),zcol(i),xs1(i),ys1(i),zs1(i),xs2(i),ys2(i),zs2(i),xs3(i),ys3(i),zs3(i)
+    read(20,*) k,xcol(i),ycol(i),zcol(i),xs1(i),ys1(i),zs1(i),xs2(i),ys2(i),zs2(i),xs3(i),ys3(i),zs3(i)
     end do
     return
   end subroutine coordinate3dn
@@ -739,7 +822,7 @@ contains
     integer::i
     do i=1,NCELLg
       ag(i)=a0
-      !if(abs(i-NCELLg/2).gt.NCELLg/4) ag(i)=0.024d0
+      !if(abs(i-NCELLg/2).gt.NCELLg/4) ag(i)=0.024d0 for cycle
       bg(i)=b0
       dcg(i)=dc0
       vcg(i)=vc0
@@ -810,6 +893,8 @@ contains
     real(8) :: veltmp(NCELL),tautmp(NCELL),sigmatmp(NCELL),efftmp(NCELL),phitmp(NCELL)
     real(8) :: dlnvdt(NCELL),dtaudt(NCELL),dsigdt(NCELL),deffdt(NCELL),dphidt(NCELL)
     real(8) :: sum_gs(NCELL),sum_gn(NCELL)
+    real(8) :: sum_xx(NCELL),sum_xy(NCELL),sum_yy(NCELL)
+    real(8) :: sum_xxG(NCELLg),sum_xyG(NCELLg),sum_yyG(NCELLg)
     real(8)::veltmpg(NCELLg),sum_gsg(NCELLg),sum_gng(NCELLg),efftmpG(NCELLg)
     real(8):: c1, c2, c3, arg,c,g,tauss
     integer :: i, j, nc,ierr,lrtrn
@@ -855,18 +940,28 @@ contains
       &     MPI_REAL8,MPI_COMM_WORLD,ierr)
 
       !matrix-vector mutiplation
-      st_bemv%v='s'
-      !veltmp=1.d-6
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
-      !if(my_rank.eq.0) write(*,*) sum_gs
-      !stop
-      st_bemv%v='n'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxpn,st_bemv,st_ctl,sum_gnG,veltmpG)
-      !if(my_rank.eq.10) write(*,*) sum_gn(1)
+      ! st_bemv%v='s'
+      ! lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
+      ! st_bemv%v='n'
+      ! lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxpn,st_bemv,st_ctl,sum_gnG,veltmpG)
 
-      call MPI_SCATTERv(sum_gsG,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      call MPI_SCATTERv(sum_gnG,rcounts,displs,MPI_REAL8,sum_gn,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      st_bemv%v='xx'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,veltmpG)
+      st_bemv%v='xy'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,veltmpG)
+      st_bemv%v='yy'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,veltmpG)
 
+      ! call MPI_SCATTERv(sum_gsG,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      ! call MPI_SCATTERv(sum_gnG,rcounts,displs,MPI_REAL8,sum_gn,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      call MPI_SCATTERv(sum_xxG,rcounts,displs,MPI_REAL8,sum_xx,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      call MPI_SCATTERv(sum_xyG,rcounts,displs,MPI_REAL8,sum_xy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      call MPI_SCATTERv(sum_yyG,rcounts,displs,MPI_REAL8,sum_yy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+
+      do i=1,NCELL
+        sum_gs(i)=0.5d0*(sum_xx(i)-sum_yy(i))*sin(2*ang(i))+sum_xy(i)*cos(2*ang(i))
+        sum_gn(i)=0.5d0*(sum_xx(i)+sum_yy(i))-0.5d0*(sum_xx(i)-sum_yy(i))*cos(2*ang(i))-sum_xy(i)*sin(2*ang(i))
+      end do
       do i=1,NCELL
         sum_gs(i)=sum_gs(i)+taudot(i)
         sum_gn(i)=sum_gn(i)+sigdot(i)
