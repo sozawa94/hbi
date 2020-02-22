@@ -47,27 +47,27 @@ contains
     character(128),intent(in)::v
     real(8)::xp,xm,yp,ym,kern11,kern12,kern22,sin2,cos2,ds
 
-    ! xp=cos(ang(j))*(xcol(i)-xel(j))-sin(ang(j))*(ycol(i)-yel(j))
-    ! xm=cos(ang(j))*(xcol(i)-xer(j))-sin(ang(j))*(ycol(i)-yer(j))
-    ! yp=sin(ang(j))*(xcol(i)-xel(j))+cos(ang(j))*(ycol(i)-yel(j))
-    ! ym=sin(ang(j))*(xcol(i)-xer(j))+cos(ang(j))*(ycol(i)-yer(j))
-    ! kern11=-0.5d0*rigid/vs*(inte11s(xp,yp)-inte11s(xm,ym))
-    ! kern12=-0.5d0*rigid/vs*(inte12s(xp,yp)-inte12s(xm,ym))
-    ! kern22=-0.5d0*rigid/vs*(inte22s(xp,yp)-inte22s(xm,ym))
+    xp=cos(ang(j))*(xcol(i)-xel(j))+sin(ang(j))*(ycol(i)-yel(j))
+    xm=cos(ang(j))*(xcol(i)-xer(j))+sin(ang(j))*(ycol(i)-yer(j))
+    yp=-sin(ang(j))*(xcol(i)-xel(j))+cos(ang(j))*(ycol(i)-yel(j))
+    ym=-sin(ang(j))*(xcol(i)-xer(j))+cos(ang(j))*(ycol(i)-yer(j))
+    kern11=-0.5d0*rigid/vs*(inte11s(xp,yp)-inte11s(xm,ym))
+    kern12=-0.5d0*rigid/vs*(inte12s(xp,yp)-inte12s(xm,ym))
+    kern22=-0.5d0*rigid/vs*(inte22s(xp,yp)-inte22s(xm,ym))
 
-    xp=cos(ang(j))*(xcol(i)-xcol(j))+sin(ang(j))*(ycol(i)-ycol(j))
-    yp=-sin(ang(j))*(xcol(i)-xcol(j))+cos(ang(j))*(ycol(i)-ycol(j))
-    ds=sqrt((xer(j)-xel(j))**2+(yer(j)-yel(j))**2)
-    !write(*,*) xp,yp,ds
-    kern11=-0.5d0*rigid/vs*(inte11s(xp+0.5d0*ds,yp)-inte11s(xp-0.5d0*ds,yp))
-    kern12=-0.5d0*rigid/vs*(inte12s(xp+0.5d0*ds,yp)-inte12s(xp-0.5d0*ds,yp))
-    kern22=-0.5d0*rigid/vs*(inte22s(xp+0.5d0*ds,yp)-inte22s(xp-0.5d0*ds,yp))
+    ! xp=dcos(ang(j))*(xcol(i)-xcol(j))+dsin(ang(j))*(ycol(i)-ycol(j))
+    ! yp=-dsin(ang(j))*(xcol(i)-xcol(j))+dcos(ang(j))*(ycol(i)-ycol(j))
+    ! ds=dsqrt((xer(j)-xel(j))**2+(yer(j)-yel(j))**2)
+    ! !write(*,*) xp,yp,ds
+    ! kern11=-0.5d0*rigid/vs*(inte11s(xp+0.5d0*ds,yp)-inte11s(xp-0.5d0*ds,yp))
+    ! kern12=-0.5d0*rigid/vs*(inte12s(xp+0.5d0*ds,yp)-inte12s(xp-0.5d0*ds,yp))
+    ! kern22=-0.5d0*rigid/vs*(inte22s(xp+0.5d0*ds,yp)-inte22s(xp-0.5d0*ds,yp))
     !kern12=-kern12
     !write(*,*) kern11,kern22
 
     !=>global coordinate system
-    sin2=-dsin(2*ang(j))
-    cos2=dcos(2*ang(j))
+    sin2=dsin(-2*ang(j))
+    cos2=dcos(-2*ang(j))
     select case(v)
     case('xx')
       tensor2d_ij=0.5d0*(kern11+kern22)+0.5d0*(kern11-kern22)*cos2+kern12*sin2

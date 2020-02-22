@@ -344,7 +344,7 @@ program main
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,1d-4)
 
-  case('2dn')
+  case('3dn')
     do i=1,NCELLg
       coord(i,1)=xcol(i)
       coord(i,2)=ycol(i)
@@ -906,7 +906,7 @@ contains
         phitmp(i) = y(2*i-1)
         tautmp(i) = y(2*i)
         sigmatmp(i)=sigma(i)
-        veltmp(i) = 2*vref*exp(-phitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))
+        veltmp(i) = 2*vref*dexp(-phitmp(i)/a(i))*dsinh(tautmp(i)/sigmatmp(i)/a(i))
       enddo
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
       call MPI_ALLGATHERv(veltmp,NCELL,MPI_REAL8,veltmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
@@ -933,18 +933,13 @@ contains
         phitmp(i) = y(3*i-2)
         tautmp(i) = y(3*i-1)
         sigmatmp(i) = y(3*i)
-        veltmp(i) = 2*vref*exp(-phitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))
+        veltmp(i) = 2*vref*dexp(-phitmp(i)/a(i))*dsinh(tautmp(i)/sigmatmp(i)/a(i))
       enddo
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
       call MPI_ALLGATHERv(Veltmp,NCELL,MPI_REAL8,veltmpG,rcounts,displs,                &
       &     MPI_REAL8,MPI_COMM_WORLD,ierr)
 
       !matrix-vector mutiplation
-      ! st_bemv%v='s'
-      ! lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
-      ! st_bemv%v='n'
-      ! lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxpn,st_bemv,st_ctl,sum_gnG,veltmpG)
-
       st_bemv%v='xx'
       lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,veltmpG)
       st_bemv%v='xy'
@@ -952,16 +947,40 @@ contains
       st_bemv%v='yy'
       lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,veltmpG)
 
-      ! call MPI_SCATTERv(sum_gsG,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      ! call MPI_SCATTERv(sum_gnG,rcounts,displs,MPI_REAL8,sum_gn,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
       call MPI_SCATTERv(sum_xxG,rcounts,displs,MPI_REAL8,sum_xx,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
       call MPI_SCATTERv(sum_xyG,rcounts,displs,MPI_REAL8,sum_xy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
       call MPI_SCATTERv(sum_yyG,rcounts,displs,MPI_REAL8,sum_yy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
 
       do i=1,NCELL
-        sum_gs(i)=0.5d0*(sum_xx(i)-sum_yy(i))*sin(2*ang(i))+sum_xy(i)*cos(2*ang(i))
-        sum_gn(i)=0.5d0*(sum_xx(i)+sum_yy(i))-0.5d0*(sum_xx(i)-sum_yy(i))*cos(2*ang(i))-sum_xy(i)*sin(2*ang(i))
+        sum_gs(i)=0.5d0*(sum_xx(i)-sum_yy(i))*dsin(-2*ang(i))+sum_xy(i)*dcos(-2*ang(i))
+        sum_gn(i)=0.5d0*(sum_xx(i)+sum_yy(i))-0.5d0*(sum_xx(i)-sum_yy(i))*dcos(2*ang(i))-sum_xy(i)*dsin(2*ang(i))
       end do
+      do i=1,NCELL
+        sum_gs(i)=sum_gs(i)+taudot(i)
+        sum_gn(i)=sum_gn(i)+sigdot(i)
+      end do
+
+    case('2dn_vector')
+      do i = 1, NCELL
+        phitmp(i) = y(3*i-2)
+        tautmp(i) = y(3*i-1)
+        sigmatmp(i) = y(3*i)
+        veltmp(i) = 2*vref*dexp(-phitmp(i)/a(i))*dsinh(tautmp(i)/sigmatmp(i)/a(i))
+      enddo
+      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      call MPI_ALLGATHERv(Veltmp,NCELL,MPI_REAL8,veltmpG,rcounts,displs,                &
+      &     MPI_REAL8,MPI_COMM_WORLD,ierr)
+
+      !matrix-vector mutiplation
+      st_bemv%v='s'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
+      st_bemv%v='n'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxpn,st_bemv,st_ctl,sum_gnG,veltmpG)
+
+
+      call MPI_SCATTERv(sum_gsG,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      call MPI_SCATTERv(sum_gnG,rcounts,displs,MPI_REAL8,sum_gn,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+
       do i=1,NCELL
         sum_gs(i)=sum_gs(i)+taudot(i)
         sum_gn(i)=sum_gn(i)+sigdot(i)
@@ -1117,10 +1136,10 @@ contains
       !slip law
       !dphidt(i)=-abs(veltmp(i))/dc(i)*(abs(tautmp(i))/sigmatmp(i)-fss)
       !aging law
-      dphidt(i)=b(i)*vref/dc(i)*exp((mu0-phitmp(i))/b(i))-abs(veltmp(i))/dc(i)
+      dphidt(i)=b(i)*vref/dc(i)*dexp((mu0-phitmp(i))/b(i))-abs(veltmp(i))/dc(i)
 
-      dvdtau=2*vref*exp(-phitmp(i)/a(i))*cosh(tautmp(i)/sigmatmp(i)/a(i))/(a(i)*sigmatmp(i))
-      dvdsig=-2*vref*exp(-phitmp(i)/a(i))*cosh(tautmp(i)/sigmatmp(i)/a(i))*tautmp(i)/(a(i)*sigmatmp(i)**2)
+      dvdtau=2*vref*dexp(-phitmp(i)/a(i))*dcosh(tautmp(i)/sigmatmp(i)/a(i))/(a(i)*sigmatmp(i))
+      dvdsig=-2*vref*dexp(-phitmp(i)/a(i))*dcosh(tautmp(i)/sigmatmp(i)/a(i))*tautmp(i)/(a(i)*sigmatmp(i)**2)
       !dvdphi=2*vref*exp(-phitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
       dvdphi=-veltmp(i)/a(i)
       !dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(dvdphi*phitmp(i)*dvdsig*sigmatmp(i))
@@ -1128,8 +1147,8 @@ contains
       dtaudt(i)=dtaudt(i)/(1d0+0.5d0*rigid/vs*dvdtau)
       !write(*,*) rigid/vs*dvdtau
       if(veltmp(i).le.0d0) then
-        dvdtau=2*vref*exp(-phitmp(i)/a(i))*cosh(tautmp(i)/sigmatmp(i)/a(i))/(a(i)*sigmatmp(i))
-        dvdsig=-2*vref*exp(-phitmp(i)/a(i))*cosh(tautmp(i)/sigmatmp(i)/a(i))*tautmp(i)/(a(i)*sigmatmp(i)**2)
+        dvdtau=2*vref*dexp(-phitmp(i)/a(i))*dcosh(tautmp(i)/sigmatmp(i)/a(i))/(a(i)*sigmatmp(i))
+        dvdsig=-2*vref*dexp(-phitmp(i)/a(i))*dcosh(tautmp(i)/sigmatmp(i)/a(i))*tautmp(i)/(a(i)*sigmatmp(i)**2)
         !sign ok?
         !dvdphi=2*vref*exp(-phitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
         dvdphi=-veltmp(i)/a(i)
@@ -1138,8 +1157,28 @@ contains
         dtaudt(i)=dtaudt(i)/(1d0+0.5d0*rigid/vs*dvdtau)
       end if
     end do
-
   end subroutine
+  !   subroutine deriv_3dn(sum_gs1,sum_gs2,sum_gn,phitmp,tau1tmp,tau2tmp,sigmatmp,vel1tmp,vel2tmp,dphidt,dtau1dt,dtau2dt,dsigdt)
+  !     implicit none
+  !     integer::i
+  !     real(8)::fss,dvdtau,dvdsig,dvdphi,absV
+  !     !type(t_deriv),intent(in) ::
+  !     real(8),intent(in)::sum_gs1(:),sum_gs2(:),sum_gn(:),phitmp(:),tau1tmp(:),tau2tmp(:),sigmatmp(:),vel1tmp(:),vel2tmp(:)
+  !     real(8),intent(out)::dphidt(:),dtau1dt(:),dtau2dt(:),dsigdt(:)
+  !     do i=1,size(phitmp)
+  !       !write(*,*) 'vel',veltmp(i)
+  !       dsigdt(i)=sum_gn(i)
+  !       !write(*,*) 'dsigdt',dsigdt(i)
+  !
+  !       !fss=mu0+(a(i)-b(i))*dlog(abs(veltmp(i))/vref)
+  !       !fss=fw(i)+(fss-fw(i))/(1.d0+(veltmp(i)/vw(i))**8)**0.125d0 !flash heating
+  !       !slip law
+  !       !dphidt(i)=-abs(veltmp(i))/dc(i)*(abs(tautmp(i))/sigmatmp(i)-fss)
+  !       !aging law
+  !       absV=dsqrt(vel1tmp(i)**2+vel2tmp(i)**2)
+  !       dphidt(i)=b(i)*vref/dc(i)*exp((mu0-phitmp(i))/b(i))-absV/dc(i)
+  !     end do
+  ! end subroutine
 
   !---------------------------------------------------------------------
   subroutine rkqs(y,dydx,x,htry,eps,yscal,hdid,hnext)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
