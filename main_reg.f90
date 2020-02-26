@@ -527,12 +527,15 @@ program main
         tau(i) = y(3*i-1)
         sigma(i) = y(3*i)
         !artificial limit of normal stress motivated by plastic simulation
+        !artificail limit of friction
         if(limitsigma) then
           if(sigma(i).lt.30d0) sigma(i)=30d0
           if(sigma(i).gt.170d0) sigma(i)=170d0
+          !if(tau(i)/sigma(i).gt.0.64) tau(i)=0.64d0*sigma(i)
+          !if(tau(i)/sigma(i).lt.-0.64) tau(i)=-0.64d0*sigma(i)
         end if
         !disp(i) = disp(i) + exp( y(3*i-2) i)*dtdid
-        vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
+        vel(i)= 2*vref*dexp(-phi(i)/a(i))*dsinh(tau(i)/sigma(i)/a(i))
         disp(i)=disp(i)+vel(i)*dtdid
         !s(i)=a(i)*dlog(2.d0*vref/vel(i)*dsinh(tau(i)/sigma(i)/a(i)))
         !s(i)=exp((tau(i)/sigma(i)-mu0-a(i)*dlog(vel(i)/vref))/b(i))
@@ -587,7 +590,7 @@ program main
         select case(problem)
         case('3dp')
           do i=1,NCELLg
-            write(50,'(5e15.6,i10)') xcol(i),zcol(i),log10(velG(i)),muG(i),dispG(i),k
+            write(50,'(6e15.6,i10)') xcol(i),zcol(i),log10(velG(i)),muG(i),dispG(i),k
           end do
           write(50,*)
           write(50,*)
@@ -690,8 +693,11 @@ contains
     implicit none
     real(8),intent(out)::phiG(:),sigmaG(:),tauG(:)
     real(8)::sxx0,sxy0,syy0,psi,theta
+
+    !initial tractions from uniform stress tensor
     syy0=sigma0
     sxy0=syy0*muinit
+    !psi=37d0
     psi=37d0
     sxx0=syy0*(1d0+2*sxy0/(syy0*dtan(2*psi/180d0*pi)))
     write(*,*) 'sxx0,sxy0,syy0'
@@ -712,6 +718,11 @@ contains
     end do
     close(16)
 
+    !predefined sigma and tau(debug)
+    !sigmaG=sigma0
+    !tauG=sigmaG*0.35
+    !velG=velinit
+
   end subroutine initcond
 
 
@@ -720,10 +731,13 @@ contains
     real(8),intent(in)::intau
     integer,intent(in)::inloc
     real(8),intent(inout)::tauG(:)
+    real(8)::ra
     integer::lc
-    lc=int(0.15d0*rigid*(1.d0-pois)*dc0/(b0-a0)/sigma0/(xcol(2)-xcol(1)))
+    ra=sqrt((xcol(2)-xcol(1))**2+(ycol(2)-ycol(1))**2)
+    lc=int(0.15d0*rigid*(1.d0-pois)*dc0/(b0-a0)/sigma0/ra)
     write(*,*) 'lc=',lc
-    tauG(inloc-lc:inloc+lc)=tauG(inloc-lc:inloc+lc)+intau
+    tauG(inloc-lc:inloc+lc)=tauG(inloc-lc:inloc+lc)+intau*tauG(inloc)/abs(tauG(inloc))
+
   end subroutine
 
   subroutine coordinate2dp(NCELLg,ds,xel,xer,xcol)
@@ -809,7 +823,7 @@ contains
     !reading mesh data from in_fgeom.dat of mkelm.c of Ando's code
     open(20,file=geofile)
     do i=1,NCELL
-    read(20,*) k,xcol(i),ycol(i),zcol(i),xs1(i),ys1(i),zs1(i),xs2(i),ys2(i),zs2(i),xs3(i),ys3(i),zs3(i)
+    read(20,*) k,xs1(i),ys1(i),zs1(i),xs2(i),ys2(i),zs2(i),xs3(i),ys3(i),zs3(i),xcol(i),ycol(i),zcol(i)
     end do
     return
   end subroutine coordinate3dn

@@ -332,7 +332,7 @@ contains
 
     call TDstressFS(xcol(i),ycol(i),zcol(i),P1,P2,P3,1.d0,0.d0,0.d0,rigid,rigid,&
     & Sxx,Syy,Szz,Sxy,Sxz,Syz)
-    select case('v')
+    select case(v)
     case('xx')
       matels1_ij=Sxx
     case('yy')
