@@ -5,7 +5,7 @@ program main
   real(8)::xel(100000),xer(100000),yel(100000),yer(100000)
   real(8)::xr(160001),yr(160001)
   real(8),parameter::pi=4.d0*atan(1.d0)
-  real(8),allocatable::data(:),ang(:)
+  real(8),allocatable::data(:),ang(:),xg(:),yg(:)
   integer,allocatable::ns(:)
   real(8)::ds,r,amp,wid,xc,yc,rr,yf,angle
   character(128)::geofile,type
@@ -25,7 +25,7 @@ program main
   case('two')
    ncellg=2400
    ds=0.0025d0
-   angle=-1d0/180*pi
+   angle=-0d0/180*pi
    do i=1,2000
      xel(i)=cos(angle)*ds*(i-1)
      xer(i)=cos(angle)*ds*i
@@ -33,15 +33,59 @@ program main
      yer(i)=sin(angle)*ds*i
      write(*,*) xel(i),yel(i)
    end do
-   angle=-70d0/180*pi
+   angle=-75d0/180*pi
    do i=1,400
-   xel(2000+i)=cos(angle)*ds*(i-1)+2.0
-     xer(2000+i)=cos(angle)*ds*i+2.0
-     yel(2000+i)=sin(angle)*ds*(i-1)-0.1
-     yer(2000+i)=sin(angle)*ds*i-0.1
+   xel(2000+i)=cos(angle)*ds*(i-1)+3.0
+     xer(2000+i)=cos(angle)*ds*i+3.0
+     yel(2000+i)=sin(angle)*ds*(i-1)-0.005d0
+     yer(2000+i)=sin(angle)*ds*i-0.005d0
      write(*,*) xel(2000+i),yel(2000+i)
    end do
 
+ case('bend')
+   ncellg=2400
+   ds=0.0025d0
+   angle=10d0/180d0*pi
+   xel(1)=0d0
+   yel(1)=0d0
+   do i=1,1000
+     xel(i)=xer(i-1)
+     xer(i)=xel(i)+ds
+     yel(i)=yer(i-1)
+     yer(i)=yel(i)
+     write(*,*) xel(i),yel(i)
+   end do
+   do i=1001,1400
+     xel(i)=xer(i-1)
+     xer(i)=xel(i)+cos(angle)*ds
+     yel(i)=yer(i-1)
+     yer(i)=yel(i)+sin(angle)*ds
+     write(*,*) xel(i),yel(i)
+   end do
+   do i=1401,2400
+     xel(i)=xer(i-1)
+     xer(i)=xel(i)+ds
+     yel(i)=yer(i-1)
+     yer(i)=yel(i)
+     write(*,*) xel(i),yel(i)
+   end do
+
+ case('curve')
+   geofile='spline'
+   ds=0.0025
+   ncellg=2000
+   open(20,file=geofile)
+   do i=0,ncellg
+   read(20,*) yr(i)
+   end do
+ do i=1,ncellg
+   xel(i)=ds*(i-1)
+   xer(i)=ds*i
+   yel(i)=yr(i)
+   !call random_number(r)
+   yer(i)=yr(i+1)
+   write(*,*) xel(i),yel(i)
+ end do
   case('flat')
    ncellg=2000
    ds=0.0025d0
@@ -57,15 +101,24 @@ program main
   case('multi')
   !parameters
   nm=40000
-  jmax=300
-  allocate(ns(jmax),ang(jmax))
+  jmax=150
+  allocate(ns(jmax),ang(jmax),xg(jmax),yg(jmax))
   ds=0.0025d0
-  amp=0.08
-  wid=3.d-2
+  amp=0.06
+  !amp=0.001
+  wid=5.d-2
 
   !length
   !ns=(/300,300,300,300,300,200,200,200,200,200/)
-  ns=120
+  !ns=150
+  !power law
+  open(33,file='ns.txt')
+  do j=1,jmax
+    read(33,*) r
+    ns(j)=int(r)
+  !call random_number(r)
+  !  ns(j)=120d0*2d0**(3*r)
+  end do
   !call random_number(xc)
   !call random_number(yc)
   !yc=(yc-0.5d0)*wid
@@ -74,7 +127,7 @@ program main
   !yc=(/-0.06,0.0,0.03,-0.1,-0.02/)
   !ang=(/0,10,-10,10,-10/)
   call random_number(ang)
-  ang=(ang-0.5d0)*180
+  ang=(ang-0.5d0)*60d0
   !ang=0d0
   ang=ang/180*pi
   !xc=(xc-0.1d0)*nm*ds*1.2d0
@@ -116,13 +169,13 @@ program main
       !check overlap
       do i=1,nm
         rr=(xc-xel(i))**2+(yc-yel(i))**2
-        if(rr.lt.50*ds) then
+        if(rr.lt.(ns(j)*ds/2)**2) then
           go to 100
         end if
       end do
-      do i=nm+1,count
-        rr=(xc-xel(i))**2+(yc-yel(i))**2
-        if(rr.lt.30*ds) then
+      do i=1,j-1
+        rr=(xc-xg(i))**2+(yc-yg(i))**2
+        if(rr.lt.((ns(i)+ns(j))*ds/2)**2)then
           go to 100
         end if
       end do
@@ -130,11 +183,13 @@ program main
       do i=1,ns(j)
         xel(count+i)=xc+cos(ang(j))*ds*(i-1-ns(j)/2)
         xer(count+i)=xc+cos(ang(j))*ds*(i-ns(j)/2)
-        yel(count+i)=yc+sin(ang(j))*ds*(i-1-ns(j)/2)+amp*(yr(count+i)-yr(count))!+r*0.0001d0
+        yel(count+i)=yc+sin(ang(j))*ds*(i-1-ns(j)/2)!+amp*(yr(count+i)-yr(count))!+r*0.0001d0
         !call random_number(r)
-        yer(count+i)=yc+sin(ang(j))*ds*(i-ns(j)/2)+amp*(yr(count+i+1)-yr(count))!+r*0.0001d0
+        yer(count+i)=yc+sin(ang(j))*ds*(i-ns(j)/2)!+amp*(yr(count+i+1)-yr(count))!+r*0.0001d0
         write(*,*) xel(count+i),yel(count+i)
       end do
+      xg(j)=xc
+      yg(j)=yc
       write(*,*)
       count=count+ns(j)
     end do
