@@ -967,7 +967,7 @@ contains
 
       do i=1,NCELL
         sum_gs(i)=0.5d0*(sum_xx(i)-sum_yy(i))*dsin(-2*ang(i))+sum_xy(i)*dcos(-2*ang(i))
-        sum_gn(i)=0.5d0*(sum_xx(i)+sum_yy(i))-0.5d0*(sum_xx(i)-sum_yy(i))*dcos(2*ang(i))-sum_xy(i)*dsin(2*ang(i))
+        sum_gn(i)=-(0.5d0*(sum_xx(i)+sum_yy(i))-0.5d0*(sum_xx(i)-sum_yy(i))*dcos(2*ang(i))-sum_xy(i)*dsin(2*ang(i)))
       end do
       do i=1,NCELL
         sum_gs(i)=sum_gs(i)+taudot(i)
