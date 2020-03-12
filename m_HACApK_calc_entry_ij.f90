@@ -2,14 +2,17 @@ module m_HACApK_calc_entry_ij
   !use m_matel_ij
   use mod_constant
   use dtriangular
+  use mod_okada
   type :: st_HACApK_calc_entry
     real*8,pointer :: ao(:)
     character(128)::problem
     integer :: nd,lp61
     real(8),pointer::xcol(:),ycol(:),zcol(:),xel(:),xer(:),yel(:),yer(:),ang(:)
     real(8),pointer::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
-    real(8),pointer::ys1(:),ys2(:),ys3(:)
-    character(128)::v
+    real(8),pointer::ys1(:),ys2(:),ys3(:),ys4(:)
+    real(8),pointer::strike(:),dip(:)
+    !real(8),pointer::ds
+    character(128)::v,md
   end type st_HACApK_calc_entry
 
   public :: HACApK_entry_ij
@@ -35,7 +38,10 @@ contains
       & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
       & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
     case('3dn')
-      HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v)
+      HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
+    case('3dh') !half space
+      HACApK_entry_ij=matelh1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
+      !HACApK_entry_ij=matelh1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%strike,st_bemv%dip,st_bemv%v,st_bemv%md)
     end select
 
   end function HACApK_entry_ij
@@ -319,19 +325,25 @@ contains
     return
   end function
 
-  real(8) function matels1_ij(i,j,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,v)
+  real(8) function matels1_ij(i,j,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,v,md)
+    implicit none
     integer,intent(in)::i,j
     real(8),intent(in)::xcol(:),ycol(:),zcol(:),xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
-    character(128),intent(in)::v
+    character(128),intent(in)::v,md
     real(8)::P1(3),P2(3),P3(3)
     real(8)::Sxx,Syy,Szz,Sxy,Sxz,Syz
 
     P1=(/xs1(j),ys1(j),zs1(j)/)
     P2=(/xs2(j),ys2(j),zs2(j)/)
     P3=(/xs3(j),ys3(j),zs3(j)/)
-
-    call TDstressFS(xcol(i),ycol(i),zcol(i),P1,P2,P3,1.d0,0.d0,0.d0,rigid,rigid,&
-    & Sxx,Syy,Szz,Sxy,Sxz,Syz)
+    select case(md)
+    case('st')
+      call TDstressFS(xcol(i),ycol(i),zcol(i),P1,P2,P3,1.d0,0.d0,0.d0,rigid,rigid,&
+      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
+    case('dp')
+      call TDstressFS(xcol(i),ycol(i),zcol(i),P1,P2,P3,0.d0,1.d0,0.d0,rigid,rigid,&
+      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
+    end select
     select case(v)
     case('xx')
       matels1_ij=Sxx
@@ -348,5 +360,121 @@ contains
     end select
     return
   end function matels1_ij
+  real(8) function matelh1_ij(i,j,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,v,md)
+    implicit none
+    integer,intent(in)::i,j
+    real(8),intent(in)::xcol(:),ycol(:),zcol(:),xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
+    character(128),intent(in)::v,md
+    real(8)::P1(3),P2(3),P3(3)
+    real(8)::Sxx,Syy,Szz,Sxy,Sxz,Syz
 
+    P1=(/xs1(j),ys1(j),zs1(j)/)
+    P2=(/xs2(j),ys2(j),zs2(j)/)
+    P3=(/xs3(j),ys3(j),zs3(j)/)
+    select case(md)
+    case('st')
+      call TDstressHS(xcol(i),ycol(i),zcol(i),P1,P2,P3,1.d0,0.d0,0.d0,rigid,rigid,&
+      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
+    case('dp')
+      call TDstressHS(xcol(i),ycol(i),zcol(i),P1,P2,P3,0.d0,1.d0,0.d0,rigid,rigid,&
+      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
+    end select
+    select case(v)
+    case('xx')
+      matelh1_ij=Sxx
+    case('yy')
+      matelh1_ij=Syy
+    case('zz')
+      matelh1_ij=Szz
+    case('xy')
+      matelh1_ij=Sxy
+    case('xz')
+      matelh1_ij=Sxz
+    case('yz')
+      matelh1_ij=Syz
+    end select
+    return
+  end function matelh1_ij
+real(8) function matelrec_ij(i,j,xcol,ycol,zcol,strike,dip,v,md)
+  implicit none
+  integer,intent(in)::i,j
+  real(8),intent(in)::xcol(:),ycol(:),zcol(:),strike(:),dip(:)
+  character(128),intent(in)::v,md
+  integer::iret
+  real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha,ds
+
+  !rotation so that strike is parallel to y axis
+  alpha=2d0/3d0 !poisson solid
+  ds=0.025
+  dx=cos(strike(j))*(xcol(i)-xcol(j))+sin(strike(j))*(ycol(i)-ycol(j))
+  dy=-sin(strike(j))*(xcol(i)-xcol(j))+cos(strike(j))*(ycol(i)-ycol(j))
+  select case(md)
+  case('st')
+    call dc3d(alpha,dx,dy,zcol(i),zcol(j),dip(j),-0.5d0*ds,0.5d0*ds,-0.5d0*ds,0.5d0*ds,1d-8,0d0,0d0, ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,iret)
+  case('dp')
+    call dc3d(alpha,dx,dy,zcol(i),zcol(j),dip(j),-0.5d0*ds,0.5d0*ds,-0.5d0*ds,0.5d0*ds,0d0,1d-8,0d0, ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,iret)
+  end select
+  sxx=rigid*(uxx+uyy+uzz)+2*rigid*uxx
+  syy=rigid*(uxx+uyy+uzz)+2*rigid*uyy
+  szz=rigid*(uxx+uyy+uzz)+2*rigid*uzz
+  sxy=2*rigid*uxy
+  sxz=2*rigid*uxz
+  syz=2*rigid*uyz
+
+  !rerotation
+  select case(v)
+  case('xx')
+    matelrec_ij=cos(strike(j))*(sxx*cos(strike(j))-sxy*sin(strike(j)))-sin(strike(j))*(sxy*cos(strike(j))-syy*sin(strike(j)))
+  case('yy')
+    matelrec_ij=sin(strike(j))*(sxy*cos(strike(j))+sxx*sin(strike(j)))+cos(strike(j))*(syy*cos(strike(j))+sxy*sin(strike(j)))
+  case('zz')
+    matelrec_ij=szz
+  case('xy')
+    matelrec_ij=sin(strike(j))*(sxx*cos(strike(j))-sxy*sin(strike(j)))+cos(strike(j))*(sxy*cos(strike(j))-syy*sin(strike(j)))
+  case('xz')
+    matelrec_ij=sxz*cos(strike(j))-syz*sin(strike(j))
+  case('yz')
+    matelrec_ij=syz*cos(strike(j))+sxz*sin(strike(j))
+  end select
+  return
+end function matelrec_ij
+! subroutine prtoxy ( alatdg, alngdg, alato, alngo, x, y, ind )
+!   real(8),parameter::a=6378.160, e2=6.6946053d-3, e12=6.7397251d-3
+!   real(8),parameter::d=57.29578, rd=1./57.29578
+!   if (ind .eq. 0)  then
+!     rlat = alatdg*rd
+!     slat = sin( rlat )
+!     clat = cos( rlat )
+!     v2   = 1. + e12*clat*clat
+!     al   = alngdg - alngo
+!     ph1  = alatdg + 0.5*v2*al*al*slat*clat*rd
+!     rph1 = ph1*rd
+!     rph2 = (ph1 + alato)/2.*rd
+!     srph1 = sin( rph1 )
+!     srph2 = sin( rph2 )
+!     r  = a*(1. - e2) / sqrt( 1. - e2*srph2*srph2 )**3
+!     an = a / sqrt( 1. - e2*srph1*srph1 )
+!     c1 = d / r
+!     c2 = d / an
+!     y =(ph1-alato)/c1
+!     x  = al*clat/c2*( 1. + al*al*cos(2.*rlat)/(6.*d*d) )
+!   elseif(ind .eq. 1)  then
+!     rlato = alato*rd
+!     slato = sin( rlato )
+!     clato = cos( rlato )
+!     den = sqrt( 1. - e2*slato*slato ) r =a*(1.-e2)/den**3
+!     an = a / den
+!     v2 = 1. + e12*clato*clato
+!     c1 = d / r
+!     c2 = d / an
+!     ph1  = alato + c1*y
+!     rph1 = ph1*rd
+!     tph1 = tan(rph1)
+!     cph1 = cos(rph1)
+!     bl   = c2*x
+!     alatdg = ph1 - 0.5*bl*bl*v2*tph1*rd
+!     alngdg = alngo+bl/cph1*(1.- bl*bl*(1.+2.*tph1*tph1)/(6.*d*d))
+!   endif
+! return
+! end subroutine
 endmodule m_HACApK_calc_entry_ij
