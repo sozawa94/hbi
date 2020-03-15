@@ -825,7 +825,9 @@ contains
   subroutine initcond3d(phi,sigma,taus,taud)
     implicit none
     real(8),intent(out)::phi(:),sigma(:),taus(:),taud(:)
-    real(8)::vel(NCELLg)
+    real(8)::vel(NCELLg),PS11,PS22,PS33,PS12
+
+    !uniform
     sigma=sigma0
     taus=sigma*muinit
     !taus=28d0
@@ -837,6 +839,33 @@ contains
     !   write(*,*) i,taus(i),phi(i)
     ! end do!omega=exp((phi(1)-mu0)/b(1))*abs(vel(1))/vref/b(1)
     ! end if
+
+    !uniform tensor in a full-space
+    PS11=sigma0
+    PS22=sigma0
+    PS33=sigma0
+    PS12=PS22*muinit
+    do i=1,NCELLg
+      taus(i) = ev11(i)*ev31(i)*PS11 + ev12(i)*ev32(i)*PS22+ (ev11(i)*ev32(i)+ev12(i)*ev31(i))*PS12 + ev13(i)*ev33(i)*PS33
+      taud(i) = ev21(i)*ev31(i)*PS11 + ev22(i)*ev32(i)*PS22+ (ev21(i)*ev32(i)+ev22(i)*ev31(i))*PS12 + ev23(i)*ev33(i)*PS33
+      sigma(i) = ev31(i)*ev31(i)*PS11 + ev32(i)*ev32(i)*PS22+ (ev31(i)*ev32(i)+ev32(i)*ev31(i))*PS12 + ev33(i)*ev33(i)*PS33
+      vel(i)=velinit
+      phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(sqrt(taus(i)**2+taud(i)**2)/sigma(i)/a(i)))
+    end do
+
+    !depth dependent stress in a half-space
+    ! do i=1,NCELLg
+    !   PS11=-zcol(i)*17d0
+    !   PS22=PS11
+    !   PS33=PS11
+    !   PS12=PS22*muinit
+    !   taus(i) = ev11(i)*ev31(i)*PS11 + ev12(i)*ev32(i)*PS22+ (ev11(i)*ev32(i)+ev12(i)*ev31(i))*PS12 + ev13(i)*ev33(i)*PS33
+    !   taud(i) = ev21(i)*ev31(i)*PS11 + ev22(i)*ev32(i)*PS22+ (ev21(i)*ev32(i)+ev22(i)*ev31(i))*PS12 + ev23(i)*ev33(i)*PS33
+    !   sigma(i) = ev31(i)*ev31(i)*PS11 + ev32(i)*ev32(i)*PS22+ (ev31(i)*ev32(i)+ev32(i)*ev31(i))*PS12 + ev33(i)*ev33(i)*PS33
+    !   vel(i)=velinit
+    !   phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(sqrt(taus(i)**2+taud(i)**2)/sigma(i)/a(i)))
+    ! end do
+
   end subroutine
 
   subroutine add_nuclei(tau,intau,inloc)
@@ -931,19 +960,45 @@ contains
     integer,intent(in)::NCELLg
     real(8),intent(out)::xcol(:),ycol(:),zcol(:)
     real(8),intent(out)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
+    real(4)::xl(0:2048,0:2048)
+    real(8),parameter::amp=1d-4
     integer::i,j,k
+    logical::rough
 
     !reading mesh data from in_fgeom.dat of mkelm.c of Ando's code
     open(20,file=geofile)
     do i=1,NCELLg
     read(20,*) k,xs1(i),ys1(i),zs1(i),xs2(i),ys2(i),zs2(i),xs3(i),ys3(i),zs3(i),xcol(i),ycol(i),zcol(i)
     !bump
-    xs1(i)=1d0*bump(ys1(i),zs1(i))
-    xs2(i)=1d0*bump(ys2(i),zs2(i))
-    xs3(i)=1d0*bump(ys3(i),zs3(i))
-    xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
+    ! xs1(i)=1d0*bump(ys1(i),zs1(i))
+    ! xs2(i)=1d0*bump(ys2(i),zs2(i))
+    ! xs3(i)=1d0*bump(ys3(i),zs3(i))
+    ! xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
     end do
 
+rough=.true.
+    !rough fault
+    if(rough) then
+    open(30,file='roughsurf.txt')
+    do k=0,2048
+      read(30,*) xl(k,0:2048)
+    end do
+    close(30)
+    if(my_rank.eq.0) open(32,file='tmp')
+    do i=1,NCELLg
+      j=int((ys1(i)+10)*102.4)
+      k=int(-102.4*zs1(i))
+      xs1(i)=xl(j,k)*amp
+      j=int((ys2(i)+10)*102.4)
+      k=int(-102.4*zs2(i))
+      xs2(i)=xl(j,k)*amp
+      j=int((ys3(i)+10)*102.4)
+      k=int(-102.4*zs3(i))
+      xs3(i)=xl(j,k)*amp
+      xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
+      if(my_rank.eq.0) write(32,*) xcol(i),ycol(i),zcol(i)
+    end do
+    end if
     return
   end subroutine coordinate3dn
 
@@ -961,6 +1016,8 @@ contains
     real(8),intent(in)::a0,b0,dc0,vc0
     real(8),intent(out)::a(:),b(:),dc(:),vc(:),fw(:),vw(:)
     integer::i
+
+    !uniform
     do i=1,NCELLg
       a(i)=a0
       !if(abs(i-NCELLg/2).gt.NCELLg/4) a(i)=0.024d0 for cycle
@@ -971,6 +1028,22 @@ contains
       vw(i)=vw0
       !write(*,*)a(i),b(i),dcg(i)
     end do
+
+    !depth-dependent
+    ! do i=1,NCELLg
+    !   if(zcol(i).gt.-4d0) then
+    !     a(i)=0.015d0+0.0025d0*(zcol(i)+4d0)
+    !   else if(zcol(i).gt.-15d0) then
+    !     a(i)=0.015d0
+    !   else
+    !     a(i)=0.015d0-0.0025d0*(zcol(i)+15d0)
+    !   end if
+    !   b(i)=0.020d0
+    !   dc(i)=dc0
+    !   vc(i)=vc0
+    !   fw(i)=fw0
+    !   vw(i)=vw0
+    ! end do
 
   end subroutine
 
@@ -1011,7 +1084,8 @@ contains
     close(15)
     tauddot=0d0
   case('3dn','3dh')
-    taudot=sr
+    !taudot=sr
+    taudot=0d0
     tauddot=0d0
     sigdot=0d0
     !case('2dpv','2dnv')
@@ -1226,7 +1300,7 @@ contains
       st_bemv%v='xx'
       lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,velstmpG)
       st_bemv%v='xy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,velstmpG)
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,velstmpG-vpl)
       st_bemv%v='yy'
       lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,velstmpG)
       st_bemv%v='xz'
