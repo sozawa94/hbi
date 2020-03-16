@@ -1600,10 +1600,18 @@ rough=.true.
     do while(.true.)
       call rkck(y,dydx,x,h,ytemp,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
       errmax=0d0
+      select case(problem)
+      case('3dn','3dh')
       do i=1,NCELL
         if(abs(yerr(4*i-3)/yscal(4*i-3))/eps.gt.errmax) errmax=abs(yerr(4*i-3)/yscal(4*i-3))/eps
-        !errmax=maxval(abs(yerr(:)/yscal(:)))/eps
       end do
+      case('2dn')
+        do i=1,NCELL
+          if(abs(yerr(3*i-2)/yscal(3*i-2))/eps.gt.errmax) errmax=abs(yerr(3*i-2)/yscal(3*i-2))/eps
+        end do
+      case('2dp','3dp')
+      errmax=maxval(abs(yerr(:)/yscal(:)))/eps
+      end select
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
       call MPI_ALLREDUCE(errmax,errmax_gb,1,MPI_REAL8,                  &
       &     MPI_MAX,MPI_COMM_WORLD,ierr)
