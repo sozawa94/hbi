@@ -681,7 +681,7 @@ program main
           write(50,*)
         case('2dp','2dn')
           do i=1,NCELLg
-            write(50,'(i0,8e15.6,i10)') i,xcol(i),log10(abs(vel(i))),tau(i),sigma(i),mu(i),disp(i),phi(i),x,k
+            write(50,'(i0,9e15.6,i10)') i,xcol(i),ycol(i),log10(abs(vel(i))),tau(i),sigma(i),mu(i),disp(i),phi(i),x,k
           end do
           write(50,*)
         case('3dn','3dh')
@@ -1230,11 +1230,13 @@ rough=.true.
       call MPI_SCATTERv(sum_yyG,rcounts,displs,MPI_REAL8,sum_yy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
 
       do i=1,NCELL
+        i_=vars(i)
         sum_gs(i)=0.5d0*(sum_xx(i)-sum_yy(i))*dsin(-2*ang(i_))+sum_xy(i)*dcos(-2*ang(i_))
         !sum_gn(i)=0.5d0*(sum_xx(i)+sum_yy(i))-0.5d0*(sum_xx(i)-sum_yy(i))*dcos(2*ang(i))-sum_xy(i)*dsin(2*ang(i))
         sum_gn(i)=-(0.5d0*(sum_xx(i)+sum_yy(i))-0.5d0*(sum_xx(i)-sum_yy(i))*dcos(2*ang(i_))-sum_xy(i)*dsin(2*ang(i_)))
       end do
       do i=1,NCELL
+        i_=vars(i)
         sum_gs(i)=sum_gs(i)+taudot(i_)
         sum_gn(i)=sum_gn(i)+sigdot(i_)
       end do
@@ -1605,11 +1607,11 @@ rough=.true.
       do i=1,NCELL
         if(abs(yerr(4*i-3)/yscal(4*i-3))/eps.gt.errmax) errmax=abs(yerr(4*i-3)/yscal(4*i-3))/eps
       end do
-      case('2dn')
-        do i=1,NCELL
-          if(abs(yerr(3*i-2)/yscal(3*i-2))/eps.gt.errmax) errmax=abs(yerr(3*i-2)/yscal(3*i-2))/eps
-        end do
-      case('2dp','3dp')
+      !case('2dn')
+      !  do i=1,NCELL
+      !    if(abs(yerr(3*i-2)/yscal(3*i-2))/eps.gt.errmax) errmax=abs(yerr(3*i-2)/yscal(3*i-2))/eps
+      !  end do
+      case('2dp','3dp','2dn')
       errmax=maxval(abs(yerr(:)/yscal(:)))/eps
       end select
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
