@@ -745,11 +745,11 @@ program main
 
   !output for FDMAP communication
   !call output_to_FDMAP()
-  ! if(my_rank.eq.0) then
-  !   do i=1,NCELLg
-  !     write(48,'(3f16.4,i10)') xcol(i),ycol(i),ruptG(i),rupsG(i)
-  !   end do
-  ! end if
+   if(my_rank.eq.0) then
+     do i=1,NCELLg
+       write(48,'(3f16.4,i10)') xcol(i),ycol(i),ruptG(i),rupsG(i)
+     end do
+   end if
 
   200  if(my_rank.eq.0) then
   time2= MPI_Wtime()
@@ -795,7 +795,7 @@ contains
     syy0=sigma0
     sxy0=syy0*muinit
     !psi=37d0
-    psi=37d0
+    psi=30d0
     sxx0=syy0*(1d0+2*sxy0/(syy0*dtan(2*psi/180d0*pi)))
     write(*,*) 'sxx0,sxy0,syy0'
     write(*,*) sxx0,sxy0,syy0
@@ -818,8 +818,9 @@ contains
 
     !predefined sigma and tau(debug)
     !sigma=sigma0
-    !tau=sigma*0.35
+    !tau=sigma*muinit
     !vel=velinit
+    !disp=0d0
 
   end subroutine
   subroutine initcond3d(phi,sigma,taus,taud)
@@ -1189,6 +1190,7 @@ rough=.true.
         lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
         call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
         do i=1,NCELL
+          i_=vars(i)
           sum_gn(i)=0.d0
           sum_gs(i)=sum_gs(i)+taudot(i_)
         end do
