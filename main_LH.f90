@@ -17,7 +17,7 @@ program main
   character*128::fname,dum,law,input_file,problem,geofile
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
   real(8)::vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau
-  real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxevent
+  real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxevent,mvel,mvelG
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds,amp,mui,strinit,velinit,velmax
   type(st_HACApK_lcontrol) :: st_ctl
   type(st_HACApK_leafmtxp) :: st_leafmtxps,st_leafmtxpn
@@ -26,8 +26,10 @@ program main
   type(st_HACApK_leafmtxp) :: st_leafmtxp_xx2,st_leafmtxp_xy2,st_leafmtxp_yy2
   type(st_HACApK_leafmtxp) :: st_leafmtxp_xz2,st_leafmtxp_yz2,st_leafmtxp_zz2
   type(st_HACApK_calc_entry) :: st_bemv
+  type(st_HACApK_latticevec) :: st_vel,st_sum
+  type(st_HACApK_LHp) :: st_LHp
   !type(t_deriv)::
-  real(8),allocatable ::coord(:,:),vmax(:)
+  real(8),allocatable ::coord(:,:),vmax(:),wws(:)
   real(8),allocatable::a(:),b(:),dc(:),vc(:),fw(:),vw(:),ac(:),taudot(:),tauddot(:),sigdot(:)
   !real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:)
   real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),ruptG(:)
@@ -129,28 +131,7 @@ program main
     loc=loci*(imax-1)+locj
   end if
 
-  allocate(rcounts(np),displs(np+1))
-  amari=mod(NCELLg,np)
-  do k=1,amari
-    rcounts(k)=NCELLg/np+1
-  end do
-  do k=amari+1,np
-    rcounts(k)=NCELLg/np
-  end do
-  displs(1)=0
-  do k=2,np+1
-    displs(k)=displs(k-1)+rcounts(k-1)
-  end do
-  NCELL=rcounts(my_rank+1)
-  allocate(vars(NCELL))
-  do i=1,NCELL
-    vars(i)=displs(my_rank+1)+i
-    !write(*,*) displs(my_rank+1),i,vars(i)
-  end do
 
-  !stop
-  !call varscalc(NCELL,displs,vars)
-  if(my_rank.eq.0) write(*,*) rcounts,displs
 
   !allocation
   allocate(a(NCELLg),b(NCELLg),dc(NCELLg),vc(NCELLg),fw(NCELLg),vw(NCELLg),taudot(NCELLg),tauddot(NCELLg),sigdot(NCELLg))
@@ -195,7 +176,7 @@ program main
 
   select case(problem) !for Runge-Kutta
   case('2dp','3dp')
-    allocate(y(2*NCELL),yscal(2*NCELL),dydx(2*NCELL),yg(2*NCELLg))
+    !allocate(y(2*NCELL),yscal(2*NCELL),dydx(2*NCELL),yg(2*NCELLg))
   case('2dn')
     allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL),yg(3*NCELLg))
   case('3dn','3dh')
@@ -341,6 +322,22 @@ program main
     end do
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp,st_leafmtxps,st_bemv,st_ctl,coord,1d-5)
+    allocate(wws(st_leafmtxps%ndlfs))
+    lrtrn=HACApK_gen_lattice_vector(st_vel,st_leafmtxps,st_ctl)
+    lrtrn=HACApK_gen_lattice_vector(st_sum,st_leafmtxps,st_ctl)
+
+    NCELL=st_vel%ndc
+    allocate(y(2*NCELL),yscal(2*NCELL),dydx(2*NCELL),yg(2*NCELLg),vars(NCELL))
+    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+    i=0
+    do k=1,st_vel%nlfc
+      do j=1,st_vel%lbndc(k)
+        i=i+1
+        vars(i)=st_vel%lbstrtc(k)+j-1
+        !if(my_rank.eq.0) write(*,*) my_rank,i,vars(i)
+      end do
+    end do
 
   case('2dn')
     do i=1,NCELLg
@@ -409,6 +406,7 @@ program main
 
   !setting frictional parameters
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+  !stop
 
   if(my_rank.eq.0) write(*,*) 'Setting fault parameters'
   call params(problem,NCELLg,a0,b0,dc0,vc0,a,b,dc,vc,fw,vw)
@@ -467,11 +465,12 @@ program main
   !call input_from_FDMAP()
 
   !setting output files
+  write(fname,'("output/",i0,".dat")') number
+  open(50,file=fname)
   if(my_rank.eq.0) then
     write(fname,'("output/monitor",i0,".dat")') number
     open(52,file=fname)
-    write(fname,'("output/",i0,".dat")') number
-    open(50,file=fname)
+
     write(fname,'("output/rupt",i0,".dat")') number
     open(48,file=fname)
     open(19,file='job.log',position='append')
@@ -511,10 +510,15 @@ program main
     !call MPI_ALLGATHERv(mu,NCELL,MPI_REAL8,mu,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
     !call MPI_ALLGATHERv(disp,NCELL,MPI_REAL8,disp,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
 
+
+  !print initial condition if necessary
+  !k=0
   !do i=1,NCELLg
   !  write(50,'(8e15.6,i6)') xcol(i),ycol(i),vel(i),tau(i),sigma(i),mu(i),disp(i),x,k
   !end do
   !write(50,*)
+
+  !global vector -> local vector
   select case(problem)
   case('2dp','3dp')
     do i=1,NCELL
@@ -556,24 +560,35 @@ program main
 
     !parallel computing for Runge-Kutta
     call rkqs(y,dydx,x,dttry,eps,y,dtdid,dtnxt)
-
-    Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+    !yl=y
+    !Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
     select case(problem)
     case('2dp','3dp')
-       call MPI_ALLGATHERv(y,2*NCELL,MPI_REAL8,yG,2*rcounts,2*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-      do i = 1, NCELLg
-        !i=vars(i_)
+      !yg=0d0
+      !  call MPI_ALLGATHERv(y,2*NCELL,MPI_REAL8,yG,2*rcounts,2*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+      ! do k=0,sqrt(np)-1
+      !   call MPI_Bcast(yl, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
+      !   yg()=yl()
+      !   yl=y
+      ! end do
+      outfield=.false.
+      if(mod(k,interval).eq.0) outfield=.true.
+      vel=0d0
+      do i = 1, NCELL
+        i_=vars(i)
         !write(*,*) my_rank,i
-        phi(i) = yg(2*i-1)
-        tau(i) = yg(2*i)
+        phi(i_) = y(2*i-1)
+        tau(i_) = y(2*i)
         !write(*,*) my_rank,i,phi(i)
         !disp(i) = disp(i)+exp(y(2*i-1))*dtdid
-        vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
+        vel(i_)= 2*vref*exp(-phi(i_)/a(i_))*sinh(tau(i_)/sigma(i_)/a(i_))
         !write(*,*)vel(i),dtdid
-        disp(i)=disp(i)+vel(i)*dtdid
-        mu(i)=tau(i)/sigma(i)
+        disp(i_)=disp(i_)+vel(i_)*dtdid
+        mu(i_)=tau(i_)/sigma(i_)
+        !if(outfield) write(50,'(i0,9e15.6,i10)') i_,xcol(i_),ycol(i_),log10(abs(vel(i_))),tau(i_),sigma(i_),mu(i_),disp(i_),phi(i_),x,k
       end do
+      mvel=maxval(abs(vel))
     case('2dn')
        call MPI_ALLGATHERv(y,3*NCELL,MPI_REAL8,yG,3*rcounts,3*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
       do i = 1, NCELLg
@@ -624,24 +639,24 @@ program main
     end select
 
     Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-    !stop
-    ! call MPI_ALLGATHERv(sigma,NCELL,MPI_REAL8,sigma,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-    ! call MPI_ALLGATHERv(tau,NCELL,MPI_REAL8,tau,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-    ! call MPI_ALLGATHERv(vel,NCELL,MPI_REAL8,vel,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-    ! call MPI_ALLGATHERv(mu,NCELL,MPI_REAL8,mu,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-    ! call MPI_ALLGATHERv(disp,NCELL,MPI_REAL8,disp,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-    ! call MPI_ALLGATHERv(phi,NCELL,MPI_REAL8,phi,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-    !if(my_rank.eq.0) write(*,*) 'allgatherv'
 
-    !output
-    if(my_rank.eq.0) then
-      time2= MPI_Wtime()
-      select case(problem)
-      case('2dp','2dn','3dp')
-      write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),dtdid*maxval(abs(vel)),time2-time1
-      case('3dn','3dh')
-        write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(vel)),sum(disps)/NCELLg,sum(mu)/NCELLg,maxloc(vel),dtdid*maxval(vel),time2-time1
-      end select
+    if(my_rank.eq.0.and.outfield) then
+      write(50,*)
+      write(*,*) 'time step=' ,k
+    end if
+    time2= MPI_Wtime()
+    call MPI_ALLREDUCE(mvel,mvelG,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
+    write(52,'(i7,f18.5,e16.5,f16.4)')k,x,log10(mvelG),time2-time1
+    
+    if(mvelG.gt.velmax) then
+      if(my_rank .eq. 0) write(*,*) 'slip rate above threshold'
+      exit
+    end if
+
+    if(mvelG.lt.velmin) then
+      if(my_rank .eq. 0) write(*,*) 'slip rate below threshold'
+      exit
+    end if
       !do i=1,size(vmax)
       !  vmax(i)=max(vmax(i),vel(i))
       !  vmaxin(i)=k
@@ -650,18 +665,18 @@ program main
 
       !for FDMAP
       !PsiG=a*dlog(2.d0*vref/vel*dsinh(tau/sigma/a))
-      do i=1,NCELLg
-        if(abs(vel(i)).gt.0.01d0.and.ruptG(i).le.1d-6) then
-          ruptG(i)=x
-          !rupsG(i)=k
-        end if
-      end do
+      ! do i=1,NCELLg
+      !   if(abs(vel(i)).gt.0.01d0.and.ruptG(i).le.1d-6) then
+      !     ruptG(i)=x
+      !     !rupsG(i)=k
+      !   end if
+      ! end do
 
 
       !output distribution control
-      outfield=.false.
+      !outfield=.false.
       !A : iteration number
-      if(mod(k,interval).eq.0) outfield=.true.
+      !if(mod(k,interval).eq.0) outfield=.true.
       !if(k.lt.18000) out=1
 
       !B : slip velocity
@@ -670,35 +685,9 @@ program main
       !  outv=outv*(10.d0)**(0.5d0)
       !end if
 
-      if(outfield) then
-        write(*,*) 'time step=' ,k
-        select case(problem)
-        case('3dp')
-          do i=1,NCELLg
-            write(50,'(6e15.6,i10)') xcol(i),zcol(i),log10(vel(i)),mu(i),disp(i),k
-          end do
-          write(50,*)
-          write(50,*)
-        case('2dn')
-          do i=1,NCELLg
-            write(50,'(i0,9e15.6,i10)') i,xcol(i),ycol(i),log10(abs(vel(i))),tau(i),sigma(i),mu(i),disp(i),phi(i),x,k
-          end do
-          write(50,*)
-        case('2dp')
-          do i=1,NCELLg
-            write(50,'(i0,8e15.6,i10)') i,xcol(i),log10(abs(vel(i))),tau(i),sigma(i),mu(i),disp(i),phi(i),x,k
-          end do
-          write(50,*)
-        case('3dn','3dh')
-          do i=1,NCELLg
-            write(50,'(12e14.5,i10)') xcol(i),ycol(i),zcol(i),log10(vel(i)),taus(i),taud(i),phi(i),mu(i),sigma(i),disps(i),dispd(i),rake(i),k
-          end do
-          write(50,*)
-          write(50,*)
-        end select
-      end if
 
-    end if
+
+    !end if
 
 
     ! if(.not.slipping) then
@@ -734,15 +723,6 @@ program main
     ! end if
 
     !(2) slip velocity exceeds threshold (for nucleation)
-    if(maxval(abs(vel)).gt.velmax) then
-      if(my_rank .eq. 0) write(*,*) 'slip rate above threshold'
-      exit
-    end if
-
-    if(maxval(abs(vel)).lt.velmin) then
-      if(my_rank .eq. 0) write(*,*) 'slip rate below threshold'
-      exit
-    end if
 
     dttry = dtnxt
   end do
@@ -750,11 +730,11 @@ program main
 
   !output for FDMAP communication
   !call output_to_FDMAP()
-   if(my_rank.eq.0) then
-     do i=1,NCELLg
-       write(48,'(3f16.4,i10)') xcol(i),ycol(i),ruptG(i),rupsG(i)
-     end do
-   end if
+  ! if(my_rank.eq.0) then
+  !   do i=1,NCELLg
+  !     write(48,'(3f16.4,i10)') xcol(i),ycol(i),ruptG(i),rupsG(i)
+  !   end do
+  ! end if
 
   200  if(my_rank.eq.0) then
   time2= MPI_Wtime()
@@ -800,7 +780,7 @@ contains
     syy0=sigma0
     sxy0=syy0*muinit
     !psi=37d0
-    psi=30d0
+    psi=37d0
     sxx0=syy0*(1d0+2*sxy0/(syy0*dtan(2*psi/180d0*pi)))
     write(*,*) 'sxx0,sxy0,syy0'
     write(*,*) sxx0,sxy0,syy0
@@ -823,9 +803,8 @@ contains
 
     !predefined sigma and tau(debug)
     !sigma=sigma0
-    !tau=sigma*muinit
+    !tau=sigma*0.35
     !vel=velinit
-    !disp=0d0
 
   end subroutine
   subroutine initcond3d(phi,sigma,taus,taud)
@@ -1186,14 +1165,17 @@ rough=.true.
         sigmatmp(i)=sigma0 !normal stress is constant for planar fault
         veltmp(i) = 2*vref*dexp(-phitmp(i)/a(i_))*dsinh(tautmp(i)/sigmatmp(i)/a(i_))
       enddo
-      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-      call MPI_ALLGATHERv(veltmp,NCELL,MPI_REAL8,veltmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+      !call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      !call MPI_ALLGATHERv(veltmp,NCELL,MPI_REAL8,veltmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
 
       !matrix-vector mutiplation
       select case(load)
       case(0)
-        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
-        call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+        st_vel%vs=veltmp
+        call HACApK_adot_lattice_hyp(st_sum,st_LHp,st_ctl,wws,st_vel)
+        sum_gs(:)=st_sum%vs(st_ctl%lod(:))
+        !lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
+        !call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
         do i=1,NCELL
           i_=vars(i)
           sum_gn(i)=0.d0
@@ -1614,6 +1596,10 @@ rough=.true.
       do i=1,NCELL
         if(abs(yerr(4*i-3)/yscal(4*i-3))/eps.gt.errmax) errmax=abs(yerr(4*i-3)/yscal(4*i-3))/eps
       end do
+      !case('2dn')
+      !  do i=1,NCELL
+      !    if(abs(yerr(3*i-2)/yscal(3*i-2))/eps.gt.errmax) errmax=abs(yerr(3*i-2)/yscal(3*i-2))/eps
+      !  end do
       case('2dp','3dp','2dn')
       errmax=maxval(abs(yerr(:)/yscal(:)))/eps
       end select
