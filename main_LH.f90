@@ -10,7 +10,7 @@ program main
   include 'mpif.h'
   integer:: date_time(8)
   character(len=10):: sys_time(3)
-  integer::NCELL, nstep1, lp, i,i_,j,k,m,counts,interval,number,lrtrn,nl,NCELLg
+  integer::NCELL, nstep1, lp, i,i_,j,k,m,counts,interval,number,lrtrn,nl,NCELLg,nout
   integer::clock,cr,counts2,imax,jmax,NCELLm,seedsize,icomm,np,ierr,my_rank,load,eventcount,thec,inloc
   logical::slipping,outfield,limitsigma
   integer,allocatable::seed(:)
@@ -27,7 +27,8 @@ program main
   type(st_HACApK_leafmtxp) :: st_leafmtxp_xz2,st_leafmtxp_yz2,st_leafmtxp_zz2
   type(st_HACApK_calc_entry) :: st_bemv
   type(st_HACApK_latticevec) :: st_vel,st_sum
-  type(st_HACApK_LHp) :: st_LHp
+  type(st_HACApK_LHp) :: st_LHp,st_LHp_xx,st_LHp_xy,st_LHp_yy,st_LHp_xz,st_LHp_yz,st_LHp_zz
+  type(st_HACApK_LHp) :: st_LHp_xx2,st_LHp_xy2,st_LHp_yy2,st_LHp_xz2,st_LHp_yz2,st_LHp_zz2
   !type(t_deriv)::
   real(8),allocatable ::coord(:,:),vmax(:),wws(:)
   real(8),allocatable::a(:),b(:),dc(:),vc(:),fw(:),vw(:),ac(:),taudot(:),tauddot(:),sigdot(:)
@@ -178,9 +179,9 @@ program main
   case('2dp','3dp')
     !allocate(y(2*NCELL),yscal(2*NCELL),dydx(2*NCELL),yg(2*NCELLg))
   case('2dn')
-    allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL),yg(3*NCELLg))
+    !allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL),yg(3*NCELLg))
   case('3dn','3dh')
-    allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL),yg(4*NCELLg))
+    !allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL),yg(4*NCELLg))
   end select
 
   !allocate(vmax(NCELLg),vmaxin(NcELLg))
@@ -196,11 +197,6 @@ program main
       call coordinate3dp(imax,jmax,ds,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
     case('3dn','3dh')
       call coordinate3dn(NCELLg,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3)
-      ! if(my_rank.eq.0) then
-      ! do i=1,NCELLg
-      ! write(*,*) xcol(i),ycol(i),zcol(i)
-      ! end do
-      ! end if
       call evcalc(xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,ev11,ev12,ev13,ev21,ev22,ev23,ev31,ev32,ev33)
     end select
 
@@ -214,48 +210,6 @@ program main
 
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
   !stop
-
-  !write(*,*) 'MPI communication'
-  !MPI communication
-  ! select case(problem)
-  ! case('2dp')
-  !   call MPI_BCAST(xcol, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(xel, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(xer, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  ! case('2dn')
-  !   call MPI_BCAST(xcol, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(ycol, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(xel, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(xer, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(yel, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(yer, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(ang, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  ! case('3dp')
-  !   call MPI_BCAST(xcol, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(zcol, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(xs1, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(xs2, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(xs3, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(xs4, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(zs1, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(zs2, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(zs3, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(zs4, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  ! case('3dn','3dh')
-  !   call MPI_BCAST(xcol, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(ycol, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(zcol, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(xs1, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(xs2, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(xs3, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(ys1, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(ys2, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(ys3, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(zs1, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(zs2, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  !   call MPI_BCAST(zs3, NCELLg, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-  ! end select
-
 
   !HACApK setting
   lrtrn=HACApK_init(NCELLg,st_ctl,st_bemv,icomm)
@@ -346,16 +300,33 @@ program main
       coord(i,3)=0.d0
     end do
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-    ! st_bemv%v='s'
-    ! lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,1d-4)
-    ! st_bemv%v='n'
-    ! lrtrn=HACApK_generate(st_leafmtxpn,st_bemv,st_ctl,coord,1d-4)
+
     st_bemv%v='xx'
     lrtrn=HACApK_generate(st_leafmtxp_xx,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_xx,st_leafmtxp_xx,st_bemv,st_ctl,coord,1d-5)
+    allocate(wws(st_leafmtxp_xx%ndlfs))
+    lrtrn=HACApK_gen_lattice_vector(st_vel,st_leafmtxp_xx,st_ctl)
+    lrtrn=HACApK_gen_lattice_vector(st_sum,st_leafmtxp_xx,st_ctl)
+
     st_bemv%v='xy'
     lrtrn=HACApK_generate(st_leafmtxp_xy,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_xy,st_leafmtxp_xy,st_bemv,st_ctl,coord,1d-5)
+
     st_bemv%v='yy'
     lrtrn=HACApK_generate(st_leafmtxp_yy,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_yy,st_leafmtxp_yy,st_bemv,st_ctl,coord,1d-5)
+
+    NCELL=st_vel%ndc
+    allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL),yg(3*NCELLg),vars(NCELL))
+    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+    i=0
+    do k=1,st_vel%nlfc
+      do j=1,st_vel%lbndc(k)
+        i=i+1
+        vars(i)=st_vel%lbstrtc(k)+j-1
+        !if(my_rank.eq.0) write(*,*) my_rank,i,vars(i)
+      end do
+    end do
 
   case('3dp')
     do i=1,NCELLg
@@ -376,32 +347,80 @@ program main
     !kernel for strike slip
     st_bemv%md='st'
     st_bemv%v='xx'
-    lrtrn=HACApK_generate(st_leafmtxp_xx,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_xx,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_xx,st_leafmtxp_xx,st_bemv,st_ctl,coord,1d-5)
+    allocate(wws(st_leafmtxp_xx%ndlfs))
+    lrtrn=HACApK_gen_lattice_vector(st_vel,st_leafmtxp_xx,st_ctl)
+    lrtrn=HACApK_gen_lattice_vector(st_sum,st_leafmtxp_xx,st_ctl)
+    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+
+
     st_bemv%v='xy'
-    lrtrn=HACApK_generate(st_leafmtxp_xy,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_xy,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_xy,st_leafmtxp_xy,st_bemv,st_ctl,coord,1d-5)
+    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+
+!stop
+
     st_bemv%v='yy'
-    lrtrn=HACApK_generate(st_leafmtxp_yy,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_yy,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_yy,st_leafmtxp_yy,st_bemv,st_ctl,coord,1d-5)
+    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+
+
     st_bemv%v='xz'
-    lrtrn=HACApK_generate(st_leafmtxp_xz,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_xz,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_xz,st_leafmtxp_xz,st_bemv,st_ctl,coord,1d-5)
+    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+
     st_bemv%v='yz'
-    lrtrn=HACApK_generate(st_leafmtxp_yz,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_yz,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_yz,st_leafmtxp_yz,st_bemv,st_ctl,coord,1d-5)
+    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+
     st_bemv%v='zz'
-    lrtrn=HACApK_generate(st_leafmtxp_zz,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_zz,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_zz,st_leafmtxp_zz,st_bemv,st_ctl,coord,1d-5)
+    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
 
     !kernel for dip slip
     st_bemv%md='dp'
     st_bemv%v='xx'
-    lrtrn=HACApK_generate(st_leafmtxp_xx2,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_xx2,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_xx2,st_leafmtxp_xx2,st_bemv,st_ctl,coord,1d-5)
+
     st_bemv%v='xy'
-    lrtrn=HACApK_generate(st_leafmtxp_xy2,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_xy2,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_xy2,st_leafmtxp_xy2,st_bemv,st_ctl,coord,1d-5)
+
     st_bemv%v='yy'
-    lrtrn=HACApK_generate(st_leafmtxp_yy2,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_yy2,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_yy2,st_leafmtxp_yy2,st_bemv,st_ctl,coord,1d-5)
+
     st_bemv%v='xz'
-    lrtrn=HACApK_generate(st_leafmtxp_xz2,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_xz2,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_xz2,st_leafmtxp_xz2,st_bemv,st_ctl,coord,1d-5)
+
     st_bemv%v='yz'
-    lrtrn=HACApK_generate(st_leafmtxp_yz2,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_yz2,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_yz2,st_leafmtxp_yz2,st_bemv,st_ctl,coord,1d-5)
+
     st_bemv%v='zz'
-    lrtrn=HACApK_generate(st_leafmtxp_zz2,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_zz2,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_construct_LH(st_LHp_zz2,st_leafmtxp_zz2,st_bemv,st_ctl,coord,1d-5)
+
+
+    NCELL=st_vel%ndc
+    allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL),yg(4*NCELLg),vars(NCELL))
+    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+    i=0
+    do k=1,st_vel%nlfc
+      do j=1,st_vel%lbndc(k)
+        i=i+1
+        vars(i)=st_vel%lbstrtc(k)+j-1
+        !if(my_rank.eq.0) write(*,*) my_rank,i,vars(i)
+      end do
+    end do
   end select
 
   !setting frictional parameters
@@ -432,7 +451,7 @@ program main
     vel=tau/abs(tau)*velinit
     phi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
     omega=exp((phi(1)-mu0)/b(1))*abs(vel(1))/vref/b(1)
-    write(*,*) 'Omega',Omega
+    if(my_rank.eq.0) write(*,*) 'Omega',Omega
   case('2dn')
     call initcond2d(phi,sigma,tau,disp)
     call add_nuclei(tau,intau,inloc)
@@ -465,13 +484,15 @@ program main
   !call input_from_FDMAP()
 
   !setting output files
-  write(fname,'("output/",i0,".dat")') number
-  open(50,file=fname)
+  write(fname,'("output/",i0,"_",i0,".dat")') my_rank,number
+  nout=my_rank+100
+  open(nout,file=fname)
+
   if(my_rank.eq.0) then
     write(fname,'("output/monitor",i0,".dat")') number
     open(52,file=fname)
 
-    write(fname,'("output/rupt",i0,".dat")') number
+    !write(fname,'("output/rupt",i0,".dat")') number
     open(48,file=fname)
     open(19,file='job.log',position='append')
   end if
@@ -565,13 +586,6 @@ program main
 
     select case(problem)
     case('2dp','3dp')
-      !yg=0d0
-      !  call MPI_ALLGATHERv(y,2*NCELL,MPI_REAL8,yG,2*rcounts,2*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-      ! do k=0,sqrt(np)-1
-      !   call MPI_Bcast(yl, 1, MPI_REAL8, 0, MPI_COMM_WORLD, ierr)
-      !   yg()=yl()
-      !   yl=y
-      ! end do
       outfield=.false.
       if(mod(k,interval).eq.0) outfield=.true.
       vel=0d0
@@ -586,68 +600,85 @@ program main
         !write(*,*)vel(i),dtdid
         disp(i_)=disp(i_)+vel(i_)*dtdid
         mu(i_)=tau(i_)/sigma(i_)
-        !if(outfield) write(50,'(i0,9e15.6,i10)') i_,xcol(i_),ycol(i_),log10(abs(vel(i_))),tau(i_),sigma(i_),mu(i_),disp(i_),phi(i_),x,k
+        if(outfield.and.(my_rank.lt.int(sqrt(dble(np))))) write(nout,'(i0,8e15.6,i10)') i_,xcol(i_),log10(abs(vel(i_))),tau(i_),sigma(i_),mu(i_),disp(i_),phi(i_),x,k
       end do
+      if(outfield) write(nout,*)
       mvel=maxval(abs(vel))
+
     case('2dn')
-       call MPI_ALLGATHERv(y,3*NCELL,MPI_REAL8,yG,3*rcounts,3*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-      do i = 1, NCELLg
-        phi(i) = yG(3*i-2)
-        tau(i) = yG(3*i-1)
-        sigma(i) = yG(3*i)
+      outfield=.false.
+      if(mod(k,interval).eq.0) outfield=.true.
+      vel=0d0
+      do i = 1, NCELL
+        i_=vars(i)
+        phi(i_) = y(3*i-2)
+        tau(i_) = y(3*i-1)
+        sigma(i_) = y(3*i)
         !artificial limit of normal stress motivated by plastic simulation
         !artificail limit of friction
         if(limitsigma) then
-          if(sigma(i).lt.30d0) sigma(i)=30d0
-          if(sigma(i).gt.170d0) sigma(i)=170d0
+          if(y(3*i).lt.30d0) y(3*i)=30d0
+          if(y(3*i).gt.170d0) y(3*i)=170d0
           !if(tau(i)/sigma(i).gt.0.64) tau(i)=0.64d0*sigma(i)
           !if(tau(i)/sigma(i).lt.-0.64) tau(i)=-0.64d0*sigma(i)
         end if
         !disp(i) = disp(i) + exp( y(3*i-2) i)*dtdid
-        vel(i)= 2*vref*dexp(-phi(i)/a(i))*dsinh(tau(i)/sigma(i)/a(i))
-        disp(i)=disp(i)+vel(i)*dtdid
+        vel(i_)= 2*vref*dexp(-phi(i_)/a(i_))*dsinh(tau(i_)/sigma(i_)/a(i_))
+        disp(i_)=disp(i_)+vel(i_)*dtdid
         !s(i)=a(i)*dlog(2.d0*vref/vel(i)*dsinh(tau(i)/sigma(i)/a(i)))
         !s(i)=exp((tau(i)/sigma(i)-mu0-a(i)*dlog(vel(i)/vref))/b(i))
-        mu(i)=tau(i)/sigma(i)
+        mu(i_)=tau(i_)/sigma(i_)
+        if(outfield.and.(my_rank.lt.int(sqrt(dble(np))))) write(nout,'(i0,10e15.6,i10)') i_,xcol(i_),ycol(i_),log10(abs(vel(i_))),tau(i_),sigma(i_),mu(i_),disp(i_),phi(i_),x,k
+
       end do
+      if(outfield) write(nout,*)
+
     case('3dn','3dh')
-      call MPI_ALLGATHERv(y,4*NCELL,MPI_REAL8,yG,4*rcounts,4*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-      do i = 1, NCELLg
-        phi(i) = yG(4*i-3)
-        taus(i) = yG(4*i-2)
-        taud(i) = yG(4*i-1)
-        sigma(i) = yG(4*i)
+      outfield=.false.
+      if(mod(k,interval).eq.0) outfield=.true.
+      vel=0d0
+      do i = 1, NCELL
+        i_=vars(i)
+        phi(i_) = y(4*i-3)
+        taus(i_) = y(4*i-2)
+        taud(i_) = y(4*i-1)
+        sigma(i_) = y(4*i)
         !artificial limit of normal stress motivated by plastic simulation
         !artificail limit of friction
         if(limitsigma) then
-          if(sigma(i).lt.30d0) sigma(i)=30d0
-          if(sigma(i).gt.170d0) sigma(i)=170d0
+          if(y(4*i).lt.30d0) y(4*i)=30d0
+          if(y(4*i).gt.170d0) y(4*i)=170d0
           !if(tau(i)/sigma(i).gt.0.64) tau(i)=0.64d0*sigma(i)
           !if(tau(i)/sigma(i).lt.-0.64) tau(i)=-0.64d0*sigma(i)
         end if
         !disp(i) = disp(i) + exp( y(3*i-2) i)*dtdid
-        tau(i)=sqrt(taus(i)**2+taud(i)**2)
-        vel(i)= 2*vref*dexp(-phi(i)/a(i))*dsinh(tau(i)/sigma(i)/a(i))
-        vels(i)= vel(i)*taus(i)/tau(i)
-        veld(i)= vel(i)*taud(i)/tau(i)
-        disps(i)=disps(i)+vels(i)*dtdid
-        dispd(i)=dispd(i)+veld(i)*dtdid
-        rake(i)=atan(veld(i)/vels(i))/pi*180d0
-        mu(i)=sqrt(taus(i)**2+taud(i)**2)/sigma(i)
+        tau(i_)=sqrt(taus(i_)**2+taud(i_)**2)
+        vel(i_)= 2*vref*dexp(-phi(i_)/a(i_))*dsinh(tau(i_)/sigma(i_)/a(i_))
+        vels(i_)= vel(i_)*taus(i_)/tau(i_)
+        veld(i_)= vel(i_)*taud(i_)/tau(i_)
+        disps(i_)=disps(i_)+vels(i_)*dtdid
+        dispd(i_)=dispd(i_)+veld(i_)*dtdid
+        rake(i_)=atan(veld(i_)/vels(i_))/pi*180d0
+        mu(i_)=sqrt(taus(i_)**2+taud(i_)**2)/sigma(i_)
+        if(outfield.and.(my_rank.lt.int(sqrt(dble(np))))) write(nout,'(i0,12e14.5,i10)') i_,xcol(i_),ycol(i_),zcol(i_),log10(vel(i_)),taus(i_),taud(i_),phi(i_),mu(i_),sigma(i_),disps(i_),dispd(i_),rake(i_),k
+
       end do
+      if(outfield) write(nout,*)
+      if(outfield) write(nout,*)
 
     end select
+
 
     Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
     if(my_rank.eq.0.and.outfield) then
-      write(50,*)
       write(*,*) 'time step=' ,k
     end if
     time2= MPI_Wtime()
+    mvel=maxval(abs(vel))
     call MPI_ALLREDUCE(mvel,mvelG,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
     write(52,'(i7,f18.5,e16.5,f16.4)')k,x,log10(mvelG),time2-time1
-    
+
     if(mvelG.gt.velmax) then
       if(my_rank .eq. 0) write(*,*) 'slip rate above threshold'
       exit
@@ -657,72 +688,6 @@ program main
       if(my_rank .eq. 0) write(*,*) 'slip rate below threshold'
       exit
     end if
-      !do i=1,size(vmax)
-      !  vmax(i)=max(vmax(i),vel(i))
-      !  vmaxin(i)=k
-      !end do
-      !if(mod(k,interval).eq.0) then
-
-      !for FDMAP
-      !PsiG=a*dlog(2.d0*vref/vel*dsinh(tau/sigma/a))
-      ! do i=1,NCELLg
-      !   if(abs(vel(i)).gt.0.01d0.and.ruptG(i).le.1d-6) then
-      !     ruptG(i)=x
-      !     !rupsG(i)=k
-      !   end if
-      ! end do
-
-
-      !output distribution control
-      !outfield=.false.
-      !A : iteration number
-      !if(mod(k,interval).eq.0) outfield=.true.
-      !if(k.lt.18000) out=1
-
-      !B : slip velocity
-      !if(maxval(vel).gt.outv) then
-      !  out=0
-      !  outv=outv*(10.d0)**(0.5d0)
-      !end if
-
-
-
-    !end if
-
-
-    ! if(.not.slipping) then
-    !   vmaxevent=0.d0
-    !   if(abs(maxval(vel)).gt.1d-5) then
-    !     slipping=.true.
-    !     idisp=disp
-    !     onset_time=x
-    !     lapse=0.d0
-    !     if(my_rank.eq.0) write(fname,'("output/event",i0,".dat")') number
-    !     if(my_rank.eq.0) open(53,file=fname)
-    !   end if
-    ! end if
-    !
-    ! if(slipping) then
-    !   if(abs(maxval(vel)).lt.1d-5) then
-    !     slipping=.false.
-    !     eventcount=eventcount+1
-    !     if(my_rank.eq.0) write(19,*) eventcount,vmaxevent
-    !   end if
-    !   vmaxevent=max(vmaxevent,maxval(vel))
-    !   !write(53,'(i6,4e16.6)') !k,x-onset_time,sum(disp-idisp),sum(vel),sum(acg**2)
-    !   !if(x-onset_time.gt.lapse) then
-    !   !  lapse=lapse+dlapse
-    !   !end if
-    ! end if
-
-    !simulation ends before nstep1 when
-    !(1) eventcount exceeds threshold
-    ! if(eventcount.eq.thec) then
-    !   if(my_rank .eq. 0) write(*,*) 'eventcount 10'
-    !   go to 200
-    ! end if
-
-    !(2) slip velocity exceeds threshold (for nucleation)
 
     dttry = dtnxt
   end do
@@ -797,7 +762,7 @@ contains
         !phi(i)=0.27d0
         !vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
         omega=exp((phi(i)-mu0)/b(i))*vel(i)/vref/b(i)
-        write(16,*) ang(i)*180/pi,omega,tau(i)/sigma(i)
+        if(my_rank.eq.0)write(16,*) ang(i)*180/pi,omega,tau(i)/sigma(i)
     end do
     close(16)
 
@@ -862,7 +827,7 @@ contains
     integer::lc
     ra=sqrt((xcol(2)-xcol(1))**2+(ycol(2)-ycol(1))**2)
     lc=int(0.15d0*rigid*(1.d0-pois)*dc0/(b0-a0)/sigma0/ra)
-    write(*,*) 'lc=',lc
+    if(my_rank.eq.0) write(*,*) 'lc=',lc
     tau(inloc-lc:inloc+lc)=tau(inloc-lc:inloc+lc)+intau*tau(inloc)/abs(tau(inloc))
 
   end subroutine
@@ -971,13 +936,13 @@ rough=.true.
     close(30)
     if(my_rank.eq.0) open(32,file='tmp')
     do i=1,NCELLg
-      j=int((ys1(i)+10)*102.4)
+      j=int((ys1(i)+0d0)*102.4)
       k=int(-102.4*zs1(i))
       xs1(i)=xl(j,k)*amp
-      j=int((ys2(i)+10)*102.4)
+      j=int((ys2(i)+0d0)*102.4)
       k=int(-102.4*zs2(i))
       xs2(i)=xl(j,k)*amp
-      j=int((ys3(i)+10)*102.4)
+      j=int((ys3(i)+0d0)*102.4)
       k=int(-102.4*zs3(i))
       xs3(i)=xl(j,k)*amp
       xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
@@ -1082,16 +1047,7 @@ rough=.true.
     !  end do
     end select
   end subroutine
-  subroutine varscalc(NCELL,displs,vars)
-    implicit none
-    integer,intent(in)::NCELL,displs(:)
-    integer,intent(out)::vars(:)
-    do i=1,NCELL
-      vars(i)=displs(i-1)+i
-      !write(*,*) my_rank,i,vars(i)
-    end do
-    return
-  end subroutine
+
   subroutine evcalc(xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,ev11,ev12,ev13,ev21,ev22,ev23,ev31,ev32,ev33)
     !calculate ev for each element
     implicit none
@@ -1150,7 +1106,7 @@ rough=.true.
     real(8) :: sum_gs(NCELL),sum_gn(NCELL),sum_gd(NCELL),velstmpG(NCELLg),veldtmpG(NCELLg)
     real(8) :: sum_xx(NCELL),sum_xy(NCELL),sum_yy(NCELL),sum_xz(NCELL),sum_yz(NCELL),sum_zz(NCELL)
     real(8) :: sum_xxG(NCELLg),sum_xyG(NCELLg),sum_yyG(NCELLg),sum_xzG(NCELLg),sum_yzG(NCELLg),sum_zzG(NCELLg)
-    real(8) :: sum_xx2G(NCELLg),sum_xy2G(NCELLg),sum_yy2G(NCELLg),sum_xz2G(NCELLg),sum_yz2G(NCELLg),sum_zz2G(NCELLg)
+    real(8) :: sum_xx2(NCELL),sum_xy2(NCELL),sum_yy2(NCELL),sum_xz2(NCELL),sum_yz2(NCELL),sum_zz2(NCELL)
     real(8)::veltmpG(NCELLg),sum_gsg(NCELLg),sum_gng(NCELLg),efftmpG(NCELLg)
     real(8):: c1, c2, c3, arg,c,g,tauss,Arot(3,3),p(6)
     integer :: i, j, nc,ierr,lrtrn,i_
@@ -1182,8 +1138,12 @@ rough=.true.
           sum_gs(i)=sum_gs(i)+taudot(i_)
         end do
       case(1)
-        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG-vpl)
-        call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+        st_vel%vs=veltmp-vpl
+        call HACApK_adot_lattice_hyp(st_sum,st_LHp,st_ctl,wws,st_vel)
+        sum_gs(:)=st_sum%vs(st_ctl%lod(:))
+        !lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
+        !call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+        sum_gn=0.d0
       end select
 
       call deriv_d(sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,dphidt,dtaudt,dsigdt)
@@ -1202,41 +1162,45 @@ rough=.true.
         sigmatmp(i) = y(3*i)
         veltmp(i) = 2*vref*dexp(-phitmp(i)/a(i_))*dsinh(tautmp(i)/sigmatmp(i)/a(i_))
       enddo
-      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-      call MPI_ALLGATHERv(Veltmp,NCELL,MPI_REAL8,veltmpG,rcounts,displs,                &
-      &     MPI_REAL8,MPI_COMM_WORLD,ierr)
+      ! call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      ! call MPI_ALLGATHERv(Veltmp,NCELL,MPI_REAL8,veltmpG,rcounts,displs,                &
+      ! &     MPI_REAL8,MPI_COMM_WORLD,ierr)
 
       !matrix-vector mutiplation
+      st_vel%vs=veltmp
+
       st_bemv%v='xx'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,veltmpG)
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_xx,st_ctl,wws,st_vel)
+      sum_xx(:)=st_sum%vs(st_ctl%lod(:))
+
       st_bemv%v='xy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,veltmpG)
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_xy,st_ctl,wws,st_vel)
+      sum_xy(:)=st_sum%vs(st_ctl%lod(:))
+
       st_bemv%v='yy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,veltmpG)
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_yy,st_ctl,wws,st_vel)
+      sum_yy(:)=st_sum%vs(st_ctl%lod(:))
 
-      call MPI_SCATTERv(sum_xxG,rcounts,displs,MPI_REAL8,sum_xx,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      call MPI_SCATTERv(sum_xyG,rcounts,displs,MPI_REAL8,sum_xy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      call MPI_SCATTERv(sum_yyG,rcounts,displs,MPI_REAL8,sum_yy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      ! call MPI_SCATTERv(sum_xxG,rcounts,displs,MPI_REAL8,sum_xx,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      ! call MPI_SCATTERv(sum_xyG,rcounts,displs,MPI_REAL8,sum_xy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      ! call MPI_SCATTERv(sum_yyG,rcounts,displs,MPI_REAL8,sum_yy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
 
       do i=1,NCELL
         i_=vars(i)
-        sum_gs(i)=0.5d0*(sum_xx(i)-sum_yy(i))*dsin(-2*ang(i_))+sum_xy(i)*dcos(-2*ang(i_))
+        sum_gs(i)=taudot(i_)+0.5d0*(sum_xx(i)-sum_yy(i))*dsin(-2*ang(i_))+sum_xy(i)*dcos(-2*ang(i_))
         !sum_gn(i)=0.5d0*(sum_xx(i)+sum_yy(i))-0.5d0*(sum_xx(i)-sum_yy(i))*dcos(2*ang(i))-sum_xy(i)*dsin(2*ang(i))
-        sum_gn(i)=-(0.5d0*(sum_xx(i)+sum_yy(i))-0.5d0*(sum_xx(i)-sum_yy(i))*dcos(2*ang(i_))-sum_xy(i)*dsin(2*ang(i_)))
+        sum_gn(i)=sigdot(i_)-(0.5d0*(sum_xx(i)+sum_yy(i))-0.5d0*(sum_xx(i)-sum_yy(i))*dcos(2*ang(i_))-sum_xy(i)*dsin(2*ang(i_)))
       end do
-      do i=1,NCELL
-        i_=vars(i)
-        sum_gs(i)=sum_gs(i)+taudot(i_)
-        sum_gn(i)=sum_gn(i)+sigdot(i_)
-      end do
+
       call deriv_d(sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,dphidt,dtaudt,dsigdt)
+
       do i = 1, NCELL
         dydx(3*i-2) = dphidt(i)
         dydx(3*i-1) = dtaudt(i)
         dydx(3*i) = dsigdt(i)
       enddo
 
-    case('2dn_vector')
+    case('2dn_vector') !do not use
       do i = 1, NCELL
         i_=vars(i)
         phitmp(i) = y(3*i-2)
@@ -1282,45 +1246,70 @@ rough=.true.
         velstmp(i)=veltmp(i)*taustmp(i)/tautmp(i)
         veldtmp(i)=veltmp(i)*taudtmp(i)/tautmp(i)
       enddo
-      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-      call MPI_ALLGATHERv(Velstmp,NCELL,MPI_REAL8,velstmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-      call MPI_ALLGATHERv(Veldtmp,NCELL,MPI_REAL8,veldtmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+      !call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      !call MPI_ALLGATHERv(Velstmp,NCELL,MPI_REAL8,velstmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+      !call MPI_ALLGATHERv(Veldtmp,NCELL,MPI_REAL8,veldtmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
 
       !matrix-vector mutiplation
       st_bemv%md='st'
+      st_vel%vs=velstmp
+
       st_bemv%v='xx'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,velstmpG)
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_xx,st_ctl,wws,st_vel)
+      sum_xx(:)=st_sum%vs(st_ctl%lod(:))
+
       st_bemv%v='xy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,velstmpG-vpl)
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_xy,st_ctl,wws,st_vel)
+      sum_xy(:)=st_sum%vs(st_ctl%lod(:))
+
       st_bemv%v='yy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,velstmpG)
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_yy,st_ctl,wws,st_vel)
+      sum_yy(:)=st_sum%vs(st_ctl%lod(:))
+
       st_bemv%v='xz'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xz,st_bemv,st_ctl,sum_xzG,velstmpG)
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_xz,st_ctl,wws,st_vel)
+      sum_xz(:)=st_sum%vs(st_ctl%lod(:))
+
       st_bemv%v='yz'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yz,st_bemv,st_ctl,sum_yzG,velstmpG)
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_yz,st_ctl,wws,st_vel)
+      sum_yz(:)=st_sum%vs(st_ctl%lod(:))
+
       st_bemv%v='zz'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_zz,st_bemv,st_ctl,sum_zzG,velstmpG)
-      !write(*,*) 'max_sum',maxval(sum_xyG)
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_zz,st_ctl,wws,st_vel)
+      sum_zz(:)=st_sum%vs(st_ctl%lod(:))      !write(*,*) 'max_sum',maxval(sum_xyG)
 
       st_bemv%md='dp'
+      st_vel%vs=veldtmp
       st_bemv%v='xx'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx2,st_bemv,st_ctl,sum_xx2G,veldtmpG)
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_xx2,st_ctl,wws,st_vel)
+      sum_xx2(:)=st_sum%vs(st_ctl%lod(:))
+
       st_bemv%v='xy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy2,st_bemv,st_ctl,sum_xy2G,veldtmpG)
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_xy2,st_ctl,wws,st_vel)
+      sum_xy2(:)=st_sum%vs(st_ctl%lod(:))
+
       st_bemv%v='yy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy2,st_bemv,st_ctl,sum_yy2G,veldtmpG)
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_yy2,st_ctl,wws,st_vel)
+      sum_yy2(:)=st_sum%vs(st_ctl%lod(:))
+
       st_bemv%v='xz'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xz2,st_bemv,st_ctl,sum_xz2G,veldtmpG)
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_xz2,st_ctl,wws,st_vel)
+      sum_xz2(:)=st_sum%vs(st_ctl%lod(:))
+
       st_bemv%v='yz'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yz2,st_bemv,st_ctl,sum_yz2G,veldtmpG)
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_yz2,st_ctl,wws,st_vel)
+      sum_yz2(:)=st_sum%vs(st_ctl%lod(:))
+
       st_bemv%v='zz'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_zz2,st_bemv,st_ctl,sum_zz2G,veldtmpG)
-      sum_xxG=sum_xxG+sum_xx2G
-      sum_xyG=sum_xyG+sum_xy2G
-      sum_yyG=sum_yyG+sum_yy2G
-      sum_xzG=sum_xzG+sum_xz2G
-      sum_yzG=sum_yzG+sum_yz2G
-      sum_zzG=sum_zzG+sum_zz2G
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_zz2,st_ctl,wws,st_vel)
+      sum_zz2(:)=st_sum%vs(st_ctl%lod(:))
+
+      sum_xx=sum_xx+sum_xx2
+      sum_xy=sum_xy+sum_xy2
+      sum_yy=sum_yy+sum_yy2
+      sum_xz=sum_xz+sum_xz2
+      sum_yz=sum_yz+sum_yz2
+      sum_zz=sum_zz+sum_zz2
       ! if(my_rank.eq.0) then
       !   open(32,file='tmp')
       ! do i=1,NCELLg
@@ -1328,13 +1317,13 @@ rough=.true.
       ! end do
       ! end if
 
-      call MPI_SCATTERv(sum_xxG,rcounts,displs,MPI_REAL8,sum_xx,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      call MPI_SCATTERv(sum_xyG,rcounts,displs,MPI_REAL8,sum_xy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      call MPI_SCATTERv(sum_yyG,rcounts,displs,MPI_REAL8,sum_yy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      call MPI_SCATTERv(sum_xzG,rcounts,displs,MPI_REAL8,sum_xz,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      call MPI_SCATTERv(sum_yzG,rcounts,displs,MPI_REAL8,sum_yz,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      call MPI_SCATTERv(sum_zzG,rcounts,displs,MPI_REAL8,sum_zz,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      !stop
+      ! call MPI_SCATTERv(sum_xxG,rcounts,displs,MPI_REAL8,sum_xx,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      ! call MPI_SCATTERv(sum_xyG,rcounts,displs,MPI_REAL8,sum_xy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      ! call MPI_SCATTERv(sum_yyG,rcounts,displs,MPI_REAL8,sum_yy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      ! call MPI_SCATTERv(sum_xzG,rcounts,displs,MPI_REAL8,sum_xz,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      ! call MPI_SCATTERv(sum_yzG,rcounts,displs,MPI_REAL8,sum_yz,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      ! call MPI_SCATTERv(sum_zzG,rcounts,displs,MPI_REAL8,sum_zz,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      ! !stop
       !stress --> traction
       do i=1,NCELL
         i_=vars(i)
@@ -1596,10 +1585,6 @@ rough=.true.
       do i=1,NCELL
         if(abs(yerr(4*i-3)/yscal(4*i-3))/eps.gt.errmax) errmax=abs(yerr(4*i-3)/yscal(4*i-3))/eps
       end do
-      !case('2dn')
-      !  do i=1,NCELL
-      !    if(abs(yerr(3*i-2)/yscal(3*i-2))/eps.gt.errmax) errmax=abs(yerr(3*i-2)/yscal(3*i-2))/eps
-      !  end do
       case('2dp','3dp','2dn')
       errmax=maxval(abs(yerr(:)/yscal(:)))/eps
       end select
