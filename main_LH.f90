@@ -616,12 +616,12 @@ program main
         sigma(i_) = y(3*i)
         !artificial limit of normal stress motivated by plastic simulation
         !artificail limit of friction
-        if(limitsigma) then
-          if(y(3*i).lt.30d0) y(3*i)=30d0
-          if(y(3*i).gt.170d0) y(3*i)=170d0
-          !if(tau(i)/sigma(i).gt.0.64) tau(i)=0.64d0*sigma(i)
-          !if(tau(i)/sigma(i).lt.-0.64) tau(i)=-0.64d0*sigma(i)
-        end if
+        ! if(limitsigma) then
+        !   if(y(3*i).lt.30d0) y(3*i)=30d0
+        !   if(y(3*i).gt.170d0) y(3*i)=170d0
+        !   !if(tau(i)/sigma(i).gt.0.64) tau(i)=0.64d0*sigma(i)
+        !   !if(tau(i)/sigma(i).lt.-0.64) tau(i)=-0.64d0*sigma(i)
+        ! end if
         !disp(i) = disp(i) + exp( y(3*i-2) i)*dtdid
         vel(i_)= 2*vref*dexp(-phi(i_)/a(i_))*dsinh(tau(i_)/sigma(i_)/a(i_))
         disp(i_)=disp(i_)+vel(i_)*dtdid
@@ -645,12 +645,12 @@ program main
         sigma(i_) = y(4*i)
         !artificial limit of normal stress motivated by plastic simulation
         !artificail limit of friction
-        if(limitsigma) then
-          if(y(4*i).lt.30d0) y(4*i)=30d0
-          if(y(4*i).gt.170d0) y(4*i)=170d0
-          !if(tau(i)/sigma(i).gt.0.64) tau(i)=0.64d0*sigma(i)
-          !if(tau(i)/sigma(i).lt.-0.64) tau(i)=-0.64d0*sigma(i)
-        end if
+        ! if(limitsigma) then
+        !   if(y(4*i).lt.30d0) y(4*i)=30d0
+        !   if(y(4*i).gt.170d0) y(4*i)=170d0
+        !   !if(tau(i)/sigma(i).gt.0.64) tau(i)=0.64d0*sigma(i)
+        !   !if(tau(i)/sigma(i).lt.-0.64) tau(i)=-0.64d0*sigma(i)
+        ! end if
         !disp(i) = disp(i) + exp( y(3*i-2) i)*dtdid
         tau(i_)=sqrt(taus(i_)**2+taud(i_)**2)
         vel(i_)= 2*vref*dexp(-phi(i_)/a(i_))*dsinh(tau(i_)/sigma(i_)/a(i_))
@@ -1198,6 +1198,8 @@ rough=.true.
         dydx(3*i-2) = dphidt(i)
         dydx(3*i-1) = dtaudt(i)
         dydx(3*i) = dsigdt(i)
+        if(limitsigma.and.(sigmatmp(i).lt.30d0)) dsigdt=0d0
+        if(limitsigma.and.(sigmatmp(i).gt.170d0)) dsigdt=0d0
       enddo
 
     case('2dn_vector') !do not use
@@ -1349,6 +1351,8 @@ rough=.true.
         dydx(4*i-2) = dtausdt(i)
         dydx(4*i-1) = dtauddt(i)
         dydx(4*i) = dsigdt(i)
+        if(limitsigma.and.(sigmatmp(i).lt.30d0)) dsigdt=0d0
+        if(limitsigma.and.(sigmatmp(i).gt.170d0)) dsigdt=0d0
       enddo
     end select
 
