@@ -17,7 +17,7 @@ program main
   character*128::fname,dum,law,input_file,problem,geofile
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
   real(8)::vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau
-  real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxevent
+  real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds,amp,mui,strinit,velinit,velmax
   type(st_HACApK_lcontrol) :: st_ctl
   type(st_HACApK_leafmtxp) :: st_leafmtxps,st_leafmtxpn
@@ -114,6 +114,7 @@ program main
   read(33,*) dum,inloc !initial timestep
 
   read(33,*) dum,limitsigma
+  read(33,*) dum,sparam !for aftershock difference of main_sub fault
   read(33,*) dum,eps !error allowance in time integration in Runge-Kutta
   !read(*,*) amp
   !read(*,*) omega
@@ -555,7 +556,7 @@ program main
     end do
 
     !parallel computing for Runge-Kutta
-    call rkqs(y,dydx,x,dttry,eps,y,dtdid,dtnxt)
+    call rkqs(y,dydx,x,dttry,eps,yscal,dtdid,dtnxt)
 
     Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
@@ -638,7 +639,7 @@ program main
       time2= MPI_Wtime()
       select case(problem)
       case('2dp','2dn','3dp')
-      write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),dtdid*maxval(abs(vel)),time2-time1
+      write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(sum(vel(1:10000))/10000),time2-time1
       case('3dn','3dh')
         write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(vel)),sum(disps)/NCELLg,sum(mu)/NCELLg,maxloc(vel),dtdid*maxval(vel),time2-time1
       end select
@@ -751,8 +752,8 @@ program main
   !output for FDMAP communication
   !call output_to_FDMAP()
    if(my_rank.eq.0) then
-     do i=1,NCELLg
-       write(48,'(3f16.4,i10)') xcol(i),ycol(i),ruptG(i),rupsG(i)
+     do i=10076,NCELLg,150
+       write(48,'(4f16.4)') xcol(i),ycol(i),ruptG(i),ang(i)
      end do
    end if
 
@@ -801,6 +802,7 @@ contains
     sxy0=syy0*muinit
     !psi=37d0
     psi=30d0
+    !psi=42d0
     sxx0=syy0*(1d0+2*sxy0/(syy0*dtan(2*psi/180d0*pi)))
     write(*,*) 'sxx0,sxy0,syy0'
     write(*,*) sxx0,sxy0,syy0
@@ -1029,6 +1031,7 @@ rough=.true.
       !if(abs(i-NCELLg/2).gt.NCELLg/4) a(i)=0.024d0 for cycle
       b(i)=b0
       dc(i)=dc0
+      if((problem.eq.'2dn').and.i.gt.10000) dc(i)=sparam*dc0
       vc(i)=vc0
       fw(i)=fw0
       vw(i)=vw0
