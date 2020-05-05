@@ -130,16 +130,17 @@ program main
   !ang=(/0,10,-10,10,-10/)
   call random_number(ang)
   !limited angle
-  !do j=1,jmax
-  !  if(ang(j).gt.0.5d0) then
-  !    ang(j)=(ang(j)-0.75d0)*60d0
-  !  else
-  !    ang(j)=-60d0+(ang(j)-0.25d0)*60d0
-  !  end if
-  !end do
+  do j=1,jmax
+    if(ang(j).gt.0.5d0) then
+      ang(j)=(ang(j)-0.75d0)*60d0
+    else
+      ang(j)=-60d0+(ang(j)-0.25d0)*60d0
+    end if
+  end do
 
   !unlimited angle
-  ang=(ang-0.5)*180d0
+  !ang=(ang-0.5)*180d0
+
   ang=ang/180*pi
   !xc=(xc-0.1d0)*nm*ds*1.2d0
   !yc=yc*nm*ds
@@ -184,18 +185,18 @@ program main
       ds=0.004d0
 
       !distance from main fault
-      !do i=1,nm
-        x1=xc-ns(j)/2*ds*cos(ang(i))
-        x2=xc+ns(j)/2*ds*cos(ang(j))
-        y1=yc-ns(j)/2*ds*sin(ang(j))
-        y2=yc+ns(j)/2*ds*sin(ang(j))
-        !rr=(xc-xel(i))**2+(yc-yel(i))**2
-        !if(rr.lt.(ns(j)*ds/2)**2) then
+      do i=1,nm
+        !x1=xc-ns(j)/2*ds*cos(ang(i))
+        !x2=xc+ns(j)/2*ds*cos(ang(j))
+        !y1=yc-ns(j)/2*ds*sin(ang(j))
+        !y2=yc+ns(j)/2*ds*sin(ang(j))
+        rr=(xc-xel(i))**2+(yc-yel(i))**2
+        if(rr.lt.(ns(j)*ds/2)**2) then
         !write(*,*) x1,x2,y1,y2
-        if((yel(int(x1/0.01d0))-y1)*(yer(int(x2/0.01d0))-y2).lt.0d0) then
+        !if((yel(int(x1/0.01d0))-y1)*(yer(int(x2/0.01d0))-y2).lt.0d0) then
           go to 100
         end if
-      !end do
+      end do
       !distance from other subfault https://qiita.com/boiledorange73/items/1e254b69ee84554b9d37
       do i=1,j-1
         !rr=(xc-xg(i))**2+(yc-yg(i))**2
