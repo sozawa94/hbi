@@ -581,13 +581,13 @@ program main
   do k=1,NSTEP1
     dttry = dtnxt
 
-    ! call derivs(x, y, dydx)!,,st_leafmtxps,st_leafmtxpn,st_bemv,st_ctl)
-    ! do i = 1, size(yscal)
-    !   yscal(i)=abs(y(i))+abs(dttry*dydx(i))+tiny
-    ! end do
+     call derivs(x, y, dydx)!,,st_leafmtxps,st_leafmtxpn,st_bemv,st_ctl)
+     do i = 1, size(yscal)
+       yscal(i)=abs(y(i))+abs(dttry*dydx(i))+tiny
+     end do
 
     !parallel computing for Runge-Kutta
-    call rkqs(y,dydx,x,dttry,eps,y,dtdid,dtnxt)
+    call rkqs(y,dydx,x,dttry,eps,yscal,dtdid,dtnxt)
     !yl=y
     !Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
