@@ -16,7 +16,7 @@ program main
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
-  real(8)::vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau
+  real(8)::vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau,sparam
   real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxevent,mvel,mvelG
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds,amp,mui,strinit,velinit,velmax
   type(st_HACApK_lcontrol) :: st_ctl
@@ -117,6 +117,7 @@ program main
   read(33,*) dum,inloc !initial timestep
 
   read(33,*) dum,limitsigma
+  read(33,*) dum,sparam !for aftershock difference of main_sub fault
   read(33,*) dum,eps !error allowance in time integration in Runge-Kutta
   !read(*,*) amp
   !read(*,*) omega
@@ -318,7 +319,7 @@ program main
 
     NCELL=st_vel%ndc
     allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL),yg(3*NCELLg),vars(NCELL))
-    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+    !write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
     i=0
     do k=1,st_vel%nlfc
       do j=1,st_vel%lbndc(k)
@@ -352,36 +353,36 @@ program main
     allocate(wws(st_leafmtxp_xx%ndlfs))
     lrtrn=HACApK_gen_lattice_vector(st_vel,st_leafmtxp_xx,st_ctl)
     lrtrn=HACApK_gen_lattice_vector(st_sum,st_leafmtxp_xx,st_ctl)
-    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+    !write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
 
 
     st_bemv%v='xy'
     lrtrn=HACApK_generate(st_leafmtxp_xy,st_bemv,st_ctl,coord,1d-5)
     lrtrn=HACApK_construct_LH(st_LHp_xy,st_leafmtxp_xy,st_bemv,st_ctl,coord,1d-5)
-    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+    !write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
 
 !stop
 
     st_bemv%v='yy'
     lrtrn=HACApK_generate(st_leafmtxp_yy,st_bemv,st_ctl,coord,1d-5)
     lrtrn=HACApK_construct_LH(st_LHp_yy,st_leafmtxp_yy,st_bemv,st_ctl,coord,1d-5)
-    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+    !write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
 
 
     st_bemv%v='xz'
     lrtrn=HACApK_generate(st_leafmtxp_xz,st_bemv,st_ctl,coord,1d-5)
     lrtrn=HACApK_construct_LH(st_LHp_xz,st_leafmtxp_xz,st_bemv,st_ctl,coord,1d-5)
-    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+    !write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
 
     st_bemv%v='yz'
     lrtrn=HACApK_generate(st_leafmtxp_yz,st_bemv,st_ctl,coord,1d-5)
     lrtrn=HACApK_construct_LH(st_LHp_yz,st_leafmtxp_yz,st_bemv,st_ctl,coord,1d-5)
-    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+    !write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
 
     st_bemv%v='zz'
     lrtrn=HACApK_generate(st_leafmtxp_zz,st_bemv,st_ctl,coord,1d-5)
     lrtrn=HACApK_construct_LH(st_LHp_zz,st_leafmtxp_zz,st_bemv,st_ctl,coord,1d-5)
-    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+    !write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
 
     !kernel for dip slip
     st_bemv%md='dp'
@@ -412,7 +413,7 @@ program main
 
     NCELL=st_vel%ndc
     allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL),yg(4*NCELLg),vars(NCELL))
-    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+    !write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
     i=0
     do k=1,st_vel%nlfc
       do j=1,st_vel%lbndc(k)
@@ -484,16 +485,22 @@ program main
   !call input_from_FDMAP()
 
   !setting output files
-  write(fname,'("output/",i0,"_",i0,".dat")') my_rank,number
-  nout=my_rank+100
-  open(nout,file=fname)
+  if(my_rank.lt.int(sqrt(dble(np)))) then
+    write(fname,'("output/",i0,"_",i0,".dat")') number,my_rank
+    nout=my_rank+100
+    open(nout,file=fname)
+  end if
 
   if(my_rank.eq.0) then
     write(fname,'("output/monitor",i0,".dat")') number
     open(52,file=fname)
 
-    !write(fname,'("output/rupt",i0,".dat")') number
+    write(fname,'("output/rupt",i0,".dat")') number
     open(48,file=fname)
+
+    write(fname,'("output/slip",i0,".dat")') number
+    open(46,file=fname)
+
     open(19,file='job.log',position='append')
   end if
 
@@ -574,10 +581,10 @@ program main
   do k=1,NSTEP1
     dttry = dtnxt
 
-    call derivs(x, y, dydx)!,,st_leafmtxps,st_leafmtxpn,st_bemv,st_ctl)
-    do i = 1, size(yscal)
-      yscal(i)=abs(y(i))+abs(dttry*dydx(i))+tiny
-    end do
+    ! call derivs(x, y, dydx)!,,st_leafmtxps,st_leafmtxpn,st_bemv,st_ctl)
+    ! do i = 1, size(yscal)
+    !   yscal(i)=abs(y(i))+abs(dttry*dydx(i))+tiny
+    ! end do
 
     !parallel computing for Runge-Kutta
     call rkqs(y,dydx,x,dttry,eps,y,dtdid,dtnxt)
@@ -700,6 +707,14 @@ program main
   !     write(48,'(3f16.4,i10)') xcol(i),ycol(i),ruptG(i),rupsG(i)
   !   end do
   ! end if
+  if(my_rank.eq.0) then
+    do i=1,NCELLg
+      write(46,'(4f16.4)') xcol(i),ycol(i),disp(i),ang(i)
+    end do
+    do i=10076,NCELLg,150
+      write(48,'(4f16.4)') xcol(i),ycol(i),ruptG(i),ang(i)
+    end do
+  end if
 
   200  if(my_rank.eq.0) then
   time2= MPI_Wtime()
@@ -749,7 +764,7 @@ contains
     sxx0=syy0*(1d0+2*sxy0/(syy0*dtan(2*psi/180d0*pi)))
     write(*,*) 'sxx0,sxy0,syy0'
     write(*,*) sxx0,sxy0,syy0
-    open(16,file='initomega')
+    if(my_rank.eq.0) open(16,file='initomega')
     do i=1,size(vel)
       i_=vars(i)
         tau(i)=sxy0*cos(2*ang(i))+0.5d0*(sxx0-syy0)*sin(2*ang(i))
@@ -764,7 +779,7 @@ contains
         omega=exp((phi(i)-mu0)/b(i))*vel(i)/vref/b(i)
         if(my_rank.eq.0)write(16,*) ang(i)*180/pi,omega,tau(i)/sigma(i)
     end do
-    close(16)
+    if(my_rank.eq.0) close(16)
 
     !predefined sigma and tau(debug)
     !sigma=sigma0
@@ -911,7 +926,7 @@ contains
     real(8),intent(out)::xcol(:),ycol(:),zcol(:)
     real(8),intent(out)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
     real(4)::xl(0:2048,0:2048)
-    real(8),parameter::amp=1d-4
+    real(8),parameter::amp=2d-4
     integer::i,j,k
     logical::rough
 
@@ -936,13 +951,13 @@ rough=.true.
     close(30)
     if(my_rank.eq.0) open(32,file='tmp')
     do i=1,NCELLg
-      j=int((ys1(i)+0d0)*102.4)
+      j=int((ys1(i)+10d0)*102.4)
       k=int(-102.4*zs1(i))
       xs1(i)=xl(j,k)*amp
-      j=int((ys2(i)+0d0)*102.4)
+      j=int((ys2(i)+10d0)*102.4)
       k=int(-102.4*zs2(i))
       xs2(i)=xl(j,k)*amp
-      j=int((ys3(i)+0d0)*102.4)
+      j=int((ys3(i)+10d0)*102.4)
       k=int(-102.4*zs3(i))
       xs3(i)=xl(j,k)*amp
       xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
@@ -973,6 +988,7 @@ rough=.true.
       !if(abs(i-NCELLg/2).gt.NCELLg/4) a(i)=0.024d0 for cycle
       b(i)=b0
       dc(i)=dc0
+      if((problem.eq.'2dn').and.i.gt.10000) dc(i)=sparam*dc0
       vc(i)=vc0
       fw(i)=fw0
       vw(i)=vw0
@@ -1011,7 +1027,7 @@ rough=.true.
       tauddot=0d0
       sigdot=0d0
     case('2dn')
-      open(15,file='sr')
+      !open(15,file='sr')
       do i=1,NCELLg
       select case(load)
       case(0)
@@ -1029,9 +1045,9 @@ rough=.true.
           call kern(v,xcol(i),ycol(i),edge,ycol(NCELLg),99*edge,ycol(NCELLg),ang(i),0d0,ret2)
           sigdot(i)=vpl*(ret1+ret2)
       end select
-      write(15,*) taudot(i),sigdot(i)
+      !write(15,*) taudot(i),sigdot(i)
     end do
-    close(15)
+    !close(15)
     tauddot=0d0
   case('3dn','3dh')
     !taudot=sr
@@ -1600,8 +1616,9 @@ rough=.true.
         exit
       end if
 
-      htemp=SAFETY*h*(errmax_gb**PSHRNK)
-      h=sign(max(abs(htemp),0.1*abs(h)),h)
+      !htemp=SAFETY*h*(errmax_gb**PSHRNK)
+      h=0.33d0*h
+      !h=sign(max(abs(htemp),0.1*abs(h)),h)
       xnew=x+h
       if(xnew-x<1.d-8) stop
     end do
