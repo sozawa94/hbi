@@ -813,9 +813,9 @@ contains
     sxx0=syy0*(1d0+2*sxy0/(syy0*dtan(2*psi/180d0*pi)))
     write(*,*) 'sxx0,sxy0,syy0'
     write(*,*) sxx0,sxy0,syy0
-    open(16,file='initomega')
+    if(my_rank.eq.0) open(16,file='initomega')
     do i=1,size(vel)
-      i_=vars(i)
+      !i_=vars(i)
         tau(i)=sxy0*cos(2*ang(i))+0.5d0*(sxx0-syy0)*sin(2*ang(i))
         sigma(i)=sin(ang(i))**2*sxx0+cos(ang(i))**2*syy0+sxy0*sin(2*ang(i))
         !constant velocity
@@ -826,9 +826,9 @@ contains
         !phi(i)=0.27d0
         !vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
         omega=exp((phi(i)-mu0)/b(i))*vel(i)/vref/b(i)
-        write(16,*) ang(i)*180/pi,omega,tau(i)/sigma(i)
+        if(my_rank.eq.0) write(16,*) ang(i)*180/pi,omega,tau(i)/sigma(i)
     end do
-    close(16)
+    if(my_rank.eq.0) close(16)
 
     !predefined sigma and tau(debug)
     !sigma=sigma0
@@ -1077,7 +1077,7 @@ rough=.true.
       tauddot=0d0
       sigdot=0d0
     case('2dn')
-      open(15,file='sr')
+      !open(15,file='sr')
       do i=1,NCELLg
       select case(load)
       case(0)
@@ -1095,9 +1095,9 @@ rough=.true.
           call kern(v,xcol(i),ycol(i),edge,ycol(NCELLg),99*edge,ycol(NCELLg),ang(i),0d0,ret2)
           sigdot(i)=vpl*(ret1+ret2)
       end select
-      write(15,*) taudot(i),sigdot(i)
+      !write(15,*) taudot(i),sigdot(i)
     end do
-    close(15)
+    !close(15)
     tauddot=0d0
   case('3dn','3dh')
     !taudot=sr
