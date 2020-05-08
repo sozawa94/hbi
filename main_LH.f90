@@ -766,7 +766,7 @@ contains
     write(*,*) sxx0,sxy0,syy0
     if(my_rank.eq.0) open(16,file='initomega')
     do i=1,size(vel)
-      i_=vars(i)
+      !i_=vars(i)
         tau(i)=sxy0*cos(2*ang(i))+0.5d0*(sxx0-syy0)*sin(2*ang(i))
         sigma(i)=sin(ang(i))**2*sxx0+cos(ang(i))**2*syy0+sxy0*sin(2*ang(i))
         !constant velocity
