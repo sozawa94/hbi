@@ -475,6 +475,8 @@ program main
     open(50,file=fname)
     write(fname,'("output/rupt",i0,".dat")') number
     open(48,file=fname)
+    write(fname,'("output/slip",i0,".dat")') number
+    open(46,file=fname)
     open(19,file='job.log',position='append')
   end if
 
@@ -652,7 +654,7 @@ program main
       !for FDMAP
       !PsiG=a*dlog(2.d0*vref/vel*dsinh(tau/sigma/a))
       do i=1,NCELLg
-        if(abs(vel(i)).gt.0.01d0.and.ruptG(i).le.1d-6) then
+        if(abs(vel(i)).gt.1d-3.and.ruptG(i).le.1d-6) then
           ruptG(i)=x
           !rupsG(i)=k
         end if
@@ -752,6 +754,9 @@ program main
   !output for FDMAP communication
   !call output_to_FDMAP()
    if(my_rank.eq.0) then
+     do i=1,NCELLg
+       write(46,'(4f16.4)') xcol(i),ycol(i),disp(i),ang(i)
+     end do
      do i=10076,NCELLg,150
        write(48,'(4f16.4)') xcol(i),ycol(i),ruptG(i),ang(i)
      end do
@@ -762,6 +767,8 @@ program main
   write(*,*) 'time(s)', time2-time1
   close(52)
   close(50)
+  close(48)
+  close(46)
   close(19)
 end if
 Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -1633,8 +1640,9 @@ rough=.true.
         exit
       end if
 
-      htemp=SAFETY*h*(errmax_gb**PSHRNK)
-      h=sign(max(abs(htemp),0.1*abs(h)),h)
+      !htemp=SAFETY*h*(errmax_gb**PSHRNK)
+      h=0.33d0*h
+      !h=sign(max(abs(htemp),0.1*abs(h)),h)
       xnew=x+h
       if(xnew-x<1.d-8) stop
     end do
