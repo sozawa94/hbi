@@ -16,7 +16,7 @@ program main
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
-  real(8)::vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau
+  real(8)::psi,vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau
   real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds,amp,mui,strinit,velinit,velmax
   type(st_HACApK_lcontrol) :: st_ctl
@@ -109,6 +109,7 @@ program main
   !initial values & nucleation
   read(33,*) dum,velinit !initial slip velocity
   read(33,*) dum,muinit !initial omega=V*theta
+  read(33,*) dum,psi !stress angle
   read(33,*) dum,dtinit !initial timestep
   read(33,*) dum,intau !initial timestep
   read(33,*) dum,inloc !initial timestep
@@ -437,7 +438,7 @@ program main
     omega=exp((phi(1)-mu0)/b(1))*abs(vel(1))/vref/b(1)
     write(*,*) 'Omega',Omega
   case('2dn')
-    call initcond2d(phi,sigma,tau,disp)
+    call initcond2d(psi,muinit,phi,sigma,tau,disp)
     call add_nuclei(tau,intau,inloc)
   case('3dn','3dh')
     call initcond3d(phi,sigma,taus,taud)
@@ -799,16 +800,17 @@ lrtrn=HACApK_finalize(st_ctl)
 Call MPI_FINALIZE(ierr)
 stop
 contains
-  subroutine initcond2d(phi,sigma,tau,disp)
+  subroutine initcond2d(psi,muinit,phi,sigma,tau,disp)
     implicit none
+    real(8),intent(in)::psi,muinit
     real(8),intent(out)::phi(:),sigma(:),tau(:),disp(:)
-    real(8)::sxx0,sxy0,syy0,psi,theta
+    real(8)::sxx0,sxy0,syy0,theta
     disp=0d0
     !initial tractions from uniform stress tensor
     syy0=sigma0
     sxy0=syy0*muinit
     !psi=37d0
-    psi=30d0
+    !psi=30d0
     !psi=42d0
     sxx0=syy0*(1d0+2*sxy0/(syy0*dtan(2*psi/180d0*pi)))
     write(*,*) 'sxx0,sxy0,syy0'
