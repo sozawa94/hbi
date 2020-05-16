@@ -16,7 +16,7 @@ program main
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
-  real(8)::psi,vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau
+  real(8)::psi,vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau,errmax_gb
   real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds,amp,mui,strinit,velinit,velmax
   type(st_HACApK_lcontrol) :: st_ctl
@@ -478,6 +478,8 @@ program main
     open(48,file=fname)
     write(fname,'("output/slip",i0,".dat")') number
     open(46,file=fname)
+    write(fname,'("output/event",i0,".dat")') number
+    open(44,file=fname)
     open(19,file='job.log',position='append')
   end if
 
@@ -555,11 +557,11 @@ program main
 
     call derivs(x, y, dydx)!,,st_leafmtxps,st_leafmtxpn,st_bemv,st_ctl)
     do i = 1, size(yscal)
-      yscal(i)=abs(y(i))+abs(dttry*dydx(i))+tiny
+      yscal(i)=abs(y(i))+abs(dttry*dydx(i))!+tiny
     end do
 
     !parallel computing for Runge-Kutta
-    call rkqs(y,dydx,x,dttry,eps,yscal,dtdid,dtnxt)
+    call rkqs(y,dydx,x,dttry,eps,yscal,dtdid,dtnxt,errmax_gb)
 
     Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
@@ -642,7 +644,7 @@ program main
       time2= MPI_Wtime()
       select case(problem)
       case('2dp','2dn','3dp')
-      write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(sum(vel(1:10000))/10000),time2-time1
+      write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(maxval(vel(1:10000))),time2-time1
       case('3dn','3dh')
         write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(vel)),sum(disps)/NCELLg,sum(mu)/NCELLg,maxloc(vel),dtdid*maxval(vel),time2-time1
       end select
@@ -655,7 +657,7 @@ program main
       !for FDMAP
       !PsiG=a*dlog(2.d0*vref/vel*dsinh(tau/sigma/a))
       do i=1,NCELLg
-        if(abs(vel(i)).gt.1d-3.and.ruptG(i).le.1d-6) then
+        if(abs(vel(i)).gt.1d-2.and.ruptG(i).le.1d-6) then
           ruptG(i)=x
           !rupsG(i)=k
         end if
@@ -705,30 +707,31 @@ program main
     end if
 
 
-    ! if(.not.slipping) then
+    if(.not.slipping) then
     !   vmaxevent=0.d0
-    !   if(abs(maxval(vel)).gt.1d-5) then
-    !     slipping=.true.
+     if(maxval(abs(vel)).gt.1d-2) then
+         slipping=.true.
+         eventcount=eventcount+1
     !     idisp=disp
-    !     onset_time=x
     !     lapse=0.d0
+         if(my_rank.eq.0) write(44,*) eventcount,x,maxloc(abs(vel))
     !     if(my_rank.eq.0) write(fname,'("output/event",i0,".dat")') number
     !     if(my_rank.eq.0) open(53,file=fname)
-    !   end if
-    ! end if
+       end if
+     end if
     !
-    ! if(slipping) then
-    !   if(abs(maxval(vel)).lt.1d-5) then
-    !     slipping=.false.
-    !     eventcount=eventcount+1
-    !     if(my_rank.eq.0) write(19,*) eventcount,vmaxevent
-    !   end if
+    if(slipping) then
+      if(maxval(abs(vel)).lt.5d-3) then
+         slipping=.false.
+         !eventcount=eventcount+1
+         !if(my_rank.eq.0) write(44,*) eventcount,onset_time,maxloc(abs(vel))
+      end if
     !   vmaxevent=max(vmaxevent,maxval(vel))
     !   !write(53,'(i6,4e16.6)') !k,x-onset_time,sum(disp-idisp),sum(vel),sum(acg**2)
     !   !if(x-onset_time.gt.lapse) then
     !   !  lapse=lapse+dlapse
     !   !end if
-    ! end if
+    end if
 
     !simulation ends before nstep1 when
     !(1) eventcount exceeds threshold
@@ -770,6 +773,7 @@ program main
   close(50)
   close(48)
   close(46)
+  close(44)
   close(19)
 end if
 Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -821,14 +825,14 @@ contains
         tau(i)=sxy0*cos(2*ang(i))+0.5d0*(sxx0-syy0)*sin(2*ang(i))
         sigma(i)=sin(ang(i))**2*sxx0+cos(ang(i))**2*syy0+sxy0*sin(2*ang(i))
         !constant velocity
-        vel(i)=velinit*tau(i)/abs(tau(i))
-        phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
+        !vel(i)=velinit*tau(i)/abs(tau(i))
+        !phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
 
         !constant Phi
-        !phi(i)=0.27d0
-        !vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
+        phi(i)=0.50d0
+        vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
         omega=exp((phi(i)-mu0)/b(i))*vel(i)/vref/b(i)
-        if(my_rank.eq.0) write(16,*) ang(i)*180/pi,omega,tau(i)/sigma(i)
+        if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
     end do
     if(my_rank.eq.0) close(16)
 
@@ -1603,7 +1607,7 @@ rough=.true.
   end subroutine
 
   !---------------------------------------------------------------------
-  subroutine rkqs(y,dydx,x,htry,eps,yscal,hdid,hnext)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+  subroutine rkqs(y,dydx,x,htry,eps,yscal,hdid,hnext,errmax_gb)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
     !---------------------------------------------------------------------
     use m_HACApK_solve
     use m_HACApK_base
@@ -1613,12 +1617,12 @@ rough=.true.
     !integer::NCELL,NCELLg,rcounts(:),displs(:)
     real(8),intent(in)::yscal(:),htry,eps
     real(8),intent(inout)::y(:),x,dydx(:)
-    real(8),intent(out)::hdid,hnext !hdid: resulatant dt hnext: htry for the next
+    real(8),intent(out)::hdid,hnext,errmax_gb !hdid: resulatant dt hnext: htry for the next
     !type(st_HACApK_lcontrol),intent(in) :: st_ctl
     !type(st_HACApK_leafmtxp),intent(in) :: st_leafmtxp
     !type(st_HACApK_calc_entry) :: st_bemv
     integer :: i,ierr
-    real(8) :: errmax,h,xnew,htemp,errmax_gb
+    real(8) :: errmax,h,xnew,htemp
     real(8),dimension(size(y))::yerr,ytemp
     real(8),parameter::SAFETY=0.9,PGROW=-0.2,PSHRNK=-0.25,ERRCON=1.89d-4,hmax=1d5
 
@@ -1638,7 +1642,7 @@ rough=.true.
       call MPI_ALLREDUCE(errmax,errmax_gb,1,MPI_REAL8,                  &
       &     MPI_MAX,MPI_COMM_WORLD,ierr)
 
-      if(errmax_gb.lt.1.d0) then
+      if((errmax_gb.lt.1.d0).and.(errmax_gb.gt.1d-15)) then
         exit
       end if
 
@@ -1646,7 +1650,7 @@ rough=.true.
       h=0.33d0*h
       !h=sign(max(abs(htemp),0.1*abs(h)),h)
       xnew=x+h
-      if(xnew-x<1.d-8) stop
+      !if(xnew-x<1.d-8) stop
     end do
 
     hnext=min(1.5*h,SAFETY*h*(errmax_gb**PGROW),1d8)
