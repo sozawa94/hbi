@@ -480,6 +480,8 @@ program main
     open(46,file=fname)
     write(fname,'("output/event",i0,".dat")') number
     open(44,file=fname)
+    write(fname,'("output/local",i0,".dat")') number
+    open(42,file=fname)
     open(19,file='job.log',position='append')
   end if
 
@@ -1041,7 +1043,7 @@ rough=.true.
     !uniform
     do i=1,NCELLg
       a(i)=a0
-      !if(abs(i-NCELLg/2).gt.NCELLg/4) a(i)=0.024d0 for cycle
+      !if(abs(xcol(i)-50d0).gt.30d0) a(i)=0.024d0 !for cycle
       b(i)=b0
       dc(i)=dc0
       if((problem.eq.'2dn').and.i.gt.10000) dc(i)=sparam*dc0
@@ -1090,15 +1092,16 @@ rough=.true.
         taudot(i)=sr*cos(2*ang(i))
         sigdot(i)=sr*sin(2*ang(i))
       case(1)
-        edge=ds*NCELLg/2
-
+        !edge=ds*NCELLg/2
+         
           v='s'
-          call kern(v,xcol(i),ycol(i),-99*edge,ycol(1),-edge,ycol(1),ang(i),0d0,ret1)
-          call kern(v,xcol(i),ycol(i),edge,ycol(NCELLg),99*edge,ycol(NCELLg),ang(i),0d0,ret2)
+          call kern(v,xcol(i),ycol(i),-500d0,ycol(1),0d0,ycol(1),ang(i),0d0,ret1)
+          call kern(v,xcol(i),ycol(i),100d0,ycol(10000),600d0,ycol(10000),ang(i),0d0,ret2)
           taudot(i)=vpl*(ret1+ret2)
+         
           v='n'
-          call kern(v,xcol(i),ycol(i),-99*edge,ycol(1),-edge,ycol(1),ang(i),0d0,ret1)
-          call kern(v,xcol(i),ycol(i),edge,ycol(NCELLg),99*edge,ycol(NCELLg),ang(i),0d0,ret2)
+          call kern(v,xcol(i),ycol(i),-500d0,ycol(1),0d0,ycol(1),ang(i),0d0,ret1)
+          call kern(v,xcol(i),ycol(i),100d0,ycol(10000),600d0,ycol(10000),ang(i),0d0,ret2)
           sigdot(i)=vpl*(ret1+ret2)
       end select
       !write(15,*) taudot(i),sigdot(i)
