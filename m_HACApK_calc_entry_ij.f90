@@ -33,6 +33,11 @@ contains
     case('2dn')
       HACApK_entry_ij=tensor2d_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
       & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang,st_bemv%v)
+
+    case('2dn3')
+      HACApK_entry_ij=tensor2d3_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
+      & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang)
+
     case('3dp')
       HACApK_entry_ij=matel3dp_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
       & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
@@ -82,6 +87,23 @@ contains
     case('yy')
       tensor2d_ij=0.5d0*(kern11+kern22)-0.5d0*(kern11-kern22)*cos2-kern12*sin2
     end select
+  end function
+
+  real(8) function tensor2d3_ij(i,j,xcol,ycol,xel,xer,yel,yer,ang)
+    implicit none
+    integer,intent(in)::i,j
+    real(8),intent(in)::xcol(:),ycol(:),xel(:),xer(:),yel(:),yer(:),ang(:)
+    real(8)::xp,xm,yp,ym,kern31,kern32,sin2,cos2,ds
+
+    xp=cos(ang(j))*(xcol(i)-xel(j))+sin(ang(j))*(ycol(i)-yel(j))
+    xm=cos(ang(j))*(xcol(i)-xer(j))+sin(ang(j))*(ycol(i)-yer(j))
+    yp=-sin(ang(j))*(xcol(i)-xel(j))+cos(ang(j))*(ycol(i)-yel(j))
+    ym=-sin(ang(j))*(xcol(i)-xer(j))+cos(ang(j))*(ycol(i)-yer(j))
+    kern31=-0.5d0*rigid/vs*(inte31s(xp,yp)-inte31s(xm,ym))
+    kern32=-0.5d0*rigid/vs*(inte32s(xp,yp)-inte32s(xm,ym))
+    !=>global coordinate system
+    tensor2d3_ij=sin(ang(i))*kern31+cos(ang(i))*kern32
+
   end function
 
   real(8) function matel3dp_ij(i,j,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
@@ -322,6 +344,22 @@ contains
     r=sqrt(x1**2+x2**2)
     pa=vs/vp
     inte22s=2*vs/pi*(1-pa**2)*x2*(x1**2-x2**2)/r**4
+    return
+  end function
+
+  function inte31s(x1,x2)
+    implicit none
+    real(8)::x1,x2,t,ss,sp,pa,r,inte31s
+    r=sqrt(x1**2+x2**2)
+    inte31s=-vs*x2/pi/r**2
+    return
+  end function
+
+  function inte32s(x1,x2)
+    implicit none
+    real(8)::x1,x2,t,ss,sp,pa,r,inte32s
+    r=sqrt(x1**2+x2**2)
+    inte32s=vs/pi*x1/r**2
     return
   end function
 
