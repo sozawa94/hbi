@@ -10,13 +10,13 @@ program main
   include 'mpif.h'
   integer:: date_time(8)
   character(len=10):: sys_time(3)
-  integer::NCELL, nstep1, lp, i,i_,j,k,m,counts,interval,number,lrtrn,nl,NCELLg,nout
+  integer::NCELL, nstep1, lp, i,i_,j,k,m,counts,interval,number,lrtrn,nl,NCELLg,nout,ios,npd
   integer::clock,cr,counts2,imax,jmax,NCELLm,seedsize,icomm,np,ierr,my_rank,load,eventcount,thec,inloc
   logical::slipping,outfield,limitsigma
   integer,allocatable::seed(:)
-  character*128::fname,dum,law,input_file,problem,geofile
+  character*128::fname,dum,law,input_file,problem,geofile,pvalue,param
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
-  real(8)::vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau,sparam
+  real(8)::vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau,sparam,psi
   real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxevent,mvel,mvelG
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds,amp,mui,strinit,velinit,velmax
   type(st_HACApK_lcontrol) :: st_ctl
@@ -50,6 +50,7 @@ program main
   icomm=MPI_COMM_WORLD
   call MPI_INIT(ierr)
   call MPI_COMM_SIZE(MPI_COMM_WORLD,np,ierr )
+  npd=int(sqrt(dble(np)))
   call MPI_COMM_RANK(MPI_COMM_WORLD,my_rank,ierr )
   if(my_rank.eq.0) time1=MPI_Wtime()
 
@@ -57,73 +58,74 @@ program main
   !example) mpirun -np 16 ./ha.out default.in
   call get_command_argument(1,input_file,status=stat)
 
-  !reading input file
-  !if(my_rank.eq.0) write(*,*) 'Reading input file'
-  open(33,file=input_file)
+  !new input reading system(under construction)
+  open(33,file=input_file,iostat=ios)
+  if (ios /= 0) then
+     write(*,*) 'Failed to open inputfile'
+    stop
+  end if
+  eps=1d-5
+  do while(ios==0)
+    read(33,*,iostat=ios) param,pvalue
+    !write(*,*) param,pvalue
+    select case(param)
+    case('problem')
+      read (pvalue,*) problem
+    case('NCELLg')
+      read (pvalue,*) ncellg
+    case('NSTEP1')
+      read (pvalue,*) nstep1
+    case('filenumber')
+      read (pvalue,*) number
+    case('ds')
+      read (pvalue,*) ds
+    case('velmax')
+      read (pvalue,*) velmax
+    case('velmin')
+      read (pvalue,*) velmin
+    case('a')
+      read (pvalue,*) a0
+    case('b')
+      read (pvalue,*) b0
+    case('dc')
+      read (pvalue,*) dc0
+    case('vw')
+      read (pvalue,*) vw0
+    case('fw')
+      read (pvalue,*) fw0
+    case('vc')
+      read (pvalue,*) vc0
+    case('mu0')
+      read (pvalue,*) mu0
+    case('load')
+      read (pvalue,*) load
+    case('sr')
+      read (pvalue,*) sr
+    case('vpl')
+      read (pvalue,*) vpl
+    case('interval')
+      read (pvalue,*) interval
+    case('geometry')
+      read (pvalue,*) geofile
+    case('velinit')
+      read (pvalue,*) velinit
+    case('muinit')
+      read (pvalue,*) muinit
+    case('psi')
+      read (pvalue,*) psi
+    case('dtinit')
+      read (pvalue,*) dtinit
+    case('intau')
+      read (pvalue,*) intau
+    case('inloc')
+      read (pvalue,*) inloc
+    case('limitsigma')
+      read (pvalue,*) limitsigma
+    case('sparam')
+      read (pvalue,*) sparam
 
-  !information of fault geometry
-  read(33,*) dum,problem
-
-  select case(problem)
-  case('2dp')
-    read(33,*) dum,NCELLg
-  case('2dn','3dn','3dh')
-    read(33,*) dum,NCELLg
-    read(33,*) dum,geofile
-  case('3dp')
-    read(33,*) dum,imax !x length
-    read(33,*) dum,jmax !z length
-  end select
-
-  !read(33,*) dum,kmax !number of VS patches
-  !read(33,*) dum,dr !radius of VS patches (unit:ds)
-  read(33,*) dum,ds !mesh interval(normalized by Dc)
-
-  !output control
-  read(33,*) dum,number !output filename
-  read(33,*) dum,interval !output frequency
-  !read(33,*) dum,dlapse !output per time
-  !read(33,*) dum,loci !output localdata i
-  !read(33,*) dum,locj !output localdata j
-
-  !continue or stop control
-  read(33,*) dum,nstep1 !maxmimum time step
-  !read(33,*) dum,thec !stop when the eventcount exceeds this value
-  read(33,*) dum,velmax !stop when slip rate exceeds this value
-  read(33,*) dum,velmin
-
-  !physical parameters in calculation
-  read(33,*) dum,law ! evolution law in RSF a: aing s: slip
-  read(33,*) dum,a0 !a in RSF
-  read(33,*) dum,b0 !b in RSF
-  read(33,*) dum,dc0
-  read(33,*) dum,vw0
-  read(33,*) dum,fw0
-  read(33,*) dum,vc0 !cut-off velocity in RSF (should be large enough when assuming conventional RSF)
-  read(33,*) dum,mu0 !mu0 in RSF
-  read(33,*) dum,load !loading type 0: uniform stress 1: uniform slip deficit
-  read(33,*) dum,sr !if load=0: stressing rate (sigma0/sec) load=1: unused
-  read(33,*) dum,vpl !if load=1: loading velocity load=0: unused
-  read(33,*) dum,tr !viscoelastic relaxation (unused)
-  !read(33,*) dum,rigid !shear modulus normalized by sigma0
-  !read(33,*) dum,vs !Swave speed (dc/s)
-  !read(33,*) dum,pois !poisson ratio
-
-  !initial values & nucleation
-  read(33,*) dum,velinit !initial slip velocity
-  read(33,*) dum,muinit !initial omega=V*theta
-  read(33,*) dum,dtinit !initial timestep
-  read(33,*) dum,intau !initial timestep
-  read(33,*) dum,inloc !initial timestep
-
-  read(33,*) dum,limitsigma
-  read(33,*) dum,sparam !for aftershock difference of main_sub fault
-  read(33,*) dum,eps !error allowance in time integration in Runge-Kutta
-  !read(*,*) amp
-  !read(*,*) omega
-
-  !for FDMAP
-  !read(33,*) coordinate_file
+    end select
+  end do
   close(33)
 
   !MPI setting
@@ -202,12 +204,12 @@ program main
     end select
 
   !random number seed
-  call random_seed(size=seedsize)
-  allocate(seed(seedsize))
-  do i = 1, seedsize
-    call system_clock(count=seed(i))
-  end do
-  call random_seed(put=seed(:))
+  ! call random_seed(size=seedsize)
+  ! allocate(seed(seedsize))
+  ! do i = 1, seedsize
+  !   call system_clock(count=seed(i))
+  ! end do
+  ! call random_seed(put=seed(:))
 
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
   !stop
@@ -319,7 +321,7 @@ program main
 
     NCELL=st_vel%ndc
     allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL),yg(3*NCELLg),vars(NCELL))
-    !write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc,NCELL
     i=0
     do k=1,st_vel%nlfc
       do j=1,st_vel%lbndc(k)
@@ -485,9 +487,10 @@ program main
   !call input_from_FDMAP()
 
   !setting output files
-  if(my_rank.lt.int(sqrt(dble(np)))) then
+  if(my_rank.lt.npd) then
     write(fname,'("output/",i0,"_",i0,".dat")') number,my_rank
     nout=my_rank+100
+    write(*,*) my_rank,nout
     open(nout,file=fname)
   end if
 
@@ -589,7 +592,7 @@ program main
     !parallel computing for Runge-Kutta
     call rkqs(y,dydx,x,dttry,eps,yscal,dtdid,dtnxt)
     !yl=y
-    !Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+    Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
     select case(problem)
     case('2dp','3dp')
@@ -607,9 +610,9 @@ program main
         !write(*,*)vel(i),dtdid
         disp(i_)=disp(i_)+vel(i_)*dtdid
         mu(i_)=tau(i_)/sigma(i_)
-        if(outfield.and.(my_rank.lt.int(sqrt(dble(np))))) write(nout,'(i0,8e15.6,i10)') i_,xcol(i_),log10(abs(vel(i_))),tau(i_),sigma(i_),mu(i_),disp(i_),phi(i_),x,k
+        if(outfield.and.(my_rank.lt.npd)) write(nout,'(i0,8e15.6,i10)') i_,xcol(i_),log10(abs(vel(i_))),tau(i_),sigma(i_),mu(i_),disp(i_),phi(i_),x,k
       end do
-      if(outfield) write(nout,*)
+      if(outfield.and.(my_rank.lt.npd)) write(nout,*)
       mvel=maxval(abs(vel))
 
     case('2dn')
@@ -638,7 +641,7 @@ program main
         if(outfield.and.(my_rank.lt.int(sqrt(dble(np))))) write(nout,'(i0,10e15.6,i10)') i_,xcol(i_),ycol(i_),log10(abs(vel(i_))),tau(i_),sigma(i_),mu(i_),disp(i_),phi(i_),x,k
 
       end do
-      if(outfield) write(nout,*)
+      if(outfield.and.(my_rank.lt.npd)) write(nout,*)
 
     case('3dn','3dh')
       outfield=.false.
@@ -670,8 +673,8 @@ program main
         if(outfield.and.(my_rank.lt.int(sqrt(dble(np))))) write(nout,'(i0,12e14.5,i10)') i_,xcol(i_),ycol(i_),zcol(i_),log10(vel(i_)),taus(i_),taud(i_),phi(i_),mu(i_),sigma(i_),disps(i_),dispd(i_),rake(i_),k
 
       end do
-      if(outfield) write(nout,*)
-      if(outfield) write(nout,*)
+      if(outfield.and.(my_rank.lt.npd)) write(nout,*)
+      if(outfield.and.(my_rank.lt.npd)) write(nout,*)
 
     end select
 
@@ -707,14 +710,14 @@ program main
   !     write(48,'(3f16.4,i10)') xcol(i),ycol(i),ruptG(i),rupsG(i)
   !   end do
   ! end if
-  if(my_rank.eq.0) then
-    do i=1,NCELLg
-      write(46,'(4f16.4)') xcol(i),ycol(i),disp(i),ang(i)
-    end do
-    do i=10076,NCELLg,150
-      write(48,'(4f16.4)') xcol(i),ycol(i),ruptG(i),ang(i)
-    end do
-  end if
+  ! if(my_rank.eq.0) then
+  !   do i=1,NCELLg
+  !     write(46,'(4f16.4)') xcol(i),ycol(i),disp(i),ang(i)
+  !   end do
+  !   do i=10076,NCELLg,150
+  !     write(48,'(4f16.4)') xcol(i),ycol(i),ruptG(i),ang(i)
+  !   end do
+  ! end if
 
   200  if(my_rank.eq.0) then
   time2= MPI_Wtime()
@@ -760,7 +763,7 @@ contains
     syy0=sigma0
     sxy0=syy0*muinit
     !psi=37d0
-    psi=37d0
+    psi=30d0
     sxx0=syy0*(1d0+2*sxy0/(syy0*dtan(2*psi/180d0*pi)))
     write(*,*) 'sxx0,sxy0,syy0'
     write(*,*) sxx0,sxy0,syy0
@@ -1607,11 +1610,12 @@ rough=.true.
       end do
       case('2dp','3dp','2dn')
       errmax=maxval(abs(yerr(:)/yscal(:)))/eps
+      !write(*,*) my_rank,errmax
       end select
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
       call MPI_ALLREDUCE(errmax,errmax_gb,1,MPI_REAL8,                  &
       &     MPI_MAX,MPI_COMM_WORLD,ierr)
-
+      !if(my_rank.eq.0) write(*,*) errmax_gb
       if(errmax_gb.lt.1.d0) then
         exit
       end if
@@ -1647,7 +1651,7 @@ rough=.true.
     !type(st_HACApK_calc_entry) :: st_bemv
     integer ::i
     integer,parameter::nmax=100000
-    real(8) :: ak2(nmax),ak3(nmax),ak4(nmax),ak5(nmax),ak6(nmax),ytemp(nmax)
+    real(8) :: ak2(3*NCELL),ak3(3*NCELL),ak4(3*NCELL),ak5(3*NCELL),ak6(3*NCELL),ytemp(3*NCELL)
     real(8) :: A2,A3,A4,A5,A6,B21,B31,B32,B41,B42,B43,B51
     real(8) :: B52,B53,B54,B61,B62,B63,B64,B65,C1,C3,C4,C6,DC1,DC3,DC4,DC5,DC6
     PARAMETER (A2=.2d0,A3=.3d0,A4=.6d0,A5=1.d0,A6=.875d0,B21=.2d0,B31=3./40.)
