@@ -17,7 +17,7 @@ program main
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
   real(8)::psi,vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau,errmax_gb
-  real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax
+  real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,eps_r,eps_h
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds,amp,mui,strinit,velinit,phinit,velmax
   type(st_HACApK_lcontrol) :: st_ctl
   type(st_HACApK_leafmtxp) :: st_leafmtxps,st_leafmtxpn
@@ -128,8 +128,11 @@ program main
   !read(33,*) coordinate_file
 
   !new input reading system(under construction)
-  eps=1d-5
+  eps_r=1d-5
+  eps_h=1d-5
   tmax=1d12
+  limitsigma=.false.
+
   do while(ios==0)
     read(33,*,iostat=ios) param,pvalue
     !write(*,*) param,pvalue
@@ -190,6 +193,10 @@ program main
       read (pvalue,*) sparam
     case('tmax')
       read (pvalue,*) tmax
+    case('eps_r')
+      read (pvalue,*) eps_r
+    case('eps_h')
+      read (pvalue,*) eps_h
     end select
   end do
   close(33)
@@ -366,7 +373,7 @@ program main
       coord(i,3)=0.d0
     end do
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-    lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,eps_h)
 
   case('2dn3')
     do i=1,NCELLg
@@ -375,7 +382,7 @@ program main
       coord(i,3)=0.d0
     end do
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-    lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,eps_h)
 
   case('2dn')
     do i=1,NCELLg
@@ -389,11 +396,11 @@ program main
     ! st_bemv%v='n'
     ! lrtrn=HACApK_generate(st_leafmtxpn,st_bemv,st_ctl,coord,1d-4)
     st_bemv%v='xx'
-    lrtrn=HACApK_generate(st_leafmtxp_xx,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_generate(st_leafmtxp_xx,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='xy'
-    lrtrn=HACApK_generate(st_leafmtxp_xy,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_generate(st_leafmtxp_xy,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='yy'
-    lrtrn=HACApK_generate(st_leafmtxp_yy,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_generate(st_leafmtxp_yy,st_bemv,st_ctl,coord,eps_h)
 
   case('3dp')
     do i=1,NCELLg
@@ -402,7 +409,7 @@ program main
       coord(i,3)=zcol(i)
     end do
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-    lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,1d-5)
+    lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,eps_h)
 
   case('3dn','3dh')
     do i=1,NCELLg
@@ -414,32 +421,32 @@ program main
     !kernel for strike slip
     st_bemv%md='st'
     st_bemv%v='xx'
-    lrtrn=HACApK_generate(st_leafmtxp_xx,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_xx,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='xy'
-    lrtrn=HACApK_generate(st_leafmtxp_xy,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_xy,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='yy'
-    lrtrn=HACApK_generate(st_leafmtxp_yy,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_yy,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='xz'
-    lrtrn=HACApK_generate(st_leafmtxp_xz,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_xz,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='yz'
-    lrtrn=HACApK_generate(st_leafmtxp_yz,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_yz,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='zz'
-    lrtrn=HACApK_generate(st_leafmtxp_zz,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_zz,st_bemv,st_ctl,coord,eps_h)
 
     !kernel for dip slip
     st_bemv%md='dp'
     st_bemv%v='xx'
-    lrtrn=HACApK_generate(st_leafmtxp_xx2,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_xx2,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='xy'
-    lrtrn=HACApK_generate(st_leafmtxp_xy2,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_xy2,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='yy'
-    lrtrn=HACApK_generate(st_leafmtxp_yy2,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_yy2,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='xz'
-    lrtrn=HACApK_generate(st_leafmtxp_xz2,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_xz2,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='yz'
-    lrtrn=HACApK_generate(st_leafmtxp_yz2,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_yz2,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='zz'
-    lrtrn=HACApK_generate(st_leafmtxp_zz2,st_bemv,st_ctl,coord,1d-6)
+    lrtrn=HACApK_generate(st_leafmtxp_zz2,st_bemv,st_ctl,coord,eps_h)
   end select
 
   !setting frictional parameters
@@ -595,7 +602,7 @@ program main
     end do
 
     !parallel computing for Runge-Kutta
-    call rkqs(y,dydx,x,dttry,eps,yscal,dtdid,dtnxt,errmax_gb)
+    call rkqs(y,dydx,x,dttry,eps_r,yscal,dtdid,dtnxt,errmax_gb)
 
     Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
@@ -1657,7 +1664,7 @@ rough=.true.
     integer :: i,ierr
     real(8) :: errmax,h,xnew,htemp
     real(8),dimension(size(y))::yerr,ytemp
-    real(8),parameter::SAFETY=0.9,PGROW=-0.2,PSHRNK=-0.25,ERRCON=1.89d-4,hmax=1d5
+    real(8),parameter::SAFETY=0.9,PGROW=-0.2,PSHRNK=-0.25,ERRCON=1.89d-4
 
     h=htry
     do while(.true.)
