@@ -11,7 +11,8 @@ program main
   integer:: date_time(8)
   character(len=10):: sys_time(3)
   integer::NCELL, nstep1, lp, i,i_,j,k,m,counts,interval,number,lrtrn,nl,NCELLg,ios
-  integer::clock,cr,counts2,imax,jmax,NCELLm,seedsize,icomm,np,ierr,my_rank,load,eventcount,thec,inloc
+  integer::clock,cr,counts2,imax,jmax,NCELLm,seedsize,icomm,np,ierr,my_rank
+  integer::hypoloc(1),load,eventcount,thec,inloc
   logical::slipping,outfield,limitsigma
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue
@@ -30,7 +31,7 @@ program main
   real(8),allocatable ::coord(:,:),vmax(:)
   real(8),allocatable::a(:),b(:),dc(:),vc(:),fw(:),vw(:),ac(:),taudot(:),tauddot(:),sigdot(:)
   !real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:)
-  real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),ruptG(:)
+  real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:)
   real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:)
   real(8),allocatable::xcol(:),ycol(:),zcol(:)
   real(8),allocatable::xs1(:),xs2(:),xs3(:),xs4(:) !for 3dp
@@ -234,20 +235,20 @@ program main
 
   !allocation
   allocate(a(NCELLg),b(NCELLg),dc(NCELLg),vc(NCELLg),fw(NCELLg),vw(NCELLg),taudot(NCELLg),tauddot(NCELLg),sigdot(NCELLg))
-  allocate(ruptG(NCELLg),rupsG(NCELLg))
+  allocate(rupt(NCELLg),rupsG(NCELLg))
 
   select case(problem)
   case('2dp','2dpv2','2dpv3')
     allocate(xcol(NCELLg),xel(NCELLg),xer(NCELLg))
     xcol=0d0;xel=0d0;xer=0d0
     !allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
-    allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg))
+    allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg))
   case('2dn','2dn3')
     allocate(xcol(NCELLg),ycol(NCELLg),ang(NCELLg))
     allocate(xel(NCELLg),xer(NCELLg),yel(NCELLg),yer(NCELLg))
     xcol=0d0;ycol=0d0;ang=0d0;xel=0d0;xer=0d0;yel=0d0;yer=0d0
     !allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
-    allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg))
+    allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg))
   case('3dp')
     allocate(xcol(NCELLg),zcol(NCELLg))
     allocate(xs1(NCELLg),xs2(NCELLg),xs3(NCELLg),xs4(NCELLg))
@@ -256,7 +257,7 @@ program main
     xs1=0d0; xs2=0d0; xs3=0d0; xs4=0d0
     zs1=0d0; zs2=0d0; zs3=0d0; zs4=0d0
     !allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
-    allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg))
+    allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg))
   case('3dn','3dh')
     allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg))
     allocate(xs1(NCELLg),xs2(NCELLg),xs3(NCELLg))
@@ -270,7 +271,7 @@ program main
     ys1=0d0; ys2=0d0; ys3=0d0
     zs1=0d0; zs2=0d0; zs3=0d0
     !allocate(phi(NCELL),vels(NCELL),veld(NCELL),taus(NCELL),taud(NCELL),sigma(NCELL),disps(NCELL),dispd(NCELL),mu(NCELL))
-    allocate(phi(NCELLg),vels(NCELLg),veld(NCELLG),taus(NCELLg),taud(NCELLg),sigma(NCELLg),disps(NCELLg),dispd(NCELLG),mu(NCELLg),rake(NCELLg),vel(NCELLG),tau(NCELLg))
+    allocate(phi(NCELLg),vels(NCELLg),veld(NCELLG),taus(NCELLg),taud(NCELLg),sigma(NCELLg),disps(NCELLg),dispd(NCELLG),mu(NCELLg),rake(NCELLg),vel(NCELLG),tau(NCELLg),idisp(NCELLg))
   end select
 
   select case(problem) !for Runge-Kutta
@@ -518,7 +519,7 @@ program main
   !start time integration
   time1=MPI_Wtime()
   x=0.d0 !x is time
-  ruptG=0d0
+  rupt=0d0
   rupsG=0
   dtnxt = dtinit
   !outv=1d-6
@@ -627,15 +628,6 @@ program main
         phi(i) = yG(3*i-2)
         tau(i) = yG(3*i-1)
         sigma(i) = yG(3*i)
-        !artificial limit of normal stress motivated by plastic simulation
-        !artificail limit of friction
-        ! if(limitsigma) then
-        !   if(sigma(i).lt.30d0) yG(i)(i)=30d0
-        !   if(sigma(i).gt.170d0) sigma(i)=170d0
-        !   !if(tau(i)/sigma(i).gt.0.64) tau(i)=0.64d0*sigma(i)
-        !   !if(tau(i)/sigma(i).lt.-0.64) tau(i)=-0.64d0*sigma(i)
-        ! end if
-        !disp(i) = disp(i) + exp( y(3*i-2) i)*dtdid
         vel(i)= 2*vref*dexp(-phi(i)/a(i))*dsinh(tau(i)/sigma(i)/a(i))
         disp(i)=disp(i)+vel(i)*dtdid
         !s(i)=a(i)*dlog(2.d0*vref/vel(i)*dsinh(tau(i)/sigma(i)/a(i)))
@@ -649,14 +641,6 @@ program main
         taus(i) = yG(4*i-2)
         taud(i) = yG(4*i-1)
         sigma(i) = yG(4*i)
-        !artificial limit of normal stress motivated by plastic simulation
-        !artificail limit of friction
-        ! if(limitsigma) then
-        !   if(sigma(i).lt.30d0) sigma(i)=30d0
-        !   if(sigma(i).gt.170d0) sigma(i)=170d0
-        !   !if(tau(i)/sigma(i).gt.0.64) tau(i)=0.64d0*sigma(i)
-        !   !if(tau(i)/sigma(i).lt.-0.64) tau(i)=-0.64d0*sigma(i)
-        ! end if
         !disp(i) = disp(i) + exp( y(3*i-2) i)*dtdid
         tau(i)=sqrt(taus(i)**2+taud(i)**2)
         vel(i)= 2*vref*dexp(-phi(i)/a(i))*dsinh(tau(i)/sigma(i)/a(i))
@@ -691,8 +675,8 @@ program main
       !for FDMAP
       !PsiG=a*dlog(2.d0*vref/vel*dsinh(tau/sigma/a))
       do i=1,NCELLg
-        if(abs(vel(i)).gt.1d-2.and.ruptG(i).le.1d-6) then
-          ruptG(i)=x
+        if(abs(vel(i)).gt.1d-2.and.rupt(i).le.1d-6) then
+          rupt(i)=x
           !rupsG(i)=k
         end if
       end do
@@ -741,14 +725,22 @@ program main
     end if
 
 
+    !event list
     if(.not.slipping) then
-    !   vmaxevent=0.d0
      if(maxval(abs(vel)).gt.1d-2) then
          slipping=.true.
          eventcount=eventcount+1
-    !     idisp=disp
+         idisp=disp
+         hypoloc=maxloc(abs(vel))
+         onset_time=x
+         if(my_rank.eq.0) then
+           do i=1,NCELLg
+             write(46,*) i,disp(i)
+           end do
+           write(46,*)
+         end if
     !     lapse=0.d0
-         if(my_rank.eq.0) write(44,*) eventcount,x,maxloc(abs(vel))
+    !     if(my_rank.eq.0) write(44,*) eventcount,x,maxloc(abs(vel))
     !     if(my_rank.eq.0) write(fname,'("output/event",i0,".dat")') number
     !     if(my_rank.eq.0) open(53,file=fname)
        end if
@@ -757,8 +749,15 @@ program main
     if(slipping) then
       if(maxval(abs(vel)).lt.5d-3) then
          slipping=.false.
+         moment=sum(disp-idisp)
          !eventcount=eventcount+1
-         !if(my_rank.eq.0) write(44,*) eventcount,onset_time,maxloc(abs(vel))
+         if(my_rank.eq.0) then
+           write(44,'(i0,f19.4,i7,e15.6)') eventcount,onset_time,maxloc(abs(vel)),moment
+           do i=1,NCELLg
+             write(46,*) i,disp(i)
+           end do
+           write(46,*)
+        end if
       end if
     !   vmaxevent=max(vmaxevent,maxval(vel))
     !   !write(53,'(i6,4e16.6)') !k,x-onset_time,sum(disp-idisp),sum(vel),sum(acg**2)
@@ -796,14 +795,16 @@ program main
   !output for FDMAP communication
   !call output_to_FDMAP()
 
-  !  if(my_rank.eq.0) then
-  !    do i=1,NCELLg
-  !      write(46,'(4f16.4)') xcol(i),ycol(i),disp(i),ang(i)
-  !    end do
-  !    do i=10076,NCELLg,150
-  !      write(48,'(4f16.4)') xcol(i),ycol(i),ruptG(i),ang(i)
-  !    end do
-  !  end if
+   if(my_rank.eq.0) then
+     do i=1,NCELLg
+       if(problem.eq.'2dp') write(46,'(2f16.4)') xcol(i),disp(i)
+       if(problem.eq.'2dn') write(46,'(4f16.4)') xcol(i),ycol(i),disp(i),ang(i)
+     end do
+     do i=10076,NCELLg,150
+       if(problem.eq.'2dp') write(48,'(2f16.4)') xcol(i),rupt(i)
+       if(problem.eq.'2dn') write(46,'(4f16.4)') xcol(i),ycol(i),disp(i),ang(i)
+     end do
+   end if
 
   200  if(my_rank.eq.0) then
   time2= MPI_Wtime()
