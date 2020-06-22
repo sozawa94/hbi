@@ -17,7 +17,7 @@ program main
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
   real(8)::psi,vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau,errmax_gb
-  real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam
+  real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds,amp,mui,strinit,velinit,phinit,velmax
   type(st_HACApK_lcontrol) :: st_ctl
   type(st_HACApK_leafmtxp) :: st_leafmtxps,st_leafmtxpn
@@ -129,6 +129,7 @@ program main
 
   !new input reading system(under construction)
   eps=1d-5
+  tmax=1d12
   do while(ios==0)
     read(33,*,iostat=ios) param,pvalue
     !write(*,*) param,pvalue
@@ -187,7 +188,8 @@ program main
       read (pvalue,*) limitsigma
     case('sparam')
       read (pvalue,*) sparam
-
+    case('tmax')
+      read (pvalue,*) tmax
     end select
   end do
   close(33)
@@ -228,7 +230,7 @@ program main
   allocate(ruptG(NCELLg),rupsG(NCELLg))
 
   select case(problem)
-  case('2dp')
+  case('2dp','2dpv2','2dpv3')
     allocate(xcol(NCELLg),xel(NCELLg),xer(NCELLg))
     xcol=0d0;xel=0d0;xer=0d0
     !allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
@@ -655,7 +657,7 @@ program main
         veld(i)= vel(i)*taud(i)/tau(i)
         disps(i)=disps(i)+vels(i)*dtdid
         dispd(i)=dispd(i)+veld(i)*dtdid
-        rake(i)=atan(veld(i)/vels(i))/pi*180d0
+        rake(i)=atan2(veld(i),vels(i))/pi*180d0
         mu(i)=sqrt(taus(i)**2+taud(i)**2)/sigma(i)
       end do
 
@@ -669,7 +671,7 @@ program main
       time2= MPI_Wtime()
       select case(problem)
       case('2dp','2dn','2dn3','3dp')
-      write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(maxval(vel(1:10000))),time2-time1
+      write(52,'(i7,f19.4,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(maxval(vel(1:10000))),time2-time1
       case('3dn','3dh')
         write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(vel)),sum(disps)/NCELLg,sum(mu)/NCELLg,maxloc(vel),dtdid*maxval(vel),time2-time1
       end select
@@ -775,6 +777,10 @@ program main
       if(my_rank .eq. 0) write(*,*) 'slip rate below threshold'
       exit
     end if
+    if(x.gt.tmax) then
+      if(my_rank .eq. 0) write(*,*) 'time exceeds tmax'
+      exit
+    end if
 
     dttry = dtnxt
   end do
@@ -782,14 +788,15 @@ program main
 
   !output for FDMAP communication
   !call output_to_FDMAP()
-   if(my_rank.eq.0) then
-     do i=1,NCELLg
-       write(46,'(4f16.4)') xcol(i),ycol(i),disp(i),ang(i)
-     end do
-     do i=10076,NCELLg,150
-       write(48,'(4f16.4)') xcol(i),ycol(i),ruptG(i),ang(i)
-     end do
-   end if
+
+  !  if(my_rank.eq.0) then
+  !    do i=1,NCELLg
+  !      write(46,'(4f16.4)') xcol(i),ycol(i),disp(i),ang(i)
+  !    end do
+  !    do i=10076,NCELLg,150
+  !      write(48,'(4f16.4)') xcol(i),ycol(i),ruptG(i),ang(i)
+  !    end do
+  !  end if
 
   200  if(my_rank.eq.0) then
   time2= MPI_Wtime()
@@ -961,7 +968,7 @@ contains
 
     !computing local angles and collocation points
     do i=1,NCELLg
-      ang(i)=datan((yer(i)-yel(i))/(xer(i)-xel(i)))
+      ang(i)=datan2(yer(i)-yel(i),xer(i)-xel(i))
       xcol(i)=0.5d0*(xel(i)+xer(i))
       ycol(i)=0.5d0*(yel(i)+yer(i))
     end do
@@ -1069,7 +1076,7 @@ rough=.true.
       !if(abs(xcol(i)-50d0).gt.30d0) a(i)=0.024d0 !for cycle
       b(i)=b0
       dc(i)=dc0
-      if((problem.eq.'2dn').and.i.gt.10000) dc(i)=sparam*dc0
+      !if((problem.eq.'2dn').and.i.gt.10000) dc(i)=sparam*dc0
       vc(i)=vc0
       fw(i)=fw0
       vw(i)=vw0
