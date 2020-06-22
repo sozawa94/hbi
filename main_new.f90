@@ -775,12 +775,12 @@ program main
 
     !(2) slip velocity exceeds threshold (for nucleation)
     if(maxval(abs(vel)).gt.velmax) then
-      if(my_rank .eq. 0) write(*,*) 'slip rate above threshold'
+      if(my_rank .eq. 0) write(*,*) 'slip rate above vmax'
       exit
     end if
 
     if(maxval(abs(vel)).lt.velmin) then
-      if(my_rank .eq. 0) write(*,*) 'slip rate below threshold'
+      if(my_rank .eq. 0) write(*,*) 'slip rate below vmin'
       exit
     end if
     if(x.gt.tmax) then
@@ -797,12 +797,12 @@ program main
 
    if(my_rank.eq.0) then
      do i=1,NCELLg
-       if(problem.eq.'2dp') write(46,'(2f16.4)') xcol(i),disp(i)
+       if(problem.eq.'2dp') write(46,*) i,disp(i)
        if(problem.eq.'2dn') write(46,'(4f16.4)') xcol(i),ycol(i),disp(i),ang(i)
      end do
      do i=10076,NCELLg,150
-       if(problem.eq.'2dp') write(48,'(2f16.4)') xcol(i),rupt(i)
-       if(problem.eq.'2dn') write(46,'(4f16.4)') xcol(i),ycol(i),disp(i),ang(i)
+       if(problem.eq.'2dp') write(48,*) i,rupt(i)
+       if(problem.eq.'2dn') write(48,'(4f16.4)') xcol(i),ycol(i),rupt(i),ang(i)
      end do
    end if
 
