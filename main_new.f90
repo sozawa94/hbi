@@ -752,7 +752,7 @@ program main
          moment=sum(disp-idisp)
          !eventcount=eventcount+1
          if(my_rank.eq.0) then
-           write(44,'(i0,f19.4,i7,e15.6)') eventcount,onset_time,maxloc(abs(vel)),moment
+           write(44,'(i0,f19.4,i7,e15.6)') eventcount,onset_time,hypoloc,moment
            do i=1,NCELLg
              write(46,*) i,disp(i)
            end do
