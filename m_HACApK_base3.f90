@@ -212,37 +212,7 @@ integer function HACApK_init(nd,st_ctl,st_bemv,icomma)
  type(st_HACApK_lcontrol) :: st_ctl
  integer,optional :: icomma
  character*32 logfile
- allocate(st_ctl%param(100),st_ctl%time(10))
- st_ctl%param(1:100)=0.0
- st_ctl%param(1) =2;        ! Print : 0:Only Error 1:STD 2:Dubug
- st_ctl%param(7) =0;        ! 1;Make files for HACApK_view, 0; not make
- st_ctl%param(8) =20;       ! > 10:BLR, 20:LH, other:Leafmtx
- st_ctl%param(9) =1;        ! 1:load balancer
- st_ctl%param(10)=1;        ! 1:fulfill the matrix,  0: not fulfill
- st_ctl%param(11)=0;        ! 1:check accuracy of H-matrix 0: not check
- st_ctl%param(12)=0;        ! 1:write down the H-matrix to file 0: not write
- st_ctl%param(21)=50;       ! > cluster : leaf size 15
- st_ctl%param(22)=1.0;      ! cluster : max leaf size 1.0*nffc
- st_ctl%param(23)=0;        ! 0:traditional clustering 1:Uniform size of block or lattice
- st_ctl%param(41)=0;        ! > p of p-by-q grid. if 0, then p=floor(sqrt(#MPI processes)). if -1 then p=#MPI processes
- st_ctl%param(42)=0;        ! > BLR:block size  LH:latice size. if 0, it is set to N/param(43)/param(41)
- st_ctl%param(43)=5;       ! > BLR, LH : Number of rows in each lattice, used only if param(42)=0 
- st_ctl%param(51)=2.0;      ! H-matrix : decision param of distance 2.0
- st_ctl%param(52)=1;        ! H-matrix : 0:weak admissibility 1:strong
- st_ctl%param(53)=100;      ! H-matrix : maximun depth of block cluster tree 100
- st_ctl%param(54)=0;        ! H-matrix : 0: quad(Ver1.2), 1:BLR, 2: quad or bi
- st_ctl%param(60)=2         ! 1:ACA,  2:ACA+
- st_ctl%param(61)=1         ! ACA norm 1:MREM,  2:test, 3:norm
- st_ctl%param(62)=7         ! ACA : predictive average of k
- st_ctl%param(63)=1000;     ! ACA : k-max of R_k-matrix 30
- st_ctl%param(64)=1;        ! ACA : minimun kt
- st_ctl%param(72)=1.0e-9;   ! ACA_EPS
- st_ctl%param(83)=10;       ! solver : maximum iterative number
- st_ctl%param(85)=1;        ! solver : 1:BiCGSTAB, 2:GCR(m)
- st_ctl%param(87)=8;        ! solver : number of iteration for reset
- st_ctl%param(91)=1.0e-6    ! Required accuracy iterative solver
- st_ctl%param(98)=50        ! Measure the time of Ax; number of trial of Ax
- st_ctl%param(99)=10        ! Measure the time of Ax; number of iteration
+
  ierr=0; lrtrn=0
  if(present(icomma))then
    icomm=icomma; st_ctl%lf_umpi=1
@@ -259,6 +229,40 @@ integer function HACApK_init(nd,st_ctl,st_bemv,icomma)
  if(ierr.ne.0) then
     print*, 'Error: MPI_Comm_rank failed !!!'
  endif
+
+ allocate(st_ctl%param(100),st_ctl%time(10))
+ st_ctl%param(1:100)=0.0
+ st_ctl%param(1) =1;        ! Print : 0:Only Error 1:STD 2:Dubug
+ st_ctl%param(7) =0;        ! 1;Make files for HACApK_view, 0; not make
+ st_ctl%param(8) =20;       ! > 10:BLR, 20:LH, other:Leafmtx
+ st_ctl%param(9) =1;        ! 1:load balancer
+ st_ctl%param(10)=1;        ! 1:fulfill the matrix,  0: not fulfill
+ st_ctl%param(11)=0;        ! 1:check accuracy of H-matrix 0: not check
+ st_ctl%param(12)=0;        ! 1:write down the H-matrix to file 0: not write
+ st_ctl%param(21)=15;       ! > cluster : leaf size 15
+ st_ctl%param(22)=1.0;      ! cluster : max leaf size 1.0*nffc
+ st_ctl%param(23)=0;        ! 0:traditional clustering 1:Uniform size of block or lattice
+ st_ctl%param(41)=0;        ! > p of p-by-q grid. if 0, then p=floor(sqrt(#MPI processes)). if -1 then p=#MPI processes
+ st_ctl%param(42)=0;        ! > BLR:block size  LH:latice size. if 0, it is set to N/param(43)/param(41)
+ st_ctl%param(43)=6;       ! > BLR, LH : Number of rows in each lattice, used only if param(42)=0 
+ if(nrank==1) st_ctl%param(43)=1
+ st_ctl%param(51)=2.0;      ! H-matrix : decision param of distance 2.0
+ st_ctl%param(52)=0;        ! H-matrix : 0:weak admissibility 1:strong
+ st_ctl%param(53)=100;      ! H-matrix : maximun depth of block cluster tree 100
+ st_ctl%param(54)=0;        ! H-matrix : 0: quad(Ver1.2), 1:BLR, 2: quad or bi
+ st_ctl%param(60)=2         ! 1:ACA,  2:ACA+
+ st_ctl%param(61)=1         ! ACA norm 1:MREM,  2:test, 3:norm
+ st_ctl%param(62)=7         ! ACA : predictive average of k
+ st_ctl%param(63)=1000;     ! ACA : k-max of R_k-matrix 30
+ st_ctl%param(64)=1;        ! ACA : minimun kt
+ st_ctl%param(72)=1.0e-9;   ! ACA_EPS
+ st_ctl%param(83)=10;       ! solver : maximum iterative number
+ st_ctl%param(85)=1;        ! solver : 1:BiCGSTAB, 2:GCR(m)
+ st_ctl%param(87)=8;        ! solver : number of iteration for reset
+ st_ctl%param(91)=1.0e-6    ! Required accuracy iterative solver
+ st_ctl%param(98)=50        ! Measure the time of Ax; number of trial of Ax
+ st_ctl%param(99)=10        ! Measure the time of Ax; number of iteration
+
  allocate(st_ctl%lpmd(50)); st_ctl%lpmd(:)=0
  st_ctl%lpmd(1)=icomm; ! MPI communicator for all MPI processors
  st_ctl%lpmd(2)=nrank; ! # of MPI processors
