@@ -180,6 +180,8 @@ program main
       read (pvalue,*) velinit
     case('muinit')
       read (pvalue,*) muinit
+    case('phinit')
+      read (pvalue,*) phinit
     case('psi')
       read (pvalue,*) psi
     case('dtinit')
@@ -1076,19 +1078,25 @@ rough=.true.
     integer,intent(in)::NCELLg
     real(8),intent(in)::a0,b0,dc0,vc0
     real(8),intent(out)::a(:),b(:),dc(:),vc(:),fw(:),vw(:)
+    real(8)::len
     integer::i
 
     !uniform
+    if(my_rank.eq.0) open(91,file='fparams')
     do i=1,NCELLg
       a(i)=a0
       !if(abs(xcol(i)-50d0).gt.30d0) a(i)=0.024d0 !for cycle
       b(i)=b0
       dc(i)=dc0
       !if((problem.eq.'2dn').and.i.gt.10000) dc(i)=sparam*dc0
+      !dc is proportional to fault size
+      len=sqrt((xer(i)-xel(i))**2+(yer(i)-yel(i))**2)
+      dc(i)=dc0*len/ds
+
       vc(i)=vc0
       fw(i)=fw0
       vw(i)=vw0
-      !write(*,*)a(i),b(i),dcg(i)
+      if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
     end do
 
     !depth-dependent
