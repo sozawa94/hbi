@@ -203,6 +203,7 @@ program main
     end select
   end do
   close(33)
+  limitsigma=.true.
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
   !MPI setting
@@ -737,9 +738,9 @@ program main
          onset_time=x
          if(my_rank.eq.0) then
            do i=1,NCELLg
-             write(46,*) i,disp(i)
+             !write(46,*) i,disp(i)
            end do
-           write(46,*)
+           !write(46,*)
          end if
     !     lapse=0.d0
     !     if(my_rank.eq.0) write(44,*) eventcount,x,maxloc(abs(vel))
@@ -756,9 +757,9 @@ program main
          if(my_rank.eq.0) then
            write(44,'(i0,f19.4,i7,e15.6)') eventcount,onset_time,hypoloc,moment
            do i=1,NCELLg
-             write(46,*) i,disp(i)
+             !write(46,*) i,disp(i)
            end do
-           write(46,*)
+           !write(46,*)
         end if
       end if
     !   vmaxevent=max(vmaxevent,maxval(vel))
@@ -1687,7 +1688,7 @@ rough=.true.
     case('2dp','3dp','2dn','2dn3')
       errmax=maxval(abs(yerr(:)/yscal(:)))/eps
       end select
-      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      !call MPI_BARRIER(MPI_COMM_WORLD,ierr)
       call MPI_ALLREDUCE(errmax,errmax_gb,1,MPI_REAL8,                  &
       &     MPI_MAX,MPI_COMM_WORLD,ierr)
 
@@ -1699,7 +1700,7 @@ rough=.true.
       h=0.33d0*h
       !h=sign(max(abs(htemp),0.1*abs(h)),h)
       xnew=x+h
-      !if(xnew-x<1.d-8) stop
+      if(xnew-x<1.d-8) stop
     end do
 
     hnext=min(1.5*h,SAFETY*h*(errmax_gb**PGROW),1d8)
@@ -1726,7 +1727,7 @@ rough=.true.
     !type(st_HACApK_calc_entry) :: st_bemv
     integer ::i
     integer,parameter::nmax=100000
-    real(8) :: ak2(nmax),ak3(nmax),ak4(nmax),ak5(nmax),ak6(nmax),ytemp(nmax)
+    real(8) :: ak2(3*NCELL),ak3(3*NCELL),ak4(3*NCELL),ak5(3*NCELL),ak6(3*NCELL),ytemp(3*NCELL)
     real(8) :: A2,A3,A4,A5,A6,B21,B31,B32,B41,B42,B43,B51
     real(8) :: B52,B53,B54,B61,B62,B63,B64,B65,C1,C3,C4,C6,DC1,DC3,DC4,DC5,DC6
     PARAMETER (A2=.2d0,A3=.3d0,A4=.6d0,A5=1.d0,A6=.875d0,B21=.2d0,B31=3./40.)
