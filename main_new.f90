@@ -142,6 +142,10 @@ program main
       read (pvalue,*) problem
     case('NCELLg')
       read (pvalue,*) ncellg
+    case('imax')
+      read (pvalue,*) imax
+    case('jmax')
+      read (pvalue,*) jmax
     case('NSTEP1')
       read (pvalue,*) nstep1
     case('filenumber')
