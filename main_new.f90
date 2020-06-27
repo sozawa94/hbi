@@ -13,7 +13,7 @@ program main
   integer::NCELL, nstep1, lp, i,i_,j,k,m,counts,interval,number,lrtrn,nl,NCELLg,ios
   integer::clock,cr,counts2,imax,jmax,NCELLm,seedsize,icomm,np,ierr,my_rank
   integer::hypoloc(1),load,eventcount,thec,inloc
-  logical::slipping,outfield,limitsigma
+  logical::slipping,outfield,limitsigma,dcscale
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
@@ -204,6 +204,8 @@ program main
       read (pvalue,*) eps_r
     case('eps_h')
       read (pvalue,*) eps_h
+    case('dcscale')
+      dcscale=.true.
     end select
   end do
   close(33)
@@ -510,10 +512,12 @@ program main
   !record parameters in file
   if(my_rank.eq.0) then
     call date_and_time(sys_time(1), sys_time(2), sys_time(3), date_time)
-    write(19,*)
-    write(19,'(3i5)') date_time(1),date_time(2),date_time(3)
-    write(19,*) 'job number',number !output filename
-    !add anything you want
+    !write(19,*)
+    !write(19,'(3i5)') date_time(1),date_time(2),date_time(3)
+    !write(19,'(3i5)') sys_time(1),sys_time(2),sys_time(3)
+    !write(19,*) 'job number',number !output filename
+    write(*,'(a6,a12,a6,a12,a12,i0)') 'date',sys_time(1),'time',sys_time(2),'job number ',number    
+!add anything you want
 
     write(*,*) 'start time integration'
   end if
@@ -805,9 +809,10 @@ program main
    if(my_rank.eq.0) then
      do i=1,NCELLg
        if(problem.eq.'2dp') write(46,*) i,disp(i)
-       if(problem.eq.'2dn') write(46,'(4f16.4)') xcol(i),ycol(i),disp(i),ang(i)
+       if(problem.eq.'2dn') write(46,'(5f16.4)') xcol(i),ycol(i),disp(i),ang(i)
      end do
-     do i=10076,NCELLg,150
+     !do i=10076,NCELLg,150
+      do i=1,ncellg 
        if(problem.eq.'2dp') write(48,*) i,rupt(i)
        if(problem.eq.'2dn') write(48,'(4f16.4)') xcol(i),ycol(i),rupt(i),ang(i)
      end do
@@ -1095,9 +1100,10 @@ rough=.true.
       dc(i)=dc0
       !if((problem.eq.'2dn').and.i.gt.10000) dc(i)=sparam*dc0
       !dc is proportional to fault size
-      len=sqrt((xer(i)-xel(i))**2+(yer(i)-yel(i))**2)
-      dc(i)=dc0*len/ds
-
+      if(dcscale) then
+        len=sqrt((xer(i)-xel(i))**2+(yer(i)-yel(i))**2)
+        dc(i)=dc0*len/ds
+      end if
       vc(i)=vc0
       fw(i)=fw0
       vw(i)=vw0
