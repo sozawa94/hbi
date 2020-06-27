@@ -516,7 +516,7 @@ program main
     !write(19,'(3i5)') date_time(1),date_time(2),date_time(3)
     !write(19,'(3i5)') sys_time(1),sys_time(2),sys_time(3)
     !write(19,*) 'job number',number !output filename
-    write(*,'(a6,a12,a6,a12,a12,i0)') 'date',sys_time(1),'time',sys_time(2),'job number ',number    
+    write(19,'(a6,a12,a6,a12,a12,i0)') 'date',sys_time(1),'time',sys_time(2),'job number ',number    
 !add anything you want
 
     write(*,*) 'start time integration'
