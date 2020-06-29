@@ -38,6 +38,12 @@ contains
       HACApK_entry_ij=tensor2d3_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
       & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang)
 
+    case('2dh')
+      HACApK_entry_ij=matels2dp_ij(i,j,st_bemv%xcol,st_bemv%xel,st_bemv%xer)-&
+      & matels2dp_ij(i,j,st_bemv%xcol,-st_bemv%xel,-st_bemv%xer)
+    !   &tensor2d3_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
+    !   & st_bemv%xel,st_bemv%xer,-st_bemv%yel,-st_bemv%yer,st_bemv%ang)
+
     case('3dp')
       HACApK_entry_ij=matel3dp_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
       & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
@@ -237,7 +243,7 @@ contains
     !angp=asin(dy/dr)
     !angp=acos(dx/dr)
     !write(*,*)angs,angr,angp
-    angp=atan(dy/dx)!*dx/abs(dx)
+    angp=atan2(dy,dx)!*dx/abs(dx)
     if(dy/dx.lt.0d0) angp=atan(abs(dy/dx))
     gtau(1)=-cos(2*angr-2*angp)*cos(angs-angp)/dr
 
@@ -253,7 +259,7 @@ contains
     dr=dsqrt(dx**2+dy**2)
     !angp=asin(dy/dr)
     !angp=acos(dx/dr)
-    angp=atan(dy/dx)
+    angp=atan2(dy,dx)
     if(dy/dx.lt.0d0) angp=atan(abs(dy/dx))
     gtau(2)=-cos(2*angr-2*angp)*cos(angs-angp)/dr
 
@@ -279,7 +285,7 @@ contains
     dr=dsqrt(dx**2+dy**2)
     !angp=asin(dy/dr)
     !if(dx.lt.0d0) angp=acos(-dx/dr)
-    angp=atan(dy/dx)
+    angp=atan2(dy,dx)
     !write(*,*) angs,angr,angp
     gsig(1)=(-sin(angs-angp)+sin(2*angr-2*angp)*cos(angs-angp))/dr
 
