@@ -13,7 +13,7 @@ program main
   integer::NCELL, nstep1, lp, i,i_,j,k,m,counts,interval,number,lrtrn,nl,NCELLg,ios
   integer::clock,cr,counts2,imax,jmax,NCELLm,seedsize,icomm,np,ierr,my_rank
   integer::hypoloc(1),load,eventcount,thec,inloc
-  logical::slipping,outfield,limitsigma,dcscale
+  logical::nuclei,slipping,outfield,slipevery,limitsigma,dcscale
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
@@ -129,10 +129,9 @@ program main
   !read(33,*) coordinate_file
 
   !new input reading system(under construction)
-  eps_r=1d-5
-  eps_h=1d-5
+  eps_r=1d-6
+  eps_h=1d-6
   tmax=1d12
-  limitsigma=.false.
 
   do while(ios==0)
     read(33,*,iostat=ios) param,pvalue
@@ -194,8 +193,6 @@ program main
       read (pvalue,*) intau
     case('inloc')
       read (pvalue,*) inloc
-    case('limitsigma')
-      read (pvalue,*) limitsigma
     case('sparam')
       read (pvalue,*) sparam
     case('tmax')
@@ -206,10 +203,16 @@ program main
       read (pvalue,*) eps_h
     case('dcscale')
       dcscale=.true.
+    case('nuclei')
+      nuclei=.true.
+    case('slipevery')
+      slipevery=.true.
+    case('limitsigma')
+      limitsigma=.true.
     end select
   end do
   close(33)
-  limitsigma=.true.
+  !limitsigma=.true.
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
   !MPI setting
@@ -481,7 +484,7 @@ program main
     !write(*,*) 'Omega',Omega
   case('2dn')
     call initcond2d(psi,muinit,phi,sigma,tau,disp)
-    call add_nuclei(tau,intau,inloc)
+    if(nuclei) call add_nuclei(tau,intau,inloc)
   case('3dn','3dh')
     call initcond3d(phi,sigma,taus,taud)
   end select
@@ -615,7 +618,7 @@ program main
 
     !parallel computing for Runge-Kutta
     call rkqs(y,dydx,x,dttry,eps_r,yscal,dtdid,dtnxt,errmax_gb)
-
+    
     Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
     select case(problem)
@@ -746,9 +749,9 @@ program main
          onset_time=x
          if(my_rank.eq.0) then
            do i=1,NCELLg
-             !write(46,*) i,disp(i)
+             if(slipevery) write(46,*) i,disp(i)
            end do
-           !write(46,*)
+           if(slipevery) write(46,*)
          end if
     !     lapse=0.d0
     !     if(my_rank.eq.0) write(44,*) eventcount,x,maxloc(abs(vel))
@@ -765,9 +768,9 @@ program main
          if(my_rank.eq.0) then
            write(44,'(i0,f19.4,i7,e15.6)') eventcount,onset_time,hypoloc,moment
            do i=1,NCELLg
-             !write(46,*) i,disp(i)
+             if(slipevery) write(46,*) i,disp(i)
            end do
-           !write(46,*)
+           if(slipevery) write(46,*)
         end if
       end if
     !   vmaxevent=max(vmaxevent,maxval(vel))
@@ -809,12 +812,12 @@ program main
    if(my_rank.eq.0) then
      do i=1,NCELLg
        if(problem.eq.'2dp') write(46,*) i,disp(i)
-       if(problem.eq.'2dn') write(46,'(5f16.4)') xcol(i),ycol(i),disp(i),ang(i)
+       !if(problem.eq.'2dn') write(46,'(5f16.4)') xcol(i),ycol(i),disp(i),ang(i)
      end do
      !do i=10076,NCELLg,150
       do i=1,ncellg 
        if(problem.eq.'2dp') write(48,*) i,rupt(i)
-       if(problem.eq.'2dn') write(48,'(4f16.4)') xcol(i),ycol(i),rupt(i),ang(i)
+       !if(problem.eq.'2dn') write(48,'(4f16.4)') xcol(i),ycol(i),rupt(i),ang(i)
      end do
    end if
 
@@ -1152,13 +1155,13 @@ rough=.true.
         !edge=ds*NCELLg/2
 
           v='s'
-          call kern(v,xcol(i),ycol(i),-500d0,ycol(1),0d0,ycol(1),ang(i),0d0,ret1)
-          call kern(v,xcol(i),ycol(i),100d0,ycol(10000),600d0,ycol(10000),ang(i),0d0,ret2)
+          call kern(v,xcol(i),ycol(i),-500d0,yel(1),xel(1),yel(1),ang(i),0d0,ret1)
+          call kern(v,xcol(i),ycol(i),xer(NCELLg),yer(NCELLg),500d0,yer(NCELLg),ang(i),0d0,ret2)
           taudot(i)=vpl*(ret1+ret2)
 
           v='n'
-          call kern(v,xcol(i),ycol(i),-500d0,ycol(1),0d0,ycol(1),ang(i),0d0,ret1)
-          call kern(v,xcol(i),ycol(i),100d0,ycol(10000),600d0,ycol(10000),ang(i),0d0,ret2)
+          call kern(v,xcol(i),ycol(i),-500d0,yel(1),xel(1),yel(1),ang(i),0d0,ret1)
+          call kern(v,xcol(i),ycol(i),xer(NCELLg),yer(NCELLg),500d0,yer(NCELLg),ang(i),0d0,ret2)
           sigdot(i)=vpl*(ret1+ret2)
       end select
       !write(15,*) taudot(i),sigdot(i)
@@ -1710,7 +1713,10 @@ rough=.true.
       h=0.33d0*h
       !h=sign(max(abs(htemp),0.1*abs(h)),h)
       xnew=x+h
-      if(xnew-x<1.d-8) stop
+      if(xnew-x<1.d-10) then
+      write(*,*)'dt is too small'
+      stop
+      end if
     end do
 
     hnext=min(1.5*h,SAFETY*h*(errmax_gb**PGROW),1d8)
