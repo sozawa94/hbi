@@ -13,7 +13,7 @@ program main
   integer::NCELL, nstep1, lp, i,i_,j,k,m,counts,interval,number,lrtrn,nl,NCELLg,ios
   integer::clock,cr,counts2,imax,jmax,NCELLm,seedsize,icomm,np,ierr,my_rank
   integer::hypoloc(1),load,eventcount,thec,inloc
-  logical::nuclei,slipping,outfield,slipevery,limitsigma,dcscale
+  logical::buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
@@ -202,13 +202,15 @@ program main
     case('eps_h')
       read (pvalue,*) eps_h
     case('dcscale')
-      dcscale=.true.
+      read (pvalue,*) dcscale
     case('nuclei')
-      nuclei=.true.
+      read (pvalue,*) nuclei
     case('slipevery')
-      slipevery=.true.
+      read (pvalue,*) slipevery
     case('limitsigma')
-      limitsigma=.true.
+      read (pvalue,*) limitsigma
+    case('buffer')
+      read (pvalue,*) buffer
     end select
   end do
   close(33)
@@ -243,7 +245,10 @@ program main
 
   !stop
   !call varscalc(NCELL,displs,vars)
-  if(my_rank.eq.0) write(*,*) rcounts,displs
+  if(my_rank.eq.0) then
+    write(*,*) 'job number',number
+    write(*,*) 'buffer',buffer
+  end if
 
   !allocation
   allocate(a(NCELLg),b(NCELLg),dc(NCELLg),vc(NCELLg),fw(NCELLg),vw(NCELLg),taudot(NCELLg),tauddot(NCELLg),sigdot(NCELLg))
@@ -1093,14 +1098,23 @@ rough=.true.
     integer,intent(in)::NCELLg
     real(8),intent(in)::a0,b0,dc0,vc0
     real(8),intent(out)::a(:),b(:),dc(:),vc(:),fw(:),vw(:)
-    real(8)::len
+    real(8)::len,cent
     integer::i
 
     !uniform
-    !if(my_rank.eq.0) open(91,file='fparams')
+    if(my_rank.eq.0) open(91,file='fparams')
     do i=1,NCELLg
       a(i)=a0
       !if(abs(xcol(i)-50d0).gt.30d0) a(i)=0.024d0 !for cycle
+      if(buffer) then
+        select case(problem)
+        case('2dn')
+          if(abs(i-NCELLg/2).gt.NCELLg*1/3) a(i)=0.032d0
+        case('3dp')
+          cent=0.5*imax*ds
+          if(((xcol(i)-cent)**2+(zcol(i)-cent)**2).gt.cent**2) a(i)=0.032d0
+        end select
+      end if
       b(i)=b0
       dc(i)=dc0
       !if((problem.eq.'2dn').and.i.gt.10000) dc(i)=sparam*dc0
@@ -1112,7 +1126,7 @@ rough=.true.
       vc(i)=vc0
       fw(i)=fw0
       vw(i)=vw0
-      !if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
+      if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
     end do
 
     !depth-dependent
