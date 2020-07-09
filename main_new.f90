@@ -247,43 +247,38 @@ program main
   !call varscalc(NCELL,displs,vars)
   if(my_rank.eq.0) then
     write(*,*) 'job number',number
-    write(*,*) 'buffer',buffer
   end if
 
   !allocation
   allocate(a(NCELLg),b(NCELLg),dc(NCELLg),vc(NCELLg),fw(NCELLg),vw(NCELLg),taudot(NCELLg),tauddot(NCELLg),sigdot(NCELLg))
   allocate(rupt(NCELLg),rupsG(NCELLg))
+  allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg))
 
   select case(problem)
   case('2dp','2dpv2','2dpv3')
-    allocate(xcol(NCELLg),xel(NCELLg),xer(NCELLg))
-    xcol=0d0;xel=0d0;xer=0d0
+    allocate(xel(NCELLg),xer(NCELLg))
+    xel=0d0;xer=0d0
     !allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
     allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg))
   case('2dn','2dn3')
-    allocate(xcol(NCELLg),ycol(NCELLg),ang(NCELLg))
-    allocate(xel(NCELLg),xer(NCELLg),yel(NCELLg),yer(NCELLg))
-    xcol=0d0;ycol=0d0;ang=0d0;xel=0d0;xer=0d0;yel=0d0;yer=0d0
+    allocate(ang(NCELLg),xel(NCELLg),xer(NCELLg),yel(NCELLg),yer(NCELLg))
+    ang=0d0;xel=0d0;xer=0d0;yel=0d0;yer=0d0
     !allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
     allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg))
   case('3dp')
-    allocate(xcol(NCELLg),zcol(NCELLg))
     allocate(xs1(NCELLg),xs2(NCELLg),xs3(NCELLg),xs4(NCELLg))
     allocate(zs1(NCELLg),zs2(NCELLg),zs3(NCELLg),zs4(NCELLg))
-    xcol=0d0; zcol=0d0
     xs1=0d0; xs2=0d0; xs3=0d0; xs4=0d0
     zs1=0d0; zs2=0d0; zs3=0d0; zs4=0d0
     !allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
     allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg))
   case('3dn','3dh')
-    allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg))
     allocate(xs1(NCELLg),xs2(NCELLg),xs3(NCELLg))
     allocate(ys1(NCELLg),ys2(NCELLg),ys3(NCELLg))
     allocate(zs1(NCELLg),zs2(NCELLg),zs3(NCELLg))
     allocate(ev11(NCELLg),ev12(NCELLg),ev13(NCELLg))
     allocate(ev21(NCELLg),ev22(NCELLg),ev23(NCELLg))
     allocate(ev31(NCELLg),ev32(NCELLg),ev33(NCELLg))
-    xcol=0d0; ycol=0d0; zcol=0d0
     xs1=0d0; xs2=0d0; xs3=0d0
     ys1=0d0; ys2=0d0; ys3=0d0
     zs1=0d0; zs2=0d0; zs3=0d0
