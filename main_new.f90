@@ -987,7 +987,7 @@ contains
     real(8),allocatable::data(:)
 
     !reading mesh data from mkelm.f90
-    write(geofile2,'("geos/",a)') geofile
+    geofile2='geos/'//geofile
     open(20,file=geofile2,access='stream')
     read(20) xel,xer,yel,yer
 
