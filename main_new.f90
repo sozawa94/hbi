@@ -484,7 +484,7 @@ program main
     !write(*,*) 'Omega',Omega
   case('2dn')
     call initcond2d(psi,muinit,phi,sigma,tau,disp)
-    if(nuclei) call add_nuclei(tau,intau,inloc)
+    call add_nuclei(tau,intau,inloc)
   case('3dn','3dh')
     call initcond3d(phi,sigma,taus,taud)
   end select
@@ -519,7 +519,7 @@ program main
     !write(19,'(3i5)') date_time(1),date_time(2),date_time(3)
     !write(19,'(3i5)') sys_time(1),sys_time(2),sys_time(3)
     !write(19,*) 'job number',number !output filename
-    write(19,'(a6,a12,a6,a12,a12,i0)') 'date',sys_time(1),'time',sys_time(2),'job number ',number    
+    write(19,'(a6,a12,a6,a12,a12,i0)') 'date',sys_time(1),'time',sys_time(2),'job number ',number
 !add anything you want
 
     write(*,*) 'start time integration'
@@ -618,7 +618,7 @@ program main
 
     !parallel computing for Runge-Kutta
     call rkqs(y,dydx,x,dttry,eps_r,yscal,dtdid,dtnxt,errmax_gb)
-    
+
     Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
     select case(problem)
@@ -812,12 +812,12 @@ program main
    if(my_rank.eq.0) then
      do i=1,NCELLg
        if(problem.eq.'2dp') write(46,*) i,disp(i)
-       !if(problem.eq.'2dn') write(46,'(5f16.4)') xcol(i),ycol(i),disp(i),ang(i)
+       if(problem.eq.'2dn') write(46,'(5f16.4)') xcol(i),ycol(i),disp(i),ang(i)
      end do
      !do i=10076,NCELLg,150
-      do i=1,ncellg 
+      do i=1,ncellg
        if(problem.eq.'2dp') write(48,*) i,rupt(i)
-       !if(problem.eq.'2dn') write(48,'(4f16.4)') xcol(i),ycol(i),rupt(i),ang(i)
+       if(problem.eq.'2dn') write(48,'(4f16.4)') xcol(i),ycol(i),rupt(i),ang(i)
      end do
    end if
 
@@ -980,13 +980,15 @@ contains
     implicit none
     integer,intent(in)::NCELLg
     character(128),intent(in)::geofile
+    character(128)::geofile2
     real(8),intent(out)::xel(:),xer(:),yel(:),yer(:),xcol(:),ycol(:),ang(:)
     integer::i,j,k,file_size,n,Np,Nm,ncellf
     real(8)::dx,xr(0:NCELLg),yr(0:NCELLg),nx(NCELLg),ny(NCELLg),r(NCELLg)
     real(8),allocatable::data(:)
 
     !reading mesh data from mkelm.f90
-    open(20,file=geofile,access='stream')
+    write(geofile2,'("geos/",a)') geofile
+    open(20,file=geofile2,access='stream')
     read(20) xel,xer,yel,yer
 
     !computing local angles and collocation points
@@ -1095,7 +1097,7 @@ rough=.true.
     integer::i
 
     !uniform
-    if(my_rank.eq.0) open(91,file='fparams')
+    !if(my_rank.eq.0) open(91,file='fparams')
     do i=1,NCELLg
       a(i)=a0
       !if(abs(xcol(i)-50d0).gt.30d0) a(i)=0.024d0 !for cycle
@@ -1110,7 +1112,7 @@ rough=.true.
       vc(i)=vc0
       fw(i)=fw0
       vw(i)=vw0
-      if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
+      !if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
     end do
 
     !depth-dependent
