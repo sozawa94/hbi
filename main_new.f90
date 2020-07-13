@@ -19,7 +19,7 @@ program main
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
   real(8)::psi,vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau,errmax_gb
   real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,eps_r,eps_h
-  real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds,amp,mui,strinit,velinit,phinit,velmax
+  real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds0,amp,mui,strinit,velinit,phinit,velmax
   type(st_HACApK_lcontrol) :: st_ctl
   type(st_HACApK_leafmtxp) :: st_leafmtxps,st_leafmtxpn
   type(st_HACApK_leafmtxp) :: st_leafmtxp_xx,st_leafmtxp_xy,st_leafmtxp_yy
@@ -33,7 +33,7 @@ program main
   !real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:)
   real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:)
   real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:)
-  real(8),allocatable::xcol(:),ycol(:),zcol(:)
+  real(8),allocatable::xcol(:),ycol(:),zcol(:),ds(:)
   real(8),allocatable::xs1(:),xs2(:),xs3(:),xs4(:) !for 3dp
   real(8),allocatable::zs1(:),zs2(:),zs3(:),zs4(:) !for 3dp
   real(8),allocatable::ys1(:),ys2(:),ys3(:) !for 3dn
@@ -150,7 +150,7 @@ program main
     case('filenumber')
       read (pvalue,*) number
     case('ds')
-      read (pvalue,*) ds
+      read (pvalue,*) ds0
     case('velmax')
       read (pvalue,*) velmax
     case('velmin')
@@ -252,7 +252,7 @@ program main
   !allocation
   allocate(a(NCELLg),b(NCELLg),dc(NCELLg),vc(NCELLg),fw(NCELLg),vw(NCELLg),taudot(NCELLg),tauddot(NCELLg),sigdot(NCELLg))
   allocate(rupt(NCELLg),rupsG(NCELLg))
-  allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg))
+  allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg))
 
   select case(problem)
   case('2dp','2dpv2','2dpv3')
@@ -301,11 +301,11 @@ program main
   if(my_rank.eq.0) write(*,*) 'Generating mesh'
     select case(problem)
     case('2dp')
-      call coordinate2dp(NCELLg,ds,xel,xer,xcol)
+      call coordinate2dp(NCELLg,ds0,xel,xer,xcol)
     case('2dn','2dn3') !geometry file is necessary
-      call coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang)
+      call coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang,ds)
     case('3dp')
-      call coordinate3dp(imax,jmax,ds,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
+      call coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
     case('3dn','3dh')
       call coordinate3dn(NCELLg,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3)
       call evcalc(xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,ev11,ev12,ev13,ev21,ev22,ev23,ev31,ev32,ev33)
@@ -676,7 +676,8 @@ program main
       time2= MPI_Wtime()
       select case(problem)
       case('2dp','2dn','2dn3','3dp')
-      write(52,'(i7,f19.4,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(maxval(vel(1:10000))),time2-time1
+      !write(52,'(i7,f19.4,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(maxval(vel(1:10000))),time2-time1
+      write(52,'(i7,f19.4,4e16.5,f16.4)')k,x,maxval(log10(abs(vel(10001:)))),sum(abs(disp(10001:))),log10(maxval(vel(1:10000))),sum(disp(1:10000)),time2-time1
       case('3dn','3dh')
         write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(vel)),sum(disps)/NCELLg,sum(mu)/NCELLg,maxloc(vel),dtdid*maxval(vel),time2-time1
       end select
@@ -763,7 +764,7 @@ program main
     if(slipping) then
       if(maxval(abs(vel)).lt.5d-3) then
          slipping=.false.
-         moment=sum(disp-idisp)
+         moment=sum((disp-idisp)*ds)
          !eventcount=eventcount+1
          if(my_rank.eq.0) then
            write(44,'(i0,f19.4,i7,e15.6)') eventcount,onset_time,hypoloc,moment
@@ -814,8 +815,8 @@ program main
        if(problem.eq.'2dp') write(46,*) i,disp(i)
        if(problem.eq.'2dn') write(46,'(5f16.4)') xcol(i),ycol(i),disp(i),ang(i)
      end do
-     !do i=10076,NCELLg,150
-      do i=1,ncellg
+     do i=10076,NCELLg,150
+     ! do i=1,ncellg
        if(problem.eq.'2dp') write(48,*) i,rupt(i)
        if(problem.eq.'2dn') write(48,'(4f16.4)') xcol(i),ycol(i),rupt(i),ang(i)
      end do
@@ -958,17 +959,18 @@ contains
 
   end subroutine
 
-  subroutine coordinate2dp(NCELLg,ds,xel,xer,xcol)
+  subroutine coordinate2dp(NCELLg,ds0,xel,xer,xcol)
       implicit none
       integer,intent(in)::NCELLg
-      real(8),intent(in)::ds
+      real(8),intent(in)::ds0
       real(8),intent(out)::xel(:),xer(:),xcol(:)
       integer::i,j,k
 
       !flat fault with element size ds
       do i=1,NCELLg
-        xel(i)=(i-1)*ds
-        xer(i)=i*ds
+        ds(i)=ds0
+        xel(i)=(i-1)*ds0
+        xer(i)=i*ds0
         xcol(i)=0.5d0*(xel(i)+xer(i))
         !write(14,'(3e16.6)') xcol(i),xel(i),xer(i)
       enddo
@@ -976,12 +978,12 @@ contains
       return
   end subroutine
 
-  subroutine coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang)
+  subroutine coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang,ds)
     implicit none
     integer,intent(in)::NCELLg
     character(128),intent(in)::geofile
     character(128)::geofile2
-    real(8),intent(out)::xel(:),xer(:),yel(:),yer(:),xcol(:),ycol(:),ang(:)
+    real(8),intent(out)::xel(:),xer(:),yel(:),yer(:),xcol(:),ycol(:),ang(:),ds(:)
     integer::i,j,k,file_size,n,Np,Nm,ncellf
     real(8)::dx,xr(0:NCELLg),yr(0:NCELLg),nx(NCELLg),ny(NCELLg),r(NCELLg)
     real(8),allocatable::data(:)
@@ -993,6 +995,7 @@ contains
 
     !computing local angles and collocation points
     do i=1,NCELLg
+      ds(i)=sqrt((xer(i)-xel(i))**2+(yer(i)-yel(i))**2)
       ang(i)=datan2(yer(i)-yel(i),xer(i)-xel(i))
       xcol(i)=0.5d0*(xel(i)+xer(i))
       ycol(i)=0.5d0*(yel(i)+yer(i))
@@ -1008,26 +1011,26 @@ contains
     return
   end subroutine
 
-  subroutine coordinate3dp(imax,jmax,ds,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
+  subroutine coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
     implicit none
     integer,intent(in)::imax,jmax
-    real(8),intent(in)::ds
+    real(8),intent(in)::ds0
     real(8),intent(out)::xcol(:),zcol(:)
     real(8),intent(out)::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
     integer::i,j,k
     do i=1,imax
       do j=1,jmax
         k=(i-1)*jmax+j
-        xcol(k)=(i-0.5d0)*ds
-        zcol(k)=(j-0.5d0)*ds
-        xs1(k)=xcol(k)+0.5d0*ds
-        xs2(k)=xcol(k)-0.5d0*ds
-        xs3(k)=xcol(k)-0.5d0*ds
-        xs4(k)=xcol(k)+0.5d0*ds
-        zs1(k)=zcol(k)+0.5d0*ds
-        zs2(k)=zcol(k)+0.5d0*ds
-        zs3(k)=zcol(k)-0.5d0*ds
-        zs4(k)=zcol(k)-0.5d0*ds
+        xcol(k)=(i-0.5d0)*ds0
+        zcol(k)=(j-0.5d0)*ds0
+        xs1(k)=xcol(k)+0.5d0*ds0
+        xs2(k)=xcol(k)-0.5d0*ds0
+        xs3(k)=xcol(k)-0.5d0*ds0
+        xs4(k)=xcol(k)+0.5d0*ds0
+        zs1(k)=zcol(k)+0.5d0*ds0
+        zs2(k)=zcol(k)+0.5d0*ds0
+        zs3(k)=zcol(k)-0.5d0*ds0
+        zs4(k)=zcol(k)-0.5d0*ds0
       end do
     end do
     return
@@ -1106,7 +1109,7 @@ rough=.true.
         case('2dn')
           if(abs(i-NCELLg/2).gt.NCELLg*1/3) a(i)=0.032d0
         case('3dp')
-          cent=0.5*imax*ds
+          cent=0.5*imax*ds0
           if(((xcol(i)-cent)**2+(zcol(i)-cent)**2).gt.cent**2) a(i)=0.032d0
         end select
       end if
@@ -1115,8 +1118,8 @@ rough=.true.
       !if((problem.eq.'2dn').and.i.gt.10000) dc(i)=sparam*dc0
       !dc is proportional to fault size
       if(dcscale) then
-        len=sqrt((xer(i)-xel(i))**2+(yer(i)-yel(i))**2)
-        dc(i)=dc0*len/ds
+        !len=sqrt((xer(i)-xel(i))**2+(yer(i)-yel(i))**2)
+        dc(i)=dc0*ds(i)/ds0
       end if
       vc(i)=vc0
       fw(i)=fw0
