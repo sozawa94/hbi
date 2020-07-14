@@ -63,75 +63,11 @@ program main
      stop
   end if
 
-  !information of fault geometry
-  ! read(33,*) dum,problem
-  !
-  ! select case(problem)
-  ! case('2dp')
-  !   read(33,*) dum,NCELLg
-  ! case('2dn','3dn','3dh')
-  !   read(33,*) dum,NCELLg
-  !   read(33,*) dum,geofile
-  ! case('3dp')
-  !   read(33,*) dum,imax !x length
-  !   read(33,*) dum,jmax !z length
-  ! end select
-
-  !read(33,*) dum,kmax !number of VS patches
-  !read(33,*) dum,dr !radius of VS patches (unit:ds)
-  ! read(33,*) dum,ds !mesh interval(normalized by Dc)
-
-  !output control
-  ! read(33,*) dum,number !output filename
-  ! read(33,*) dum,interval !output frequency
-  !read(33,*) dum,dlapse !output per time
-  !read(33,*) dum,loci !output localdata i
-  !read(33,*) dum,locj !output localdata j
-
-  !continue or stop control
-  ! read(33,*) dum,nstep1 !maxmimum time step
-  ! !read(33,*) dum,thec !stop when the eventcount exceeds this value
-  ! read(33,*) dum,velmax !stop when slip rate exceeds this value
-  ! read(33,*) dum,velmin
-
-  !physical parameters in calculation
-  ! read(33,*) dum,law ! evolution law in RSF
-  ! read(33,*) dum,a0 !a in RSF
-  ! read(33,*) dum,b0 !b in RSF
-  ! read(33,*) dum,dc0
-  ! read(33,*) dum,vw0
-  ! read(33,*) dum,fw0
-  ! read(33,*) dum,vc0 !cut-off velocity in RSF (should be large enough when assuming conventional RSF)
-  ! read(33,*) dum,mu0 !mu0 in RSF
-  ! read(33,*) dum,load !loading type 0: uniform stress 1: uniform slip deficit
-  ! read(33,*) dum,sr !if load=0: stressing rate (sigma0/sec) load=1: unused
-  ! read(33,*) dum,vpl !if load=1: loading velocity load=0: unused
-  !read(33,*) dum,tr !viscoelastic relaxation (unused)
-  !read(33,*) dum,rigid !shear modulus normalized by sigma0
-  !read(33,*) dum,vs !Swave speed (dc/s)
-  !read(33,*) dum,pois !poisson ratio
-
-  !initial values & nucleation
-  ! read(33,*) dum,velinit !initial slip velocity
-  ! read(33,*) dum,muinit !initial omega=V*theta
-  ! read(33,*) dum,psi !stress angle
-  ! read(33,*) dum,dtinit !initial timestep
-  ! read(33,*) dum,intau !initial timestep
-  ! read(33,*) dum,inloc !initial timestep
-  !
-  ! read(33,*) dum,limitsigma
-  ! read(33,*) dum,sparam !for aftershock difference of main_sub fault
-  ! read(33,*) dum,eps !error allowance in time integration in Runge-Kutta
-  !read(*,*) amp
-  !read(*,*) omega
-
-  !for FDMAP
-  !read(33,*) coordinate_file
-
   !new input reading system(under construction)
   eps_r=1d-6
   eps_h=1d-6
   tmax=1d12
+  nuclei=.false.
 
   do while(ios==0)
     read(33,*,iostat=ios) param,pvalue
@@ -253,24 +189,22 @@ program main
   allocate(a(NCELLg),b(NCELLg),dc(NCELLg),vc(NCELLg),fw(NCELLg),vw(NCELLg),taudot(NCELLg),tauddot(NCELLg),sigdot(NCELLg))
   allocate(rupt(NCELLg),rupsG(NCELLg))
   allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg))
+  xcol=0d0;ycol=0d0;zcol=0d0
 
   select case(problem)
-  case('2dp','2dpv2','2dpv3')
+  case('2dp','2dh')
     allocate(xel(NCELLg),xer(NCELLg))
     xel=0d0;xer=0d0
-    !allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
     allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg))
   case('2dn','2dn3')
     allocate(ang(NCELLg),xel(NCELLg),xer(NCELLg),yel(NCELLg),yer(NCELLg))
     ang=0d0;xel=0d0;xer=0d0;yel=0d0;yer=0d0
-    !allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
     allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg))
   case('3dp')
     allocate(xs1(NCELLg),xs2(NCELLg),xs3(NCELLg),xs4(NCELLg))
     allocate(zs1(NCELLg),zs2(NCELLg),zs3(NCELLg),zs4(NCELLg))
     xs1=0d0; xs2=0d0; xs3=0d0; xs4=0d0
     zs1=0d0; zs2=0d0; zs3=0d0; zs4=0d0
-    !allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
     allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg))
   case('3dn','3dh')
     allocate(xs1(NCELLg),xs2(NCELLg),xs3(NCELLg))
@@ -282,12 +216,11 @@ program main
     xs1=0d0; xs2=0d0; xs3=0d0
     ys1=0d0; ys2=0d0; ys3=0d0
     zs1=0d0; zs2=0d0; zs3=0d0
-    !allocate(phi(NCELL),vels(NCELL),veld(NCELL),taus(NCELL),taud(NCELL),sigma(NCELL),disps(NCELL),dispd(NCELL),mu(NCELL))
     allocate(phi(NCELLg),vels(NCELLg),veld(NCELLG),taus(NCELLg),taud(NCELLg),sigma(NCELLg),disps(NCELLg),dispd(NCELLG),mu(NCELLg),rake(NCELLg),vel(NCELLG),tau(NCELLg),idisp(NCELLg))
   end select
 
   select case(problem) !for Runge-Kutta
-  case('2dp','2dn3','3dp')
+  case('2dp','2dh','2dn3','3dp')
     allocate(y(2*NCELL),yscal(2*NCELL),dydx(2*NCELL),yg(2*NCELLg))
   case('2dn')
     allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL),yg(3*NCELLg))
@@ -300,7 +233,7 @@ program main
   !mesh generation (rectangular assumed)
   if(my_rank.eq.0) write(*,*) 'Generating mesh'
     select case(problem)
-    case('2dp')
+    case('2dp','2dh')
       call coordinate2dp(NCELLg,ds0,xel,xer,xcol)
     case('2dn','2dn3') !geometry file is necessary
       call coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang,ds)
@@ -326,7 +259,7 @@ program main
   lrtrn=HACApK_init(NCELLg,st_ctl,st_bemv,icomm)
   allocate(coord(NCELLg,3))
   select case(problem)
-  case('2dp')
+  case('2dp','2dh')
     allocate(st_bemv%xcol(NCELLg),st_bemv%xel(NCELLg),st_bemv%xer(NCELLg))
     st_bemv%xcol=xcol;st_bemv%xel=xel;st_bemv%xer=xer
     st_bemv%problem=problem
@@ -379,20 +312,11 @@ program main
   !generate kernel (H-matrix aprrox)
   if(my_rank.eq.0) write(*,*) 'Generating kernel'
   select case(problem)
-  case('2dp')
-    do i=1,NCELLg
-      coord(i,1)=xcol(i)
-      coord(i,2)=0.d0
-      coord(i,3)=0.d0
-    end do
-    call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-    lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,eps_h)
-
-  case('2dn3')
+  case('2dp','2dh','2dn3')
     do i=1,NCELLg
       coord(i,1)=xcol(i)
       coord(i,2)=ycol(i)
-      coord(i,3)=0.d0
+      coord(i,3)=zcol(i)
     end do
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,eps_h)
@@ -480,14 +404,14 @@ program main
     mu=tau/sigma
     vel=tau/abs(tau)*velinit
     phi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
-    !omega=exp((phi(1)-mu0)/b(1))*abs(vel(1))/vref/b(1)
-    !write(*,*) 'Omega',Omega
+  case('2dh')
+    call initcond2dh(phi,sigma,tau,disp,vel)
   case('2dn')
-    call initcond2d(psi,muinit,phi,sigma,tau,disp)
-    call add_nuclei(tau,intau,inloc)
+    call initcond2d(psi,muinit,phi,sigma,tau,disp,vel)
   case('3dn','3dh')
     call initcond3d(phi,sigma,taus,taud)
   end select
+  if(nuclei) call add_nuclei(tau,intau,inloc)
   !call MPI_BARRIER(MPI_COMM_WORLD,ierr)
   !for FDMAP-BIEM simulation
   !call input_from_FDMAP()
@@ -542,7 +466,7 @@ program main
 
   time2=MPI_Wtime()
   select case(problem)
-  case('2dp','2dn','2dn3','3dp')
+  case('2dp','2dh','2dn','2dn3','3dp')
   write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')0,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(maxval(vel(1:10000))),time2-time1
   case('3dn','3dh')
     write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')0,x,maxval(log10(vel)),sum(disps)/NCELLg,sum(mu)/NCELLg,maxloc(vel),dtdid*maxval(vel),time2-time1
@@ -560,7 +484,7 @@ program main
       write(50,'(i0,9e15.6,i10)') i,xcol(i),ycol(i),log10(abs(vel(i))),tau(i),sigma(i),mu(i),disp(i),phi(i),x,k
     end do
     write(50,*)
-  case('2dp')
+  case('2dp','2dh')
     do i=1,NCELLg
       write(50,'(i0,8e15.6,i10)') i,xcol(i),log10(abs(vel(i))),tau(i),sigma(i),mu(i),disp(i),phi(i),x,k
     end do
@@ -578,7 +502,7 @@ program main
   !end do
   !write(50,*)
   select case(problem)
-  case('2dp','2dn3','3dp')
+  case('2dp','2dh','2dn3','3dp')
     do i=1,NCELL
       i_=vars(i)
       y(2*i-1) = phi(i_)
@@ -622,7 +546,7 @@ program main
     Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
     select case(problem)
-    case('2dp','2dn3','3dp')
+    case('2dp','2dh','2dn3','3dp')
        call MPI_ALLGATHERv(y,2*NCELL,MPI_REAL8,yG,2*rcounts,2*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
       do i = 1, NCELLg
         !i=vars(i_)
@@ -675,9 +599,9 @@ program main
     if(my_rank.eq.0) then
       time2= MPI_Wtime()
       select case(problem)
-      case('2dp','2dn','2dn3','3dp')
-      !write(52,'(i7,f19.4,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(maxval(vel(1:10000))),time2-time1
-      write(52,'(i7,f19.4,4e16.5,f16.4)')k,x,maxval(log10(abs(vel(10001:)))),sum(abs(disp(10001:))),log10(maxval(vel(1:10000))),sum(disp(1:10000)),time2-time1
+      case('2dp','2dh','2dn','2dn3','3dp')
+      write(52,'(i7,f19.4,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(maxval(vel(1:10000))),time2-time1
+      !write(52,'(i7,f19.4,4e16.5,f16.4)')k,x,maxval(log10(abs(vel(10001:)))),sum(abs(disp(10001:))),log10(maxval(vel(1:10000))),sum(disp(1:10000)),time2-time1
       case('3dn','3dh')
         write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(vel)),sum(disps)/NCELLg,sum(mu)/NCELLg,maxloc(vel),dtdid*maxval(vel),time2-time1
       end select
@@ -689,6 +613,7 @@ program main
 
       !for FDMAP
       !PsiG=a*dlog(2.d0*vref/vel*dsinh(tau/sigma/a))
+      !rupture time
       do i=1,NCELLg
         if(abs(vel(i)).gt.1d-2.and.rupt(i).le.1d-6) then
           rupt(i)=x
@@ -723,7 +648,7 @@ program main
             write(50,'(i0,9e15.6,i10)') i,xcol(i),ycol(i),log10(abs(vel(i))),tau(i),sigma(i),mu(i),disp(i),phi(i),x,k
           end do
           write(50,*)
-        case('2dp')
+        case('2dp','2dh')
           do i=1,NCELLg
             write(50,'(i0,8e15.6,i10)') i,xcol(i),log10(abs(vel(i))),tau(i),sigma(i),mu(i),disp(i),phi(i),x,k
           end do
@@ -748,11 +673,12 @@ program main
          idisp=disp
          hypoloc=maxloc(abs(vel))
          onset_time=x
-         if(my_rank.eq.0) then
+
+         if(slipevery.and.(my_rank.eq.0)) then
            do i=1,NCELLg
-             if(slipevery) write(46,*) i,disp(i)
+              write(46,*) i,disp(i)
            end do
-           if(slipevery) write(46,*)
+            write(46,*)
          end if
     !     lapse=0.d0
     !     if(my_rank.eq.0) write(44,*) eventcount,x,maxloc(abs(vel))
@@ -768,10 +694,12 @@ program main
          !eventcount=eventcount+1
          if(my_rank.eq.0) then
            write(44,'(i0,f19.4,i7,e15.6)') eventcount,onset_time,hypoloc,moment
+           if(slipevery) then
            do i=1,NCELLg
-             if(slipevery) write(46,*) i,disp(i)
+             write(46,*) i,disp(i)
            end do
-           if(slipevery) write(46,*)
+           write(46,*)
+           end if
         end if
       end if
     !   vmaxevent=max(vmaxevent,maxval(vel))
@@ -811,15 +739,19 @@ program main
   !call output_to_FDMAP()
 
    if(my_rank.eq.0) then
+     select case(problem)
+     case('2dp','2dh')
      do i=1,NCELLg
-       if(problem.eq.'2dp') write(46,*) i,disp(i)
-       if(problem.eq.'2dn') write(46,'(5f16.4)') xcol(i),ycol(i),disp(i),ang(i)
+       write(46,*) i,disp(i)
+       write(48,*) i,rupt(i)
      end do
-     do i=10076,NCELLg,150
-     ! do i=1,ncellg
-       if(problem.eq.'2dp') write(48,*) i,rupt(i)
-       if(problem.eq.'2dn') write(48,'(4f16.4)') xcol(i),ycol(i),rupt(i),ang(i)
+
+     case('2dn')
+     do i=1,NCELLg
+       write(46,'(5f16.4)') xcol(i),ycol(i),disp(i),ang(i)
+       write(48,'(4f16.4)') xcol(i),ycol(i),rupt(i),ang(i)
      end do
+     end select
    end if
 
   200  if(my_rank.eq.0) then
@@ -834,7 +766,7 @@ program main
 end if
 Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 select case(problem)
-case('2dp','2dn3','3dp')
+case('2dp','2dh','2dn3','3dp')
   lrtrn=HACApK_free_leafmtxp(st_leafmtxps)
 case('2dn')
   !lrtrn=HACApK_free_leafmtxp(st_leafmtxps)
@@ -860,10 +792,25 @@ lrtrn=HACApK_finalize(st_ctl)
 Call MPI_FINALIZE(ierr)
 stop
 contains
-  subroutine initcond2d(psi,muinit,phi,sigma,tau,disp)
+  subroutine initcond2dh(phi,sigma,tau,disp,vel)
+    implicit none
+    real(8),intent(out)::phi(:),sigma(:),tau(:),disp(:),vel(:)
+    do i=1,NCELLg
+      sigma(i)=min(17.0*xcol(i)+50d0,240d0)
+      !sigma(i)=sigma0
+      tau(i)=muinit*sigma(i)
+      disp(i)=0d0
+      vel(i)=velinit
+      !phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
+      phi(i)=mu0+b(i)*log(b(i)*vref/vel(i))-0.001
+      omega=exp((phi(i)-mu0)/b(i))*vel(i)/vref/b(i)
+      write(*,*) omega
+    end do
+  end subroutine
+  subroutine initcond2d(psi,muinit,phi,sigma,tau,disp,vel)
     implicit none
     real(8),intent(in)::psi,muinit
-    real(8),intent(out)::phi(:),sigma(:),tau(:),disp(:)
+    real(8),intent(out)::phi(:),sigma(:),tau(:),disp(:),vel(:)
     real(8)::sxx0,sxy0,syy0,theta
     disp=0d0
     !initial tractions from uniform stress tensor
@@ -1096,11 +1043,13 @@ rough=.true.
     integer,intent(in)::NCELLg
     real(8),intent(in)::a0,b0,dc0,vc0
     real(8),intent(out)::a(:),b(:),dc(:),vc(:),fw(:),vw(:)
-    real(8)::len,cent
+    real(8)::len,cent,dep
     integer::i
 
     !uniform
     if(my_rank.eq.0) open(91,file='fparams')
+    select case(problem)
+    case('2dp','2dn','3dp','3dn','3dh')
     do i=1,NCELLg
       a(i)=a0
       !if(abs(xcol(i)-50d0).gt.30d0) a(i)=0.024d0 !for cycle
@@ -1124,24 +1073,29 @@ rough=.true.
       vc(i)=vc0
       fw(i)=fw0
       vw(i)=vw0
-      if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
+      !if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
     end do
 
-    !depth-dependent
-    ! do i=1,NCELLg
-    !   if(zcol(i).gt.-4d0) then
-    !     a(i)=0.015d0+0.0025d0*(zcol(i)+4d0)
-    !   else if(zcol(i).gt.-15d0) then
-    !     a(i)=0.015d0
-    !   else
-    !     a(i)=0.015d0-0.0025d0*(zcol(i)+15d0)
-    !   end if
-    !   b(i)=0.020d0
-    !   dc(i)=dc0
-    !   vc(i)=vc0
-    !   fw(i)=fw0
-    !   vw(i)=vw0
-    ! end do
+    !depth-dependent frictional properties
+  case('2dh')
+    do i=1,NCELLg
+      dep=xcol(i)
+      if(dep.lt.4d0) then
+        a(i)=0.015d0+0.0025d0*(-dep+4d0)
+      else if(dep.lt.13d0) then
+        a(i)=0.015d0
+      else
+        a(i)=0.015d0-0.0025d0*(-dep+13d0)
+      end if
+      b(i)=0.020d0
+      dc(i)=dc0
+      if(dep.gt.15d0) dc(i)=dc0+dc0*(dep-15d0)
+      vc(i)=vc0
+      fw(i)=fw0
+      vw(i)=vw0
+      if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
+    end do
+  end select
 
   end subroutine
 
@@ -1154,7 +1108,7 @@ rough=.true.
     integer::i
     character(128)::v
     select case(problem)
-    case('2dp','2dn3','3dp')
+    case('2dp','2dn3','3dp','2dh')
       taudot=sr
       tauddot=0d0
       sigdot=0d0
@@ -1271,12 +1225,12 @@ rough=.true.
 
     !if(my_rank.eq.0) then
     select case(problem)
-    case('2dp','2dn3','3dp')
+    case('2dp','2dn3','3dp','2dh')
       do i = 1, NCELL
         i_=vars(i)
         phitmp(i) = y(2*i-1)
         tautmp(i) = y(2*i)
-        sigmatmp(i)=sigma0 !normal stress is constant for planar fault
+        sigmatmp(i)=sigma(i_) !normal stress is constant for planar fault
         veltmp(i) = 2*vref*dexp(-phitmp(i)/a(i_))*dsinh(tautmp(i)/sigmatmp(i)/a(i_))
       enddo
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -1635,7 +1589,7 @@ rough=.true.
       !regularized slip law
       !dphidt(i)=-abs(veltmp(i))/dc(i)*(abs(tautmp(i))/sigmatmp(i)-fss)
       !regularized aing law
-      dphidt(i)=b(i_)*vref/dc(i_)*dexp((mu0-phitmp(i))/b(i_))-abs(veltmp(i))/dc(i_)
+      dphidt(i)=b(i_)/dc(i_)*vref*dexp((mu0-phitmp(i))/b(i_))-b(i_)*abs(veltmp(i))/dc(i_)
 
       dvdtau=2*vref*dexp(-phitmp(i)/a(i_))*dcosh(tautmp(i)/sigmatmp(i)/a(i_))/(a(i_)*sigmatmp(i))
       dvdsig=-2*vref*dexp(-phitmp(i)/a(i_))*dcosh(tautmp(i)/sigmatmp(i)/a(i_))*tautmp(i)/(a(i_)*sigmatmp(i)**2)
@@ -1714,6 +1668,10 @@ rough=.true.
       end do
     case('2dp','3dp','2dn','2dn3')
       errmax=maxval(abs(yerr(:)/yscal(:)))/eps
+    case('2dh')
+      do i=1,NCELL
+        if(abs(yerr(2*i-1)/yscal(2*i-1))/eps.gt.errmax) errmax=abs(yerr(2*i-1)/yscal(2*i-1))/eps
+      end do
       end select
       !call MPI_BARRIER(MPI_COMM_WORLD,ierr)
       call MPI_ALLREDUCE(errmax,errmax_gb,1,MPI_REAL8,                  &
@@ -1727,7 +1685,7 @@ rough=.true.
       h=0.33d0*h
       !h=sign(max(abs(htemp),0.1*abs(h)),h)
       xnew=x+h
-      if(xnew-x<1.d-10) then
+      if(xnew-x<1.d-15) then
       write(*,*)'dt is too small'
       stop
       end if
@@ -1757,7 +1715,7 @@ rough=.true.
     !type(st_HACApK_calc_entry) :: st_bemv
     integer ::i
     integer,parameter::nmax=100000
-    real(8) :: ak2(3*NCELL),ak3(3*NCELL),ak4(3*NCELL),ak5(3*NCELL),ak6(3*NCELL),ytemp(3*NCELL)
+    real(8) :: ak2(4*NCELL),ak3(4*NCELL),ak4(4*NCELL),ak5(4*NCELL),ak6(4*NCELL),ytemp(4*NCELL)
     real(8) :: A2,A3,A4,A5,A6,B21,B31,B32,B41,B42,B43,B51
     real(8) :: B52,B53,B54,B61,B62,B63,B64,B65,C1,C3,C4,C6,DC1,DC3,DC4,DC5,DC6
     PARAMETER (A2=.2d0,A3=.3d0,A4=.6d0,A5=1.d0,A6=.875d0,B21=.2d0,B31=3./40.)
