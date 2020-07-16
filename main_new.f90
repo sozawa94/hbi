@@ -68,6 +68,7 @@ program main
   eps_h=1d-6
   tmax=1d12
   nuclei=.false.
+  slipevery=.false.
 
   do while(ios==0)
     read(33,*,iostat=ios) param,pvalue
@@ -543,6 +544,13 @@ program main
     !parallel computing for Runge-Kutta
     call rkqs(y,dydx,x,dttry,eps_r,yscal,dtdid,dtnxt,errmax_gb)
 
+    if(problem.eq."2dn") then
+      do i=1,NCELL
+        if(y(3*i).lt.30d0) y(3*i)=30d0
+        if(y(3*i).gt.170d0) y(3*i)=170d0
+      end do
+    end if
+
     Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
     select case(problem)
@@ -796,7 +804,7 @@ contains
     implicit none
     real(8),intent(out)::phi(:),sigma(:),tau(:),disp(:),vel(:)
     do i=1,NCELLg
-      sigma(i)=min(17.0*xcol(i)+50d0,240d0)
+      sigma(i)=min(17.0*xcol(i)+10d0,240d0)
       !sigma(i)=sigma0
       tau(i)=muinit*sigma(i)
       disp(i)=0d0
@@ -826,6 +834,7 @@ contains
     do i=1,size(vel)
       !i_=vars(i)
         tau(i)=sxy0*cos(2*ang(i))+0.5d0*(sxx0-syy0)*sin(2*ang(i))
+        if(i.le.10000) tau(i)=tau(i)+6d0
         sigma(i)=sin(ang(i))**2*sxx0+cos(ang(i))**2*syy0+sxy0*sin(2*ang(i))
         !constant velocity
         !vel(i)=velinit*tau(i)/abs(tau(i))
@@ -900,10 +909,12 @@ contains
     real(8)::ra
     integer::lc
     ra=sqrt((xcol(2)-xcol(1))**2+(ycol(2)-ycol(1))**2)
-    lc=int(0.15d0*rigid*(1.d0-pois)*dc0/(b0-a0)/sigma0/ra)
+    lc=int(rigid*(1.d0-pois)/pi*dc0*b0/(b0-a0)**2/sigma0/ra)
     write(*,*) 'lc=',lc
-    tau(inloc-lc:inloc+lc)=tau(inloc-lc:inloc+lc)+intau*tau(inloc)/abs(tau(inloc))
-
+    do i=1,10000
+      tau(i)=tau(i)+exp(-dble(i-inloc)**2/lc**2)*intau*tau(inloc)/abs(tau(inloc))
+    end do
+    return
   end subroutine
 
   subroutine coordinate2dp(NCELLg,ds0,xel,xer,xcol)
@@ -1070,10 +1081,11 @@ rough=.true.
         !len=sqrt((xer(i)-xel(i))**2+(yer(i)-yel(i))**2)
         dc(i)=dc0*ds(i)/ds0
       end if
+      if(i.gt.10000) dc(i)=0.001d0
       vc(i)=vc0
       fw(i)=fw0
       vw(i)=vw0
-      !if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
+      if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
     end do
 
     !depth-dependent frictional properties
@@ -1299,8 +1311,8 @@ rough=.true.
         dydx(3*i-2) = dphidt(i)
         dydx(3*i-1) = dtaudt(i)
         dydx(3*i) = dsigdt(i)
-        if(limitsigma.and.(sigmatmp(i).lt.30d0)) dsigdt=0d0
-        if(limitsigma.and.(sigmatmp(i).gt.170d0)) dsigdt=0d0
+        !if(limitsigma.and.(sigmatmp(i).lt.30d0)) dsigdt(i)=0d0
+        !if(limitsigma.and.(sigmatmp(i).gt.170d0)) dsigdt(i)=0d0
       enddo
 
     case('2dn_vector')
