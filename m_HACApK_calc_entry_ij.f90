@@ -49,10 +49,10 @@ contains
       HACApK_entry_ij=matel3dp_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
       & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
       & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
-    case('3dn')
+    case('3dn','3dnf')
       !HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
       HACApK_entry_ij=matel3dn_ij(i,j,st_bemv)
-    case('3dh') !half space
+    case('3dh','3dhf') !half space
       HACApK_entry_ij=matel3dh_ij(i,j,st_bemv)
       !HACApK_entry_ij=matelh1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%strike,st_bemv%dip,st_bemv%v,st_bemv%md)
     end select
