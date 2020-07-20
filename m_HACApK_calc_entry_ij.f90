@@ -10,6 +10,7 @@ module m_HACApK_calc_entry_ij
     real(8),pointer::xcol(:),ycol(:),zcol(:),xel(:),xer(:),yel(:),yer(:),ang(:)
     real(8),pointer::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
     real(8),pointer::ys1(:),ys2(:),ys3(:),ys4(:)
+    real(8),pointer::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:)
     real(8),pointer::strike(:),dip(:)
     !real(8),pointer::ds
     character(128)::v,md
@@ -49,9 +50,10 @@ contains
       & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
       & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
     case('3dn')
-      HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
+      !HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
+      HACApK_entry_ij=matel3dn_ij(i,j,st_bemv)
     case('3dh') !half space
-      HACApK_entry_ij=matelh1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
+      HACApK_entry_ij=matel3dh_ij(i,j,st_bemv)
       !HACApK_entry_ij=matelh1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%strike,st_bemv%dip,st_bemv%v,st_bemv%md)
     end select
 
@@ -404,6 +406,76 @@ contains
     end select
     return
   end function matels1_ij
+  real(8) function matel3dn_ij(i,j,st_bemv)
+    implicit none
+    type(st_HACApK_calc_entry) :: st_bemv
+    integer,intent(in)::i,j
+    real(8)::P1(3),P2(3),P3(3)
+    real(8)::Sxx,Syy,Szz,Sxy,Sxz,Syz
+    real(8)::p(6),Arot(3,3)
+
+    P1=(/st_bemv%xs1(j),st_bemv%ys1(j),st_bemv%zs1(j)/)
+    P2=(/st_bemv%xs2(j),st_bemv%ys2(j),st_bemv%zs2(j)/)
+    P3=(/st_bemv%xs3(j),st_bemv%ys3(j),st_bemv%zs3(j)/)
+    select case(st_bemv%md)
+    case('st')
+      call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,1.d0,0.d0,0.d0,rigid,rigid,&
+      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
+    case('dp')
+      call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,1.d0,0.d0,rigid,rigid,&
+      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
+    end select
+
+    Arot(1,:)=(/st_bemv%ev11(i),st_bemv%ev21(i),st_bemv%ev31(i)/)
+    Arot(2,:)=(/st_bemv%ev12(i),st_bemv%ev22(i),st_bemv%ev32(i)/)
+    Arot(3,:)=(/st_bemv%ev13(i),st_bemv%ev23(i),st_bemv%ev33(i)/)
+    call TensTrans(Sxx,Syy,Szz,Sxy,Sxz,Syz,Arot,&
+            &p(1),p(2),p(3),p(4),p(5),p(6))
+
+    select case(st_bemv%v)
+    case('s')
+      matel3dn_ij=p(5)
+    case('d')
+      matel3dn_ij=p(6)
+    case('n')
+      matel3dn_ij=p(3)
+    end select
+  end function matel3dn_ij
+  real(8) function matel3dh_ij(i,j,st_bemv)
+    implicit none
+    type(st_HACApK_calc_entry) :: st_bemv
+    integer,intent(in)::i,j
+    real(8)::P1(3),P2(3),P3(3)
+    real(8)::Sxx,Syy,Szz,Sxy,Sxz,Syz
+    real(8)::p(6),Arot(3,3)
+
+    P1=(/st_bemv%xs1(j),st_bemv%ys1(j),st_bemv%zs1(j)/)
+    P2=(/st_bemv%xs2(j),st_bemv%ys2(j),st_bemv%zs2(j)/)
+    P3=(/st_bemv%xs3(j),st_bemv%ys3(j),st_bemv%zs3(j)/)
+    select case(st_bemv%md)
+    case('st')
+      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,1.d0,0.d0,0.d0,rigid,rigid,&
+      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
+    case('dp')
+      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,1.d0,0.d0,rigid,rigid,&
+      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
+    end select
+
+    Arot(1,:)=(/st_bemv%ev11(i),st_bemv%ev21(i),st_bemv%ev31(i)/)
+    Arot(2,:)=(/st_bemv%ev12(i),st_bemv%ev22(i),st_bemv%ev32(i)/)
+    Arot(3,:)=(/st_bemv%ev13(i),st_bemv%ev23(i),st_bemv%ev33(i)/)
+    call TensTrans(Sxx,Syy,Szz,Sxy,Sxz,Syz,Arot,&
+            &p(1),p(2),p(3),p(4),p(5),p(6))
+
+    select case(st_bemv%v)
+    case('s')
+      matel3dh_ij=p(5)
+    case('d')
+      matel3dh_ij=p(6)
+    case('n')
+      matel3dh_ij=p(3)
+    end select
+  end function matel3dh_ij
   real(8) function matelh1_ij(i,j,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,v,md)
     implicit none
     integer,intent(in)::i,j
