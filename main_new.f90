@@ -31,7 +31,7 @@ program main
   type(st_HACApK_calc_entry) :: st_bemv
   !type(t_deriv)::
   real(8),allocatable ::coord(:,:),vmax(:)
-  real(8),allocatable::a(:),b(:),dc(:),vc(:),fw(:),vw(:),ac(:),taudot(:),tauddot(:),sigdot(:)
+  real(8),allocatable::a(:),b(:),dc(:),f0(:),fw(:),vw(:),ac(:),taudot(:),tauddot(:),sigdot(:)
   !real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:)
   real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:)
   real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:)
@@ -189,7 +189,7 @@ program main
   end if
 
   !allocation
-  allocate(a(NCELLg),b(NCELLg),dc(NCELLg),vc(NCELLg),fw(NCELLg),vw(NCELLg),taudot(NCELLg),tauddot(NCELLg),sigdot(NCELLg))
+  allocate(a(NCELLg),b(NCELLg),dc(NCELLg),f0(NCELLg),fw(NCELLg),vw(NCELLg),taudot(NCELLg),tauddot(NCELLg),sigdot(NCELLg))
   allocate(rupt(NCELLg),rupsG(NCELLg))
   allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg))
   xcol=0d0;ycol=0d0;zcol=0d0
@@ -403,7 +403,7 @@ program main
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
   if(my_rank.eq.0) write(*,*) 'Setting fault parameters'
-  call params(problem,NCELLg,a0,b0,dc0,vc0,a,b,dc,vc,fw,vw)
+  call params(problem,NCELLg,a0,b0,dc0,mu0,a,b,dc,f0,fw,vw)
   call loading(problem,NCELLg,sr,taudot,tauddot,sigdot)
 
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -850,8 +850,8 @@ contains
       disp(i)=0d0
       vel(i)=velinit
       !phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
-      phi(i)=mu0+b(i)*log(b(i)*vref/vel(i))-0.001
-      omega=exp((phi(i)-mu0)/b(i))*vel(i)/vref/b(i)
+      phi(i)=f0(i)+b(i)*log(b(i)*vref/vel(i))-0.001
+      omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref/b(i)
       write(*,*) omega
     end do
   end subroutine
@@ -883,7 +883,7 @@ contains
         !constant Phi
         phi(i)=phinit
         vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
-        omega=exp((phi(i)-mu0)/b(i))*vel(i)/vref/b(i)
+        omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref/b(i)
         if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
     end do
     if(my_rank.eq.0) close(16)
@@ -1115,11 +1115,11 @@ rough=.false.
     return
   end function
 
-  subroutine params(problem,NCELLg,a0,b0,dc0,vc0,a,b,dc,vc,fw,vw)
+  subroutine params(problem,NCELLg,a0,b0,dc0,mu0,a,b,dc,f0,fw,vw)
     character(128),intent(in)::problem
     integer,intent(in)::NCELLg
-    real(8),intent(in)::a0,b0,dc0,vc0
-    real(8),intent(out)::a(:),b(:),dc(:),vc(:),fw(:),vw(:)
+    real(8),intent(in)::a0,b0,dc0,mu0
+    real(8),intent(out)::a(:),b(:),dc(:),f0(:),fw(:),vw(:)
     real(8)::len,cent,dep
     integer::i
 
@@ -1141,14 +1141,15 @@ rough=.false.
       end if
       b(i)=b0
       dc(i)=dc0
-      !if((problem.eq.'2dn').and.i.gt.10000) dc(i)=sparam*dc0
+      f0(i)=mu0
+      if((problem.eq.'2dn').and.i.le.10000) f0(i)=0.50
       !dc is proportional to fault size
       if(dcscale) then
         !len=sqrt((xer(i)-xel(i))**2+(yer(i)-yel(i))**2)
         dc(i)=dc0*ds(i)/ds0
       end if
       if((problem.eq.'2dn').and.(i.gt.10000)) dc(i)=0.001d0
-      vc(i)=vc0
+      !vc(i)=vc0
       fw(i)=fw0
       vw(i)=vw0
       if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
@@ -1168,7 +1169,7 @@ rough=.false.
       b(i)=0.020d0
       dc(i)=dc0
       if(dep.gt.15d0) dc(i)=dc0+dc0*(dep-15d0)
-      vc(i)=vc0
+      !vc(i)=vc0
       fw(i)=fw0
       vw(i)=vw0
       if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
@@ -1573,60 +1574,60 @@ rough=.false.
     return
   end subroutine
 
-  subroutine deriv_a(sum_gs,sum_gn,veltmp,tautmp,sigmatmp,dlnvdt,dtaudt,dsigdt)
-    implicit none
-    integer::i
-    real(8)::arg
-    !type(t_deriv),intent(in) ::
-    real(8),intent(in)::sum_gs(:),sum_gn(:),veltmp(:),tautmp(:),sigmatmp(:)
-    !real(8),intent(in)::a(:),b(:),dc(:),vc(:)
-    !real(8),intent(in)::mu0,vref,vs,rigid,alpha
-    real(8),intent(out)::dlnvdt(:),dtaudt(:),dsigdt(:)
-    do i=1,size(sum_gs)
-      dsigdt(i)=sum_gn(i)
-      arg=dc(i)/vref*(exp((tautmp(i)/sigmatmp(i)-mu0-a(i)*dlog(veltmp(i)/vref))/b(i))-vref/vc(i))
-      dlnvdt(i)=sum_gs(i)-b(i)*sigmatmp(i)/(arg+dc(i)/vc(i))*(1.d0-veltmp(i)*arg/dc(i))+(tautmp(i)/sigmatmp(i)-alpha)*dsigdt(i)
-      dlnvdt(i)=dlnvdt(i)/(a(i)*sigmatmp(i)+0.5d0*rigid*veltmp(i)/vs)
-      dtaudt(i)=sum_gs(i)-0.5d0*rigid*veltmp(i)/vs*dlnvdt(i)
-    end do
-  end subroutine
-
-  subroutine deriv_va(sum_gs,sum_gn,veltmp,tautmp,sigmatmp,efftmp,dlnvdt,dtaudt,dsigdt,deffdt)
-    implicit none
-    integer::i
-    real(8)::arg
-    !type(t_deriv),intent(in) ::
-    real(8),intent(in)::sum_gs(:),sum_gn(:),veltmp(:),tautmp(:),sigmatmp(:),efftmp(:)
-    !real(8),intent(in)::a(:),b(:),dc(:),vc(:)
-    !real(8),intent(in)::mu0,vref,vs,rigid,alpha
-    real(8),intent(out)::dlnvdt(:),dtaudt(:),dsigdt(:),deffdt(:)
-    do i=1,size(sum_gs)
-      dsigdt(i)=sum_gn(i)
-      arg=dc(i)/vref*(exp((tautmp(i)/sigmatmp(i)-mu0-a(i)*dlog(veltmp(i)/vref))/b(i))-vref/vc(i))
-      dlnvdt(i)=sum_gs(i)-b(i)*sigmatmp(i)/(arg+dc(i)/vc(i))*(1.d0-veltmp(i)*arg/dc(i))+(tautmp(i)/sigmatmp(i)-alpha)*dsigdt(i)
-      dlnvdt(i)=dlnvdt(i)/(a(i)*sigmatmp(i)+0.5d0*rigid*veltmp(i)/vs)
-      dtaudt(i)=sum_gs(i)-0.5d0*rigid*veltmp(i)/vs*dlnvdt(i)
-      deffdt(i)=veltmp(i)-efftmp(i)/tr
-    end do
-  end subroutine
-
-  subroutine deriv_s(sum_gs,sum_gn,veltmp,tautmp,sigmatmp,dlnvdt,dtaudt,dsigdt)
-    implicit none
-    integer::i
-    real(8)::arg
-    !type(t_deriv),intent(in) ::
-    real(8),intent(in)::sum_gs(:),sum_gn(:),veltmp(:),tautmp(:),sigmatmp(:)
-    !real(8),intent(in)::a(:),b(:),dc(:),vc(:)
-    !real(8),intent(in)::mu0,vref,vs,rigid,alpha
-    real(8),intent(out)::dlnvdt(:),dtaudt(:),dsigdt(:)
-    do i=1,size(sum_gs)
-      dsigdt(i)=sum_gn(i)
-      arg=dc(i)/vref*(exp((tautmp(i)/sigmatmp(i)-mu0-a(i)*dlog(veltmp(i)/vref))/b(i))-vref/vc(i))
-      dlnvdt(i)=sum_gs(i)+b(i)*sigmatmp(i)*veltmp(i)*dlog(veltmp(i)*arg/dc(i))+(tautmp(i)/sigmatmp(i)-alpha)*dsigdt(i)
-      dlnvdt(i)=dlnvdt(i)/(a(i)*sigmatmp(i)+0.5d0*rigid*veltmp(i)/vs)
-      dtaudt(i)=sum_gs(i)-0.5d0*rigid*veltmp(i)/vs*dlnvdt(i)
-    end do
-  end subroutine
+  ! subroutine deriv_a(sum_gs,sum_gn,veltmp,tautmp,sigmatmp,dlnvdt,dtaudt,dsigdt)
+  !   implicit none
+  !   integer::i
+  !   real(8)::arg
+  !   !type(t_deriv),intent(in) ::
+  !   real(8),intent(in)::sum_gs(:),sum_gn(:),veltmp(:),tautmp(:),sigmatmp(:)
+  !   !real(8),intent(in)::a(:),b(:),dc(:),vc(:)
+  !   !real(8),intent(in)::mu0,vref,vs,rigid,alpha
+  !   real(8),intent(out)::dlnvdt(:),dtaudt(:),dsigdt(:)
+  !   do i=1,size(sum_gs)
+  !     dsigdt(i)=sum_gn(i)
+  !     arg=dc(i)/vref*(exp((tautmp(i)/sigmatmp(i)-mu0-a(i)*dlog(veltmp(i)/vref))/b(i))-vref/vc(i))
+  !     dlnvdt(i)=sum_gs(i)-b(i)*sigmatmp(i)/(arg+dc(i)/vc(i))*(1.d0-veltmp(i)*arg/dc(i))+(tautmp(i)/sigmatmp(i)-alpha)*dsigdt(i)
+  !     dlnvdt(i)=dlnvdt(i)/(a(i)*sigmatmp(i)+0.5d0*rigid*veltmp(i)/vs)
+  !     dtaudt(i)=sum_gs(i)-0.5d0*rigid*veltmp(i)/vs*dlnvdt(i)
+  !   end do
+  ! end subroutine
+  !
+  ! subroutine deriv_va(sum_gs,sum_gn,veltmp,tautmp,sigmatmp,efftmp,dlnvdt,dtaudt,dsigdt,deffdt)
+  !   implicit none
+  !   integer::i
+  !   real(8)::arg
+  !   !type(t_deriv),intent(in) ::
+  !   real(8),intent(in)::sum_gs(:),sum_gn(:),veltmp(:),tautmp(:),sigmatmp(:),efftmp(:)
+  !   !real(8),intent(in)::a(:),b(:),dc(:),vc(:)
+  !   !real(8),intent(in)::mu0,vref,vs,rigid,alpha
+  !   real(8),intent(out)::dlnvdt(:),dtaudt(:),dsigdt(:),deffdt(:)
+  !   do i=1,size(sum_gs)
+  !     dsigdt(i)=sum_gn(i)
+  !     arg=dc(i)/vref*(exp((tautmp(i)/sigmatmp(i)-mu0-a(i)*dlog(veltmp(i)/vref))/b(i))-vref/vc(i))
+  !     dlnvdt(i)=sum_gs(i)-b(i)*sigmatmp(i)/(arg+dc(i)/vc(i))*(1.d0-veltmp(i)*arg/dc(i))+(tautmp(i)/sigmatmp(i)-alpha)*dsigdt(i)
+  !     dlnvdt(i)=dlnvdt(i)/(a(i)*sigmatmp(i)+0.5d0*rigid*veltmp(i)/vs)
+  !     dtaudt(i)=sum_gs(i)-0.5d0*rigid*veltmp(i)/vs*dlnvdt(i)
+  !     deffdt(i)=veltmp(i)-efftmp(i)/tr
+  !   end do
+  ! end subroutine
+  !
+  ! subroutine deriv_s(sum_gs,sum_gn,veltmp,tautmp,sigmatmp,dlnvdt,dtaudt,dsigdt)
+  !   implicit none
+  !   integer::i
+  !   real(8)::arg
+  !   !type(t_deriv),intent(in) ::
+  !   real(8),intent(in)::sum_gs(:),sum_gn(:),veltmp(:),tautmp(:),sigmatmp(:)
+  !   !real(8),intent(in)::a(:),b(:),dc(:),vc(:)
+  !   !real(8),intent(in)::mu0,vref,vs,rigid,alpha
+  !   real(8),intent(out)::dlnvdt(:),dtaudt(:),dsigdt(:)
+  !   do i=1,size(sum_gs)
+  !     dsigdt(i)=sum_gn(i)
+  !     arg=dc(i)/vref*(exp((tautmp(i)/sigmatmp(i)-f0(i)-a(i)*dlog(veltmp(i)/vref))/b(i))-vref/vc(i))
+  !     dlnvdt(i)=sum_gs(i)+b(i)*sigmatmp(i)*veltmp(i)*dlog(veltmp(i)*arg/dc(i))+(tautmp(i)/sigmatmp(i)-alpha)*dsigdt(i)
+  !     dlnvdt(i)=dlnvdt(i)/(a(i)*sigmatmp(i)+0.5d0*rigid*veltmp(i)/vs)
+  !     dtaudt(i)=sum_gs(i)-0.5d0*rigid*veltmp(i)/vs*dlnvdt(i)
+  !   end do
+  ! end subroutine
 
   subroutine deriv_d(sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,dphidt,dtaudt,dsigdt)
     implicit none
@@ -1646,7 +1647,7 @@ rough=.false.
       !regularized slip law
       !dphidt(i)=-abs(veltmp(i))/dc(i)*(abs(tautmp(i))/sigmatmp(i)-fss)
       !regularized aing law
-      dphidt(i)=b(i_)/dc(i_)*vref*dexp((mu0-phitmp(i))/b(i_))-b(i_)*abs(veltmp(i))/dc(i_)
+      dphidt(i)=b(i_)/dc(i_)*vref*dexp((f0(i_)-phitmp(i))/b(i_))-b(i_)*abs(veltmp(i))/dc(i_)
 
       dvdtau=2*vref*dexp(-phitmp(i)/a(i_))*dcosh(tautmp(i)/sigmatmp(i)/a(i_))/(a(i_)*sigmatmp(i))
       dvdsig=-2*vref*dexp(-phitmp(i)/a(i_))*dcosh(tautmp(i)/sigmatmp(i)/a(i_))*tautmp(i)/(a(i_)*sigmatmp(i)**2)
@@ -1683,7 +1684,7 @@ rough=.false.
         !slip law
         !dphidt(i)=-abs(veltmp(i))/dc(i)*(abs(tautmp(i))/sigmatmp(i)-fss)
         !aing law
-        dphidt(i)=b(i_)*vref/dc(i_)*exp((mu0-phitmp(i))/b(i_))-b(i_)*veltmp(i)/dc(i_)
+        dphidt(i)=b(i_)*vref/dc(i_)*exp((f0(i_)-phitmp(i))/b(i_))-b(i_)*veltmp(i)/dc(i_)
         dvdtau=2*vref*dexp(-phitmp(i)/a(i_))*dcosh(tautmp(i)/sigmatmp(i)/a(i_))/(a(i_)*sigmatmp(i))
         dvdsig=-2*vref*dexp(-phitmp(i)/a(i_))*dcosh(tautmp(i)/sigmatmp(i)/a(i_))*tautmp(i)/(a(i_)*sigmatmp(i)**2)
         dvdphi=-veltmp(i)/a(i_)
