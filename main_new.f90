@@ -344,6 +344,14 @@ program main
     st_bemv%md='st'
     st_bemv%v='s'
     lrtrn=HACApK_generate(st_leafmtxp_s,st_bemv,st_ctl,coord,eps_h)
+    phi=1.0
+    lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_s,st_bemv,st_ctl,tau,phi)
+    if(my_rank.eq.0) then
+    open(56,file='tmp')
+    do i=1,NCELLg
+     write(56,*) ycol(i),zcol(i),tau(i)
+    end do
+    end if
     st_bemv%v='n'
     lrtrn=HACApK_generate(st_leafmtxp_n,st_bemv,st_ctl,coord,eps_h)
 
@@ -422,15 +430,11 @@ program main
   case('2dn')
     call initcond2d(psi,muinit,phi,sigma,tau,disp,vel)
   case('3dnf')
-    sigma=sigma0
-    tau=sigma*muinit
-    mu=tau/sigma
-    vel=tau/abs(tau)*velinit
-    phi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
+    call initcond3dnf(phi,sigma,tau)
   case('3dhf')
     call initcond3dhf(phi,sigma,tau)
   case('3dn')
-    call initcond3d(phi,sigma,taus,taud)
+    call initcond3dn(phi,sigma,taus,taud)
   case('3dh')
     call initcond3dh(phi,sigma,taus,taud)
   end select
@@ -728,7 +732,12 @@ program main
     if(slipping) then
       if(maxval(abs(vel)).lt.5d-3) then
          slipping=.false.
+         select case(problem)
+         case('2dn','2dp','2dh','2dn3')
          moment=sum((disp-idisp)*ds)
+         case('3dp','3dn','3dh','3dnf','3dhf')
+         moment=sum(disp-idisp)
+         end select
          !eventcount=eventcount+1
          if(my_rank.eq.0) then
            write(44,'(i0,f19.4,i7,e15.6)') eventcount,onset_time,hypoloc,moment
@@ -895,7 +904,7 @@ contains
     !disp=0d0
 
   end subroutine
-  subroutine initcond3d(phi,sigma,taus,taud)
+  subroutine initcond3dn(phi,sigma,taus,taud)
     implicit none
     real(8),intent(out)::phi(:),sigma(:),taus(:),taud(:)
     real(8)::PS11,PS22,PS33,PS12
@@ -914,17 +923,17 @@ contains
     ! end if
 
     !uniform tensor in a full-space
-    ! PS11=sigma0
-    ! PS22=sigma0
-    ! PS33=sigma0
-    ! PS12=PS22*muinit
-    ! do i=1,NCELLg
-    !   taus(i) = ev11(i)*ev31(i)*PS11 + ev12(i)*ev32(i)*PS22+ (ev11(i)*ev32(i)+ev12(i)*ev31(i))*PS12 + ev13(i)*ev33(i)*PS33
-    !   taud(i) = ev21(i)*ev31(i)*PS11 + ev22(i)*ev32(i)*PS22+ (ev21(i)*ev32(i)+ev22(i)*ev31(i))*PS12 + ev23(i)*ev33(i)*PS33
-    !   sigma(i) = ev31(i)*ev31(i)*PS11 + ev32(i)*ev32(i)*PS22+ (ev31(i)*ev32(i)+ev32(i)*ev31(i))*PS12 + ev33(i)*ev33(i)*PS33
-    !   vel(i)=velinit
-    !   phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(sqrt(taus(i)**2+taud(i)**2)/sigma(i)/a(i)))
-    ! end do
+    PS11=sigma0
+    PS22=sigma0
+    PS33=sigma0
+    PS12=PS22*muinit
+    do i=1,NCELLg
+      taus(i) = ev11(i)*ev31(i)*PS11 + ev12(i)*ev32(i)*PS22+ (ev11(i)*ev32(i)+ev12(i)*ev31(i))*PS12 + ev13(i)*ev33(i)*PS33
+      taud(i) = ev21(i)*ev31(i)*PS11 + ev22(i)*ev32(i)*PS22+ (ev21(i)*ev32(i)+ev22(i)*ev31(i))*PS12 + ev23(i)*ev33(i)*PS33
+      sigma(i) = ev31(i)*ev31(i)*PS11 + ev32(i)*ev32(i)*PS22+ (ev31(i)*ev32(i)+ev32(i)*ev31(i))*PS12 + ev33(i)*ev33(i)*PS33
+      vel(i)=velinit
+       phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(sqrt(taus(i)**2+taud(i)**2)/sigma(i)/a(i)))
+     end do
 
   end subroutine
   subroutine initcond3dh(phi,sigma,taus,taud)
@@ -945,6 +954,23 @@ contains
       phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(sqrt(taus(i)**2+taud(i)**2)/sigma(i)/a(i)))
     end do
   end subroutine initcond3dh
+  subroutine initcond3dnf(phi,sigma,tau)
+    implicit none
+    real(8),intent(out)::phi(:),sigma(:),tau(:)
+    real(8)::PS11,PS22,PS33,PS12
+
+    !depth dependent stress in a half-space
+    do i=1,NCELLg
+      PS11=sigma0
+      PS22=PS11
+      PS33=PS11
+      PS12=PS22*muinit
+      tau(i) = ev11(i)*ev31(i)*PS11 + ev12(i)*ev32(i)*PS22+ (ev11(i)*ev32(i)+ev12(i)*ev31(i))*PS12 + ev13(i)*ev33(i)*PS33
+      sigma(i) = ev31(i)*ev31(i)*PS11 + ev32(i)*ev32(i)*PS22+ (ev31(i)*ev32(i)+ev32(i)*ev31(i))*PS12 + ev33(i)*ev33(i)*PS33
+      vel(i)=velinit
+      phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
+    end do
+  end subroutine initcond3dnf
   subroutine initcond3dhf(phi,sigma,tau)
     implicit none
     real(8),intent(out)::phi(:),sigma(:),tau(:)
@@ -1070,16 +1096,17 @@ contains
     open(20,file=geofile)
     do i=1,NCELLg
     read(20,*) k,xs1(i),ys1(i),zs1(i),xs2(i),ys2(i),zs2(i),xs3(i),ys3(i),zs3(i),xcol(i),ycol(i),zcol(i)
+
     !bump
-    ! xs1(i)=1d0*bump(ys1(i),zs1(i))
-    ! xs2(i)=1d0*bump(ys2(i),zs2(i))
-    ! xs3(i)=1d0*bump(ys3(i),zs3(i))
-    ! xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
+     !xs1(i)=1d0*dbend(ys1(i))
+     !xs2(i)=1d0*dbend(ys2(i))
+     !xs3(i)=1d0*dbend(ys3(i))
+     !xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
     end do
-    zs1=zs1-0.1d0
-    zs2=zs2-0.1d0
-    zs3=zs3-0.1d0
-    zcol=zcol-0.1d0
+    !zs1=zs1-0.1d0
+    !zs2=zs2-0.1d0
+    !zs3=zs3-0.1d0
+    !zcol=zcol-0.1d0
 
 rough=.false.
     !rough fault
@@ -1113,6 +1140,12 @@ rough=.false.
     rr=(y-5d0)**2+(z+10d0)**2
     bump=max(exp(-rr/4d0)-1d-4,0d0)
     return
+  end function
+
+  function dbend(y)
+   implicit none
+   real(8)::y,dbend
+   dbend=2.5d0*tanh((y-25)/5d0)
   end function
 
   subroutine params(problem,NCELLg,a0,b0,dc0,mu0,a,b,dc,f0,fw,vw)
@@ -1353,11 +1386,11 @@ rough=.false.
 
       !matrix-vector mutiplation
       st_bemv%v='xx'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,veltmpG)
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,veltmpG-vpl)
       st_bemv%v='xy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,veltmpG)
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,veltmpG-vpl)
       st_bemv%v='yy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,veltmpG)
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,veltmpG-vpl)
 
       call MPI_SCATTERv(sum_xxG,rcounts,displs,MPI_REAL8,sum_xx,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
       call MPI_SCATTERv(sum_xyG,rcounts,displs,MPI_REAL8,sum_xy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
@@ -1397,10 +1430,10 @@ rough=.false.
 
       !matrix-vector mutiplation
       st_bemv%v='s'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_s,st_bemv,st_ctl,sum_gsG,veltmpG)
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_s,st_bemv,st_ctl,sum_gsG,veltmpG-vpl)
       st_bemv%v='n'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_n,st_bemv,st_ctl,sum_gnG,veltmpG)
-
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_n,st_bemv,st_ctl,sum_gnG,veltmpG-vpl)
+      sum_gnG=0d0
 
       call MPI_SCATTERv(sum_gsG,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
       call MPI_SCATTERv(sum_gnG,rcounts,displs,MPI_REAL8,sum_gn,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
@@ -1633,6 +1666,7 @@ rough=.false.
     implicit none
     integer::i,i_
     real(8)::fss,dvdtau,dvdsig,dvdphi
+    real(8),parameter::vw=0.2,fw=0.2
     !type(t_deriv),intent(in) ::
     real(8),intent(in)::sum_gs(:),sum_gn(:),phitmp(:),tautmp(:),sigmatmp(:),veltmp(:)
     real(8),intent(out)::dphidt(:),dtaudt(:),dsigdt(:)
@@ -1642,10 +1676,10 @@ rough=.false.
       dsigdt(i)=sum_gn(i)
       !write(*,*) 'dsigdt',dsigdt(i)
 
-      !fss=mu0+(a(i)-b(i))*dlog(abs(veltmp(i))/vref)
-      !fss=fw(i)+(fss-fw(i))/(1.d0+(veltmp(i)/vw(i))**8)**0.125d0 !flash heating
+      !fss=mu0+(a(i_)-b(i_))*dlog(abs(veltmp(i))/vref)
+      !fss=fw+(fss-fw)/(1.d0+(veltmp(i)/vw)**8)**0.125d0 !flash heating
       !regularized slip law
-      !dphidt(i)=-abs(veltmp(i))/dc(i)*(abs(tautmp(i))/sigmatmp(i)-fss)
+      !dphidt(i)=-abs(veltmp(i))/dc(i_)*(abs(tautmp(i))/sigmatmp(i)-fss)
       !regularized aing law
       dphidt(i)=b(i_)/dc(i_)*vref*dexp((f0(i_)-phitmp(i))/b(i_))-b(i_)*abs(veltmp(i))/dc(i_)
 
@@ -1724,8 +1758,12 @@ rough=.false.
       do i=1,NCELL
         if(abs(yerr(4*i-3)/yscal(4*i-3))/eps.gt.errmax) errmax=abs(yerr(4*i-3)/yscal(4*i-3))/eps
       end do
-    case('2dp','3dp','2dn','2dn3','3dnf','3dhf')
+    case('2dp','3dp','2dn','2dn3','3dhf')
       errmax=maxval(abs(yerr(:)/yscal(:)))/eps
+    case('3dnf')
+      do i=1,NCELL
+        if(abs(yerr(3*i-1)/yscal(3*i-1))/eps.gt.errmax) errmax=abs(yerr(3*i-1)/yscal(3*i-1))/eps
+      end do
     case('2dh')
       do i=1,NCELL
         if(abs(yerr(2*i-1)/yscal(2*i-1))/eps.gt.errmax) errmax=abs(yerr(2*i-1)/yscal(2*i-1))/eps
