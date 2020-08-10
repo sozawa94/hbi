@@ -13,7 +13,7 @@ program main
   integer::NCELL, nstep1, lp, i,i_,j,k,m,counts,interval,number,lrtrn,nl,NCELLg,ios
   integer::clock,cr,counts2,imax,jmax,NCELLm,seedsize,icomm,np,ierr,my_rank
   integer::hypoloc(1),load,eventcount,thec,inloc
-  logical::buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale
+  logical::randomphi,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
@@ -150,6 +150,8 @@ program main
       read (pvalue,*) limitsigma
     case('buffer')
       read (pvalue,*) buffer
+    case('randomphi')
+      read(pvalue,*) randomphi  
     end select
   end do
   close(33)
@@ -344,14 +346,14 @@ program main
     st_bemv%md='st'
     st_bemv%v='s'
     lrtrn=HACApK_generate(st_leafmtxp_s,st_bemv,st_ctl,coord,eps_h)
-    phi=1.0
+    !phi=1.0
     lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_s,st_bemv,st_ctl,tau,phi)
-    if(my_rank.eq.0) then
-    open(56,file='tmp')
-    do i=1,NCELLg
-     write(56,*) ycol(i),zcol(i),tau(i)
-    end do
-    end if
+    !if(my_rank.eq.0) then
+    !open(56,file='tmp')
+    !do i=1,NCELLg
+    ! write(56,*) ycol(i),zcol(i),tau(i)
+    !end do
+    !end if
     st_bemv%v='n'
     lrtrn=HACApK_generate(st_leafmtxp_n,st_bemv,st_ctl,coord,eps_h)
 
@@ -466,7 +468,7 @@ program main
   !record parameters in file
   if(my_rank.eq.0) then
     call date_and_time(sys_time(1), sys_time(2), sys_time(3), date_time)
-    write(19,'(a6,a12,a6,a12,a12,i0)') 'date',sys_time(1),'time',sys_time(2),'job number ',number
+    write(19,'(a6,a12,a6,a12,a24,i0)') 'date',sys_time(1),'time',sys_time(2),'Starting job number=',number
 !add anything you want
 
     write(*,*) 'start time integration'
@@ -488,6 +490,8 @@ program main
   eventcount=0
 
   time2=MPI_Wtime()
+  !output initial values
+  if(my_rank.eq.0) then
   select case(problem)
   case('2dp','2dh','2dn','2dn3','3dp','3dnf','3dhf')
   write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')0,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(maxval(vel(1:10000))),time2-time1
@@ -525,6 +529,7 @@ program main
     write(50,*)
     write(50,*)
   end select
+  end if
 
   !do i=1,NCELLg
   !  write(50,'(8e15.6,i6)') xcol(i),ycol(i),vel(i),tau(i),sigma(i),mu(i),disp(i),x,k
@@ -804,6 +809,7 @@ program main
   200  if(my_rank.eq.0) then
   time2= MPI_Wtime()
   write(*,*) 'time(s)', time2-time1
+  write(19,'(a20,i0,f16.2)') 'Finished job number=',number,time2-time1
   close(52)
   close(50)
   close(48)
@@ -811,6 +817,7 @@ program main
   close(44)
   close(19)
 end if
+!if(my_rank.eq.0) write(19,'(a20,i0,f16.2)')'Finished job number=',number,time2-time1
 Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 select case(problem)
 case('2dp','2dh','2dn3','3dp')
@@ -868,7 +875,7 @@ contains
     implicit none
     real(8),intent(in)::psi,muinit
     real(8),intent(out)::phi(:),sigma(:),tau(:),disp(:),vel(:)
-    real(8)::sxx0,sxy0,syy0,theta
+    real(8)::phir(600),sxx0,sxy0,syy0,theta
     disp=0d0
     !initial tractions from uniform stress tensor
     syy0=sigma0
@@ -879,6 +886,14 @@ contains
     sxx0=syy0*(1d0+2*sxy0/(syy0*dtan(2*psi/180d0*pi)))
     write(*,*) 'sxx0,sxy0,syy0'
     write(*,*) sxx0,sxy0,syy0
+    if(randomphi) then
+    open(30,file='initphi')
+    do i=1,600
+      read(30,*) phir(i)
+    end do
+    close(30)
+    end if
+
     if(my_rank.eq.0) open(16,file='initomega')
     do i=1,size(vel)
       !i_=vars(i)
@@ -891,6 +906,7 @@ contains
 
         !constant Phi
         phi(i)=phinit
+        !if(randomphi.and.i.gt.10000) phi(i)=phinit+0.1*(phir((i-10000)/600+1)-0.5)
         vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
         omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref/b(i)
         if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
@@ -1098,17 +1114,17 @@ contains
     read(20,*) k,xs1(i),ys1(i),zs1(i),xs2(i),ys2(i),zs2(i),xs3(i),ys3(i),zs3(i),xcol(i),ycol(i),zcol(i)
 
     !bump
-     !xs1(i)=1d0*dbend(ys1(i))
-     !xs2(i)=1d0*dbend(ys2(i))
-     !xs3(i)=1d0*dbend(ys3(i))
-     !xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
+     xs1(i)=1d0*dbend(ys1(i))
+     xs2(i)=1d0*dbend(ys2(i))
+     xs3(i)=1d0*dbend(ys3(i))
+     xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
     end do
     !zs1=zs1-0.1d0
     !zs2=zs2-0.1d0
     !zs3=zs3-0.1d0
     !zcol=zcol-0.1d0
 
-rough=.false.
+    rough=.false.
     !rough fault
     if(rough) then
     open(30,file='roughsurf.txt')
@@ -1145,7 +1161,7 @@ rough=.false.
   function dbend(y)
    implicit none
    real(8)::y,dbend
-   dbend=2.5d0*tanh((y-25)/5d0)
+   dbend=5d0*tanh((y-50)/10d0)
   end function
 
   subroutine params(problem,NCELLg,a0,b0,dc0,mu0,a,b,dc,f0,fw,vw)
@@ -1175,11 +1191,12 @@ rough=.false.
       b(i)=b0
       dc(i)=dc0
       f0(i)=mu0
-      if((problem.eq.'2dn').and.i.le.10000) f0(i)=0.50
+      if((problem.eq.'2dn').and.i.le.10000) f0(i)=mu0-0.05d0
       !dc is proportional to fault size
       if(dcscale) then
         !len=sqrt((xer(i)-xel(i))**2+(yer(i)-yel(i))**2)
-        dc(i)=dc0*ds(i)/ds0
+        !dc(i)=dc0*ds(i)/ds0
+        dc(i)=ds(i)/0.004d0*0.001d0
       end if
       if((problem.eq.'2dn').and.(i.gt.10000)) dc(i)=0.001d0
       !vc(i)=vc0
