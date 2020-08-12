@@ -15,7 +15,7 @@ program main
   logical::slipping,outfield,limitsigma
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile,pvalue,param
-  real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
+  real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,time3,time4,moment,aslip,avv
   real(8)::vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau,sparam,psi
   real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxevent,mvel,mvelG
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds,amp,mui,strinit,velinit,velmax
@@ -583,8 +583,10 @@ program main
 !stop
   do k=1,NSTEP1
     dttry = dtnxt
-
+     time3=MPI_Wtime()
      call derivs(x, y, dydx)!,,st_leafmtxps,st_leafmtxpn,st_bemv,st_ctl)
+     time4=MPI_Wtime()
+     if(my_rank.eq.0) write(*,*) 'time for deriv',time4-time3
      do i = 1, size(yscal)
        yscal(i)=abs(y(i))+abs(dttry*dydx(i))+tiny
      end do
@@ -592,28 +594,28 @@ program main
     !parallel computing for Runge-Kutta
     call rkqs(y,dydx,x,dttry,eps,yscal,dtdid,dtnxt)
     !yl=y
-    Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+    !Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
     select case(problem)
     case('2dp','3dp')
       outfield=.false.
       if(mod(k,interval).eq.0) outfield=.true.
       vel=0d0
-      do i = 1, NCELL
-        i_=vars(i)
+      !do i = 1, NCELL
+        !i_=vars(i)
         !write(*,*) my_rank,i
-        phi(i_) = y(2*i-1)
-        tau(i_) = y(2*i)
+        !phi(i_) = y(2*i-1)
+        !tau(i_) = y(2*i)
         !write(*,*) my_rank,i,phi(i)
         !disp(i) = disp(i)+exp(y(2*i-1))*dtdid
-        vel(i_)= 2*vref*exp(-phi(i_)/a(i_))*sinh(tau(i_)/sigma(i_)/a(i_))
+        !vel(i_)= 2*vref*exp(-phi(i_)/a(i_))*sinh(tau(i_)/sigma(i_)/a(i_))
         !write(*,*)vel(i),dtdid
-        disp(i_)=disp(i_)+vel(i_)*dtdid
-        mu(i_)=tau(i_)/sigma(i_)
-        if(outfield.and.(my_rank.lt.npd)) write(nout,'(i0,8e15.6,i10)') i_,xcol(i_),log10(abs(vel(i_))),tau(i_),sigma(i_),mu(i_),disp(i_),phi(i_),x,k
-      end do
-      if(outfield.and.(my_rank.lt.npd)) write(nout,*)
-      mvel=maxval(abs(vel))
+        !disp(i_)=disp(i_)+vel(i_)*dtdid
+        !mu(i_)=tau(i_)/sigma(i_)
+        !if(outfield.and.(my_rank.lt.npd)) write(nout,'(i0,8e15.6,i10)') i_,xcol(i_),log10(abs(vel(i_))),tau(i_),sigma(i_),mu(i_),disp(i_),phi(i_),x,k
+      !end do
+      !if(outfield.and.(my_rank.lt.npd)) write(nout,*)
+      !mvel=maxval(abs(vel))
 
     case('2dn')
       outfield=.false.
@@ -679,14 +681,15 @@ program main
     end select
 
 
-    Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+    !Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
     if(my_rank.eq.0.and.outfield) then
       write(*,*) 'time step=' ,k
     end if
     time2= MPI_Wtime()
-    mvel=maxval(abs(vel))
-    call MPI_ALLREDUCE(mvel,mvelG,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
+    !mvel=maxval(abs(vel))
+    mvelG=1d-6
+    !call MPI_ALLREDUCE(mvel,mvelG,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
     write(52,'(i7,f18.5,e16.5,f16.4)')k,x,log10(mvelG),time2-time1
 
     if(mvelG.gt.velmax) then
@@ -699,7 +702,7 @@ program main
       exit
     end if
 
-    dttry = dtnxt
+    !dttry = dtnxt
   end do
 
 
@@ -1127,7 +1130,7 @@ rough=.true.
     real(8) :: sum_xxG(NCELLg),sum_xyG(NCELLg),sum_yyG(NCELLg),sum_xzG(NCELLg),sum_yzG(NCELLg),sum_zzG(NCELLg)
     real(8) :: sum_xx2(NCELL),sum_xy2(NCELL),sum_yy2(NCELL),sum_xz2(NCELL),sum_yz2(NCELL),sum_zz2(NCELL)
     real(8)::veltmpG(NCELLg),sum_gsg(NCELLg),sum_gng(NCELLg),efftmpG(NCELLg)
-    real(8):: c1, c2, c3, arg,c,g,tauss,Arot(3,3),p(6)
+    real(8):: c1, c2, c3, arg,c,g,tauss,Arot(3,3),p(6),timeb,timea
     integer :: i, j, nc,ierr,lrtrn,i_
 
     !if(my_rank.eq.0) then
@@ -1147,7 +1150,11 @@ rough=.true.
       select case(load)
       case(0)
         st_vel%vs=veltmp
+        timea=MPI_Wtime()
         call HACApK_adot_lattice_hyp(st_sum,st_LHp,st_ctl,wws,st_vel)
+        timeb=MPI_Wtime()
+        if(my_rank.eq.0) write(*,*) 'time for HACAPK_adot_lattice_hyp',timeb-timea
+        
         sum_gs(:)=st_sum%vs(st_ctl%lod(:))
         !lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
         !call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
@@ -1156,6 +1163,8 @@ rough=.true.
           sum_gn(i)=0.d0
           sum_gs(i)=sum_gs(i)+taudot(i_)
         end do
+       
+        !if(my_rank.eq.0) write(*,*) 'time ',timea-timeb
       case(1)
         st_vel%vs=veltmp-vpl
         call HACApK_adot_lattice_hyp(st_sum,st_LHp,st_ctl,wws,st_vel)
@@ -1170,7 +1179,9 @@ rough=.true.
       do i = 1, NCELL
         dydx(2*i-1) = dphidt(i)
         dydx(2*i) = dtaudt(i)
-      enddo
+      enddo 
+      timea=MPI_Wtime()
+      if(my_rank.eq.0) write(*,*) 'time for friction evaluation',timea-timeb
       !call MPI_SCATTERv(sum_gsG,NCELL,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
 
     case('2dn')
@@ -1595,13 +1606,16 @@ rough=.true.
     !type(st_HACApK_leafmtxp),intent(in) :: st_leafmtxp
     !type(st_HACApK_calc_entry) :: st_bemv
     integer :: i,ierr
-    real(8) :: errmax,h,xnew,htemp,errmax_gb
+    real(8) :: errmax,h,xnew,htemp,errmax_gb,time(3)
     real(8),dimension(size(y))::yerr,ytemp
     real(8),parameter::SAFETY=0.9,PGROW=-0.2,PSHRNK=-0.25,ERRCON=1.89d-4,hmax=1d5
 
     h=htry
     do while(.true.)
+      !time(1)=MPI_Wtime()
       call rkck(y,dydx,x,h,ytemp,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+      !time(2)=MPI_Wtime()
+      !if(my_rank.eq.0) write(*,*) 'time for rkck',time(2)-time(1)
       errmax=0d0
       select case(problem)
       case('3dn','3dh')
@@ -1612,7 +1626,7 @@ rough=.true.
       errmax=maxval(abs(yerr(:)/yscal(:)))/eps
       !write(*,*) my_rank,errmax
       end select
-      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      !call MPI_BARRIER(MPI_COMM_WORLD,ierr)
       call MPI_ALLREDUCE(errmax,errmax_gb,1,MPI_REAL8,                  &
       &     MPI_MAX,MPI_COMM_WORLD,ierr)
       !if(my_rank.eq.0) write(*,*) errmax_gb
