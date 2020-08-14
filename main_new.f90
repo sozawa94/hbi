@@ -415,8 +415,21 @@ program main
   if(my_rank.eq.0) write(*,*) 'Setting fault parameters'
   call params(problem,NCELLg,a0,b0,dc0,mu0,a,b,dc,f0,fw,vw)
   call loading(problem,NCELLg,sr,taudot,tauddot,sigdot)
-
-  call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+  
+  st_bemv%v='s'
+  vel=1d0
+  lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_s,st_bemv,st_ctl,taudot,-vel)
+  st_bemv%v='n'
+  lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_n,st_bemv,st_ctl,sigdot,-vel)
+  if(my_rank.eq.0) then
+    open(29,file='stressrate')
+    do i=1,NCELLg
+      write(29,'(5e16.4)') xcol(i),ycol(i),zcol(i),taudot(i),sigdot(i)
+    end do
+  end if
+  taudot=0d0
+  sigdot=0d0
+call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
 
   !setting initial condition
@@ -470,7 +483,7 @@ program main
     call date_and_time(sys_time(1), sys_time(2), sys_time(3), date_time)
     write(19,'(a6,a12,a6,a12,a24,i0)') 'date',sys_time(1),'time',sys_time(2),'Starting job number=',number
 !add anything you want
-
+    close(19)
     write(*,*) 'start time integration'
   end if
 
@@ -809,7 +822,9 @@ program main
   200  if(my_rank.eq.0) then
   time2= MPI_Wtime()
   write(*,*) 'time(s)', time2-time1
+  open(19,file='job.log',position='append')
   write(19,'(a20,i0,f16.2)') 'Finished job number=',number,time2-time1
+  !open(19,file='job.log',position='append')
   close(52)
   close(50)
   close(48)
@@ -1450,7 +1465,7 @@ contains
       lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_s,st_bemv,st_ctl,sum_gsG,veltmpG-vpl)
       st_bemv%v='n'
       lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_n,st_bemv,st_ctl,sum_gnG,veltmpG-vpl)
-      sum_gnG=0d0
+      !sum_gnG=0d0
 
       call MPI_SCATTERv(sum_gsG,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
       call MPI_SCATTERv(sum_gnG,rcounts,displs,MPI_REAL8,sum_gn,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
