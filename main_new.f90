@@ -13,7 +13,7 @@ program main
   integer::NCELL, nstep1, lp, i,i_,j,k,m,counts,interval,number,lrtrn,nl,NCELLg,ios
   integer::clock,cr,counts2,imax,jmax,NCELLm,seedsize,icomm,np,ierr,my_rank
   integer::hypoloc(1),load,eventcount,thec,inloc
-  logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip
+  logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
@@ -151,6 +151,8 @@ program main
       read (pvalue,*) nuclei
     case('slipevery')
       read (pvalue,*) slipevery
+    case('slipfinal')
+      read (pvalue,*) slipfinal
     case('limitsigma')
       read (pvalue,*) limitsigma
     case('buffer')
@@ -743,7 +745,7 @@ time1=MPI_Wtime()
 
   !output for FDMAP communication
   !call output_to_FDMAP()
-
+   if(slipfinal) then
    if(my_rank.eq.0) then
      select case(problem)
      case('2dp','2dh')
@@ -759,9 +761,10 @@ time1=MPI_Wtime()
      end do
      end select
    end if
+  end if
 
-  200  if(my_rank.eq.0) then
   time2= MPI_Wtime()
+  200  if(my_rank.eq.0) then
   write(*,*) 'time(s)', time2-time1
   open(19,file='job.log',position='append')
   write(19,'(a20,i0,f16.2)') 'Finished job number=',number,time2-time1
