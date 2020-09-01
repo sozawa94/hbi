@@ -76,6 +76,8 @@ program main
   tmax=1d12
   nuclei=.false.
   slipevery=.false.
+  number=0
+  
 
   do while(ios==0)
     read(33,*,iostat=ios) param,pvalue
@@ -820,8 +822,8 @@ contains
     time2=MPi_Wtime()
     select case(problem)
     case('2dp','2dh','2dn','2dn3','3dp','3dnf','3dhf')
-    !write(52,'(i7,f19.4,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(maxval(vel(1:10000))),time2-time1
-    write(52,'(i7,f19.4,4e16.5,i10,f16.4)')k,x,maxval(log10(abs(vel(10001:)))),sum(abs(disp(10001:))),log10(maxval(vel(1:10000))),sum(disp(1:10000)),maxloc(vel),time2-time1
+    write(52,'(i7,f19.4,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(maxval(vel(1:10000))),time2-time1
+    !write(52,'(i7,f19.4,4e16.5,i10,f16.4)')k,x,maxval(log10(abs(vel(10001:)))),sum(abs(disp(10001:))),log10(maxval(vel(1:10000))),sum(disp(1:10000)),maxloc(vel),time2-time1
     case('3dn','3dh')
       write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(vel)),sum(disps)/NCELLg,sum(mu)/NCELLg,maxloc(vel),dtdid*maxval(vel),time2-time1
     end select
@@ -1002,7 +1004,7 @@ contains
       PS11=sigma0
       PS22=PS11
       PS33=PS11
-      PS12=PS22*muinit
+      PS12=-PS22*muinit
       tau(i) = ev11(i)*ev31(i)*PS11 + ev12(i)*ev32(i)*PS22+ (ev11(i)*ev32(i)+ev12(i)*ev31(i))*PS12 + ev13(i)*ev33(i)*PS33
       sigma(i) = ev31(i)*ev31(i)*PS11 + ev32(i)*ev32(i)*PS22+ (ev31(i)*ev32(i)+ev32(i)*ev31(i))*PS12 + ev33(i)*ev33(i)*PS33
       vel(i)=velinit
@@ -1133,13 +1135,13 @@ contains
     !reading mesh data from in_fgeom.dat of mkelm.c of Ando's code
     open(20,file=geofile)
     do i=1,NCELLg
-    read(20,*) k,xs1(i),ys1(i),zs1(i),xs2(i),ys2(i),zs2(i),xs3(i),ys3(i),zs3(i),xcol(i),ycol(i),zcol(i)
+    read(20,*) k,ys1(i),xs1(i),zs1(i),ys2(i),xs2(i),zs2(i),ys3(i),xs3(i),zs3(i),ycol(i),xcol(i),zcol(i)
 
     !bump
-     xs1(i)=1d0*dbend(ys1(i))
-     xs2(i)=1d0*dbend(ys2(i))
-     xs3(i)=1d0*dbend(ys3(i))
-     xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
+     ys1(i)=-1d0*dbend(xs1(i))
+     ys2(i)=-1d0*dbend(xs2(i))
+     ys3(i)=-1d0*dbend(xs3(i))
+     ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
     end do
     !zs1=zs1-0.1d0
     !zs2=zs2-0.1d0
@@ -1375,7 +1377,7 @@ contains
     !real(8) :: sum_xx2G(NCELLg),sum_xy2G(NCELLg),sum_yy2G(NCELLg),sum_xz2G(NCELLg),sum_yz2G(NCELLg),sum_zz2G(NCELLg)
     real(8) :: veltmpG(NCELLg),sum_gsg(NCELLg),sum_gng(NCELLg),sum_gdg(NCELLg)!,efftmpG(NCELLg)
     real(8) :: sum_gs2G(NCELLg),sum_gd2G(NCELLg),sum_gn2G(NCELLg)
-    real(8) :: c1, c2, c3, arg,c,g,tauss,Arot(3,3),p(6)
+    real(8) :: time3,time4,c1, c2, c3, arg,c,g,tauss,Arot(3,3),p(6)
     integer :: i, j, nc,ierr,lrtrn,i_
 
     !if(my_rank.eq.0) then
@@ -1394,8 +1396,11 @@ contains
       !matrix-vector mutiplation
       select case(load)
       case(0)
+        time3=MPI_Wtime()
         lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
         call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+        time4=MPI_Wtime()
+        if(my_rank.eq.0) write(*,*) time4-time3
         do i=1,NCELL
           i_=vars(i)
           sum_gn(i)=0.d0
