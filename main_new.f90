@@ -77,7 +77,7 @@ program main
   nuclei=.false.
   slipevery=.false.
   number=0
-  
+
 
   do while(ios==0)
     read(33,*,iostat=ios) param,pvalue
@@ -994,6 +994,7 @@ contains
       phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(sqrt(taus(i)**2+taud(i)**2)/sigma(i)/a(i)))
     end do
   end subroutine initcond3dh
+
   subroutine initcond3dnf(phi,sigma,tau)
     implicit none
     real(8),intent(out)::phi(:),sigma(:),tau(:)
@@ -1011,6 +1012,7 @@ contains
       phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
     end do
   end subroutine initcond3dnf
+
   subroutine initcond3dhf(phi,sigma,tau)
     implicit none
     real(8),intent(out)::phi(:),sigma(:),tau(:)
@@ -1261,10 +1263,15 @@ contains
     integer::i
     character(128)::v
     select case(problem)
-    case('2dp','2dn3','3dp','2dh','3dnf','3dhf')
+    case('2dp','2dn3','3dp','2dh','3dhf')
       taudot=sr
       tauddot=0d0
       sigdot=0d0
+    case('3dnf')
+      do i=1,NCELLg
+        taudot(i) = -(ev11(i)*ev32(i)+ev12(i)*ev31(i))*sr
+        sigdot(i) = -(ev31(i)*ev32(i)+ev32(i)*ev31(i))*sr
+      end do
     case('2dn')
       !open(15,file='sr')
       !write(*,*) load
