@@ -497,7 +497,7 @@ call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     write(fname,'("output/rupt",i0,".dat")') number
     open(48,file=fname)
     write(fname,'("output/slip",i0,".dat")') number
-    open(46,file=fname)
+    open(46,file=fname,form='unformatted',access='sequential')
     write(fname,'("output/event",i0,".dat")') number
     open(44,file=fname)
     write(fname,'("output/local",i0,".dat")') number
@@ -687,10 +687,11 @@ time1=MPI_Wtime()
          onset_time=x
 
          if(slipevery.and.(my_rank.eq.0)) then
-           do i=1,NCELLg
-              write(46,*) i,disp(i)
-           end do
-            write(46,*)
+           !do i=1,NCELLg
+              !write(46,*) i,disp(i),mu(i)
+           !end do
+            !write(46,*)
+           write(46) disp
          end if
     !     lapse=0.d0
     !     if(my_rank.eq.0) write(44,*) eventcount,x,maxloc(abs(vel))
@@ -712,10 +713,11 @@ time1=MPI_Wtime()
          if(my_rank.eq.0) then
            write(44,'(i0,f19.4,i7,e15.6)') eventcount,onset_time,hypoloc,moment
            if(slipevery) then
-           do i=1,NCELLg
-             write(46,*) i,disp(i),mu(i)
-           end do
-           write(46,*)
+           !do i=1,NCELLg
+           !  write(46,*) i,disp(i),mu(i)
+           !end do
+           !write(46,*)
+           write(46) disp
            end if
         end if
       end if
@@ -759,15 +761,17 @@ time1=MPI_Wtime()
      select case(problem)
      case('2dp','2dh')
      do i=1,NCELLg
-       write(46,*) i,disp(i)
+       !write(46,*) i,disp(i)
        write(48,*) i,rupt(i)
      end do
+     write(46) disp
 
      case('2dn')
      do i=1,NCELLg
-       write(46,'(5f16.4)') xcol(i),ycol(i),disp(i),ang(i)
+       !write(46,'(5f16.4)') xcol(i),ycol(i),disp(i),ang(i)
        write(48,'(4f16.4)') xcol(i),ycol(i),rupt(i),ang(i)
      end do
+     write(46) disp
      end select
    end if
   end if
