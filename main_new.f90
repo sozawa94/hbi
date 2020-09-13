@@ -60,15 +60,20 @@ program main
   !input file must be specified when running
   !example) mpirun -np 16 ./ha.out default.in
   call get_command_argument(1,input_file,status=stat)
-  time1=MPI_Wtime()
-
-  !reading input file
-  !if(my_rank.eq.0) write(*,*) 'Reading input file'
+  
   open(33,file=input_file,iostat=ios)
-  if (ios /= 0) then
+  !if(my_rank.eq.0) write(*,*) 'input_file',input_file
+  if(ios /= 0) then 
      write(*,*) 'Failed to open inputfile'
      stop
   end if
+  
+!get filenumber
+  input_file=adjustl(input_file(7:))
+  write(*,*) input_file
+  read(input_file,*) number
+  write(*,*) number
+  time1=MPI_Wtime()
 
   !new input reading system(under construction)
   eps_r=1d-6
@@ -76,7 +81,7 @@ program main
   tmax=1d12
   nuclei=.false.
   slipevery=.false.
-  number=0
+  !number=0
 
 
   do while(ios==0)
@@ -147,6 +152,8 @@ program main
       read (pvalue,*) eps_r
     case('eps_h')
       read (pvalue,*) eps_h
+    case('amp')
+      read(pvalue,*) amp
     case('dcscale')
       read (pvalue,*) dcscale
     case('nuclei')
@@ -706,7 +713,7 @@ time1=MPI_Wtime()
            write(44,'(i0,f19.4,i7,e15.6)') eventcount,onset_time,hypoloc,moment
            if(slipevery) then
            do i=1,NCELLg
-             write(46,*) i,disp(i)
+             write(46,*) i,disp(i),mu(i)
            end do
            write(46,*)
            end if
@@ -1130,7 +1137,7 @@ contains
     real(8),intent(out)::xcol(:),ycol(:),zcol(:)
     real(8),intent(out)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
     real(4)::xl(0:2048,0:2048)
-    real(8),parameter::amp=1d-4
+    !real(8),parameter::amp=1d-4
     integer::i,j,k
     logical::rough
 
@@ -1140,9 +1147,9 @@ contains
     read(20,*) k,ys1(i),xs1(i),zs1(i),ys2(i),xs2(i),zs2(i),ys3(i),xs3(i),zs3(i),ycol(i),xcol(i),zcol(i)
 
     !bump
-     ys1(i)=-1d0*dbend(xs1(i))
-     ys2(i)=-1d0*dbend(xs2(i))
-     ys3(i)=-1d0*dbend(xs3(i))
+     ys1(i)=amp*dbend(xs1(i))
+     ys2(i)=amp*dbend(xs2(i))
+     ys3(i)=amp*dbend(xs3(i))
      ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
     end do
     !zs1=zs1-0.1d0
@@ -1269,8 +1276,10 @@ contains
       sigdot=0d0
     case('3dnf')
       do i=1,NCELLg
-        taudot(i) = -(ev11(i)*ev32(i)+ev12(i)*ev31(i))*sr
-        sigdot(i) = -(ev31(i)*ev32(i)+ev32(i)*ev31(i))*sr
+        !taudot(i) = -(ev11(i)*ev32(i)+ev12(i)*ev31(i))*sr
+        !sigdot(i) = -(ev31(i)*ev32(i)+ev32(i)*ev31(i))*sr
+        taudot(i)=sr
+        sigdot(i)=0d0
       end do
     case('2dn')
       !open(15,file='sr')
