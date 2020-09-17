@@ -16,7 +16,7 @@ program main
   logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue
-  real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv
+  real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv,wid
   real(8)::psi,vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau,errmax_gb
   real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,eps_r,eps_h
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds0,amp,mui,strinit,velinit,phinit,velmax
@@ -154,6 +154,8 @@ program main
       read (pvalue,*) eps_h
     case('amp')
       read(pvalue,*) amp
+    case('wid')
+      read(pvalue,*) wid
     case('dcscale')
       read (pvalue,*) dcscale
     case('nuclei')
@@ -497,7 +499,7 @@ call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     write(fname,'("output/rupt",i0,".dat")') number
     open(48,file=fname)
     write(fname,'("output/slip",i0,".dat")') number
-    open(46,file=fname,form='unformatted',access='sequential')
+    open(46,file=fname,form='unformatted',access='stream')
     write(fname,'("output/event",i0,".dat")') number
     open(44,file=fname)
     write(fname,'("output/local",i0,".dat")') number
@@ -1151,9 +1153,9 @@ contains
     read(20,*) k,ys1(i),xs1(i),zs1(i),ys2(i),xs2(i),zs2(i),ys3(i),xs3(i),zs3(i),ycol(i),xcol(i),zcol(i)
 
     !bump
-     ys1(i)=amp*dbend(xs1(i))
-     ys2(i)=amp*dbend(xs2(i))
-     ys3(i)=amp*dbend(xs3(i))
+     ys1(i)=dbend(xs1(i),amp,wid)
+     ys2(i)=dbend(xs2(i),amp,wid)
+     ys3(i)=dbend(xs3(i),amp,wid)
      ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
     end do
     !zs1=zs1-0.1d0
@@ -1195,10 +1197,10 @@ contains
     return
   end function
 
-  function dbend(y)
+  function dbend(y,amp,wid)
    implicit none
-   real(8)::y,dbend
-   dbend=5d0*tanh((y-50)/10d0)
+   real(8)::y,amp,wid,dbend
+   dbend=amp*tanh((y-50)/wid)
   end function
 
   subroutine params(problem,NCELLg,a0,b0,dc0,mu0,a,b,dc,f0,fw,vw)
