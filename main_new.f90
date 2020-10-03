@@ -60,19 +60,21 @@ program main
   !input file must be specified when running
   !example) mpirun -np 16 ./ha.out default.in
   call get_command_argument(1,input_file,status=stat)
-  
+
   open(33,file=input_file,iostat=ios)
   !if(my_rank.eq.0) write(*,*) 'input_file',input_file
-  if(ios /= 0) then 
+  if(ios /= 0) then
      write(*,*) 'Failed to open inputfile'
      stop
   end if
-  
+
 !get filenumber
+if(input_file(1:2).eq.'in') then
   input_file=adjustl(input_file(7:))
   write(*,*) input_file
   read(input_file,*) number
   write(*,*) number
+end if
   time1=MPI_Wtime()
 
   !new input reading system(under construction)
@@ -911,6 +913,23 @@ contains
     ! end do
     ! close(30)
     ! end if
+    do i=1,size(vel)
+      !i_=vars(i)
+        tau(i)=sxy0*cos(2*ang(i))+0.5d0*(sxx0-syy0)*sin(2*ang(i))
+        !if(i.le.10000) tau(i)=tau(i)+6d0
+        sigma(i)=sin(ang(i))**2*sxx0+cos(ang(i))**2*syy0+sxy0*sin(2*ang(i))
+        !constant velocity
+        vel(i)=velinit*tau(i)/abs(tau(i))
+        phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
+
+        !constant Phi
+        !phi(i)=phinit
+        !if(i.le.10000) phi(i)=0.55d0
+        !if(randomphi.and.i.gt.10000) phi(i)=phinit+0.1*(phir((i-10000)/600+1)-0.5)
+        !vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
+        !omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref/b(i)
+        !if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
+    end do
 
     if(my_rank.eq.0) open(16,file='initomega')
     if(aftershock) then
@@ -1455,11 +1474,11 @@ contains
 
       !matrix-vector mutiplation
       st_bemv%v='xx'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,veltmpG)
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,veltmpG-vpl)
       st_bemv%v='xy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,veltmpG)
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,veltmpG-vpl)
       st_bemv%v='yy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,veltmpG)
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,veltmpG-vpl)
 
       call MPI_SCATTERv(sum_xxG,rcounts,displs,MPI_REAL8,sum_xx,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
       call MPI_SCATTERv(sum_xyG,rcounts,displs,MPI_REAL8,sum_xy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
@@ -1754,7 +1773,7 @@ contains
       dphidt(i)=b(i_)/dc(i_)*vref*dexp((f0(i_)-phitmp(i))/b(i_))-b(i_)*abs(veltmp(i))/dc(i_)
 
       !regularized aging law with cutoff velocity for evolution
-      dphidt(i)=b(i_)/dc(i_)*vref*dexp((f0(i_)-phitmp(i))/b(i_))*(1d0-abs(veltmp(i))/vref*(exp((phitmp(i)-f0(i_))/b(i_))-vref/vc(i_)))
+      !dphidt(i)=b(i_)/dc(i_)*vref*dexp((f0(i_)-phitmp(i))/b(i_))*(1d0-abs(veltmp(i))/vref*(exp((phitmp(i)-f0(i_))/b(i_))-vref/vc(i_)))
 
 
       dvdtau=2*vref*dexp(-phitmp(i)/a(i_))*dcosh(tautmp(i)/sigmatmp(i)/a(i_))/(a(i_)*sigmatmp(i))
