@@ -10,7 +10,7 @@ program main
   include 'mpif.h'
   integer:: date_time(8)
   character(len=10):: sys_time(3)
-  integer::NCELL, nstep1, lp, i,i_,j,k,m,counts,interval,number,lrtrn,nl,NCELLg,ios
+  integer::NCELL, nstep1, lp, i,i_,j,k,m,counts,interval,number,lrtrn,nl,NCELLg,ios,nmain
   integer::clock,cr,counts2,imax,jmax,NCELLm,seedsize,icomm,np,ierr,my_rank
   integer::hypoloc(1),load,eventcount,thec,inloc
   logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal
@@ -174,6 +174,8 @@ end if
       read(pvalue,*) aftershock
     case('slowslip')
       read(pvalue,*) slowslip
+    case('nmain')
+      read(pvalue,*) nmain
     end select
   end do
   close(33)
@@ -837,8 +839,8 @@ contains
     time2=MPi_Wtime()
     select case(problem)
     case('2dp','2dh','2dn','2dn3','3dp','3dnf','3dhf')
-    write(52,'(i7,f19.4,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(maxval(vel(1:10000))),time2-time1
-    !write(52,'(i7,f19.4,4e16.5,i10,f16.4)')k,x,maxval(log10(abs(vel(10001:)))),sum(abs(disp(10001:))),log10(maxval(vel(1:10000))),sum(disp(1:10000)),maxloc(vel),time2-time1
+    write(52,'(i7,f19.4,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(maxval(vel(1:nmain))),time2-time1
+    !write(52,'(i7,f19.4,4e16.5,i10,f16.4)')k,x,maxval(log10(abs(vel(10001:)))),sum(abs(disp(10001:))),log10(maxval(vel(1:nmain))),sum(disp(1:nmain)),maxloc(vel),time2-time1
     case('3dn','3dh')
       write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(vel)),sum(disps)/NCELLg,sum(mu)/NCELLg,maxloc(vel),dtdid*maxval(vel),time2-time1
     end select
@@ -916,7 +918,7 @@ contains
     do i=1,size(vel)
       !i_=vars(i)
         tau(i)=sxy0*cos(2*ang(i))+0.5d0*(sxx0-syy0)*sin(2*ang(i))
-        !if(i.le.10000) tau(i)=tau(i)+6d0
+        !if(i.le.nmain) tau(i)=tau(i)+6d0
         sigma(i)=sin(ang(i))**2*sxx0+cos(ang(i))**2*syy0+sxy0*sin(2*ang(i))
         !constant velocity
         vel(i)=velinit*tau(i)/abs(tau(i))
@@ -924,8 +926,8 @@ contains
 
         !constant Phi
         !phi(i)=phinit
-        !if(i.le.10000) phi(i)=0.55d0
-        !if(randomphi.and.i.gt.10000) phi(i)=phinit+0.1*(phir((i-10000)/600+1)-0.5)
+        !if(i.le.nmain) phi(i)=0.55d0
+        !if(randomphi.and.i.gt.nmain) phi(i)=phinit+0.1*(phir((i-nmain)/600+1)-0.5)
         !vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
         !omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref/b(i)
         !if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
@@ -936,7 +938,7 @@ contains
     do i=1,size(vel)
       !i_=vars(i)
         tau(i)=sxy0*cos(2*ang(i))+0.5d0*(sxx0-syy0)*sin(2*ang(i))
-        !if(i.le.10000) tau(i)=tau(i)+6d0
+        !if(i.le.nmain) tau(i)=tau(i)+6d0
         sigma(i)=sin(ang(i))**2*sxx0+cos(ang(i))**2*syy0+sxy0*sin(2*ang(i))
         !constant velocity
         !vel(i)=velinit*tau(i)/abs(tau(i))
@@ -944,7 +946,7 @@ contains
 
         !constant Phi
         phi(i)=phinit
-        if(i.le.10000) phi(i)=0.55d0
+        if(i.le.nmain) phi(i)=0.55d0
         !if(randomphi.and.i.gt.10000) phi(i)=phinit+0.1*(phir((i-10000)/600+1)-0.5)
         vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
         omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref/b(i)
@@ -958,14 +960,14 @@ contains
     sigma=sigma0
     tmin=sigma0*(mu0+(a0-b0)*dlog(1e-2/vref))
     tmax=sigma0*(mu0+(a0-b0)*dlog(1e-9/vref))
-    do i=1,10000
+    do i=1,nmain
       tau(i)=tmin
       vel(i)=velinit
       phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
       if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
     end do
 
-    do i=10001,NCELLg
+    do i=nmain+1,NCELLg
       !tau(i)=tmin+(tmax-tmin)*(i-10000)/100d0/150d0
       tau(i)=tmax
       vel(i)=velinit
@@ -1073,7 +1075,7 @@ contains
     ra=sqrt((xcol(2)-xcol(1))**2+(ycol(2)-ycol(1))**2)
     lc=int(rigid*(1.d0-pois)/pi*dc0*b0/(b0-a0)**2/sigma0/ra)
     write(*,*) 'lc=',lc
-    do i=1,10000
+    do i=1,nmain
       tau(i)=tau(i)+exp(-dble(i-inloc)**2/lc**2)*intau*tau(inloc)/abs(tau(inloc))
     end do
     return
@@ -1105,7 +1107,6 @@ contains
     character(128)::geofile2
     real(8),intent(out)::xel(:),xer(:),yel(:),yer(:),xcol(:),ycol(:),ang(:),ds(:)
     integer::i,j,k,file_size,n,Np,Nm,ncellf
-    real(8)::dx,xr(0:NCELLg),yr(0:NCELLg),nx(NCELLg),ny(NCELLg),r(NCELLg)
     real(8),allocatable::data(:)
 
     !reading mesh data from mkelm.f90
@@ -1249,15 +1250,15 @@ contains
       b(i)=b0
       dc(i)=dc0
       f0(i)=mu0
-      if(aftershock.and.i.le.10000) f0(i)=mu0-0.05d0
+      if(aftershock.and.i.le.nmain) f0(i)=mu0-0.05d0
       !dc is proportional to fault size
       if(dcscale) then
         dc(i)=ds(i)/0.004d0*0.001d0
       end if
-      if(aftershock.and.(i.gt.10000)) dc(i)=0.001d0
-      if(slowslip.and.(i.gt.10000)) dc(i)=0.001d0
+      if(aftershock.and.(i.gt.nmain)) dc(i)=0.001d0
+      if(slowslip.and.(i.gt.nmain)) dc(i)=0.001d0
       vc(i)=vc0
-      if(slowslip.and.(i.gt.10000)) vc(i)=1d6
+      if(slowslip.and.(i.gt.nmain)) vc(i)=1d6
       fw(i)=fw0
       vw(i)=vw0
       if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
@@ -1319,12 +1320,12 @@ contains
 
           v='s'
           call kern(v,xcol(i),ycol(i),-500d0,yel(1),xel(1),yel(1),ang(i),0d0,ret1)
-          call kern(v,xcol(i),ycol(i),xer(10000),yer(10000),500d0,yer(10000),ang(i),0d0,ret2)
+          call kern(v,xcol(i),ycol(i),xer(nmain),yer(nmain),500d0,yer(nmain),ang(i),0d0,ret2)
           taudot(i)=vpl*(ret1+ret2)
 
           v='n'
           call kern(v,xcol(i),ycol(i),-500d0,yel(1),xel(1),yel(1),ang(i),0d0,ret1)
-          call kern(v,xcol(i),ycol(i),xer(10000),yer(10000),500d0,yer(10000),ang(i),0d0,ret2)
+          call kern(v,xcol(i),ycol(i),xer(nmain),yer(nmain),500d0,yer(nmain),ang(i),0d0,ret2)
           sigdot(i)=vpl*(ret1+ret2)
           !write(*,*) 'debug'
           !write(15,*) taudot(i),sigdot(i)
@@ -1903,7 +1904,7 @@ contains
     !type(st_HACApK_leafmtxp),intent(in) :: st_leafmtxp
     !type(st_HACApK_calc_entry) :: st_bemv
     integer ::i
-    integer,parameter::nmax=100000
+    integer,parameter::nmax=nmain0
     real(8) :: ak2(4*NCELL),ak3(4*NCELL),ak4(4*NCELL),ak5(4*NCELL),ak6(4*NCELL),ytemp(4*NCELL)
     real(8) :: A2,A3,A4,A5,A6,B21,B31,B32,B41,B42,B43,B51
     real(8) :: B52,B53,B54,B61,B62,B63,B64,B65,C1,C3,C4,C6,DC1,DC3,DC4,DC5,DC6
