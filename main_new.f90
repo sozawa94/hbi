@@ -15,7 +15,7 @@ program main
   integer::hypoloc(1),load,eventcount,thec,inloc
   logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal
   integer,allocatable::seed(:)
-  character*128::fname,dum,law,input_file,problem,geofile,param,pvalue
+  character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv,wid
   real(8)::psi,vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau,errmax_gb
   real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,eps_r,eps_h
@@ -176,6 +176,8 @@ end if
       read(pvalue,*) slowslip
     case('nmain')
       read(pvalue,*) nmain
+    case('slipmode')
+      read(pvalue,*) slipmode
     end select
   end do
   close(33)
@@ -1035,6 +1037,8 @@ contains
     real(8)::PS11,PS22,PS33,PS12
 
     !depth dependent stress in a half-space
+    select case(slipmode)
+    case('mode2')
     do i=1,NCELLg
       PS11=sigma0
       PS22=PS11
@@ -1045,6 +1049,14 @@ contains
       vel(i)=velinit
       phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
     end do
+    case('mode3')
+      do i=1,NCELLg
+        tau(i) = sigma0*muinit
+        sigma(i) = sigma0
+        vel(i)=velinit
+        phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
+      end do
+    end select
   end subroutine initcond3dnf
 
   subroutine initcond3dhf(phi,sigma,tau)
@@ -1169,15 +1181,26 @@ contains
 
     !reading mesh data from in_fgeom.dat of mkelm.c of Ando's code
     open(20,file=geofile)
+    select case(slipmode)
+    case('mode2')
     do i=1,NCELLg
     read(20,*) k,ys1(i),xs1(i),zs1(i),ys2(i),xs2(i),zs2(i),ys3(i),xs3(i),zs3(i),ycol(i),xcol(i),zcol(i)
-
     !bump
      ys1(i)=dbend(xs1(i),amp,wid)
      ys2(i)=dbend(xs2(i),amp,wid)
      ys3(i)=dbend(xs3(i),amp,wid)
      ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
     end do
+  case('mode3')
+  do i=1,NCELLg
+  read(20,*) k,ys1(i),zs1(i),xs1(i),ys2(i),zs2(i),xs2(i),ys3(i),zs3(i),xs3(i),ycol(i),zcol(i),xcol(i)
+  !bump
+   ys1(i)=dbend(zs1(i),amp,wid)
+   ys2(i)=dbend(zs2(i),amp,wid)
+   ys3(i)=dbend(zs3(i),amp,wid)
+   ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
+  end do
+end select
     !zs1=zs1-0.1d0
     !zs2=zs2-0.1d0
     !zs3=zs3-0.1d0
@@ -1904,7 +1927,6 @@ contains
     !type(st_HACApK_leafmtxp),intent(in) :: st_leafmtxp
     !type(st_HACApK_calc_entry) :: st_bemv
     integer ::i
-    integer,parameter::nmax=nmain0
     real(8) :: ak2(4*NCELL),ak3(4*NCELL),ak4(4*NCELL),ak5(4*NCELL),ak6(4*NCELL),ytemp(4*NCELL)
     real(8) :: A2,A3,A4,A5,A6,B21,B31,B32,B41,B42,B43,B51
     real(8) :: B52,B53,B54,B61,B62,B63,B64,B65,C1,C3,C4,C6,DC1,DC3,DC4,DC5,DC6
