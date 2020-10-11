@@ -69,6 +69,7 @@ program main
   end if
 
 !get filenumber
+number=0
 if(input_file(1:2).eq.'in') then
   input_file=adjustl(input_file(7:))
   write(*,*) input_file
@@ -78,6 +79,7 @@ end if
   time1=MPI_Wtime()
 
   !new input reading system(under construction)
+  nmain=1000000
   eps_r=1d-6
   eps_h=1d-6
   tmax=1d12
@@ -491,7 +493,7 @@ call MPI_BARRIER(MPI_COMM_WORLD,ierr)
   case('3dh')
     call initcond3dh(phi,sigma,taus,taud)
   end select
-  if(aftershock) call add_nuclei(tau,intau,inloc)
+  if(aftershock.or.nuclei) call add_nuclei(tau,intau,inloc)
   !call MPI_BARRIER(MPI_COMM_WORLD,ierr)
   !for FDMAP-BIEM simulation
   !call input_from_FDMAP()
@@ -588,8 +590,7 @@ time1=MPI_Wtime()
 
     if(problem.eq."2dn") then
       do i=1,NCELL
-        if(y(3*i).lt.30d0) y(3*i)=30d0
-        if(y(3*i).gt.170d0) y(3*i)=170d0
+        if(y(3*i).lt.1d0) y(3*i)=1d0
       end do
     end if
 
@@ -694,12 +695,10 @@ time1=MPI_Wtime()
          hypoloc=maxloc(abs(vel))
          onset_time=x
 
+         !onset
          if(slipevery.and.(my_rank.eq.0)) then
-           !do i=1,NCELLg
-              !write(46,*) i,disp(i),mu(i)
-           !end do
-            !write(46,*)
            write(46) disp
+           !call output_field()
          end if
     !     lapse=0.d0
     !     if(my_rank.eq.0) write(44,*) eventcount,x,maxloc(abs(vel))
@@ -718,9 +717,11 @@ time1=MPI_Wtime()
          moment=sum(disp-idisp)
          end select
          !eventcount=eventcount+1
+         !end of an event
          if(my_rank.eq.0) then
            write(44,'(i0,f19.4,i7,e15.6)') eventcount,onset_time,hypoloc,moment
            if(slipevery) then
+             call output_field()
            !do i=1,NCELLg
            !  write(46,*) i,disp(i),mu(i)
            !end do
@@ -841,7 +842,7 @@ contains
     time2=MPi_Wtime()
     select case(problem)
     case('2dp','2dh','2dn','2dn3','3dp','3dnf','3dhf')
-    write(52,'(i7,f19.4,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),log10(maxval(vel(1:nmain))),time2-time1
+    write(52,'(i7,f19.4,3e16.5,i7,2e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),minval(sigma),errmax_gb,time2-time1
     !write(52,'(i7,f19.4,4e16.5,i10,f16.4)')k,x,maxval(log10(abs(vel(10001:)))),sum(abs(disp(10001:))),log10(maxval(vel(1:nmain))),sum(disp(1:nmain)),maxloc(vel),time2-time1
     case('3dn','3dh')
       write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(vel)),sum(disps)/NCELLg,sum(mu)/NCELLg,maxloc(vel),dtdid*maxval(vel),time2-time1
@@ -1087,7 +1088,7 @@ contains
     ra=sqrt((xcol(2)-xcol(1))**2+(ycol(2)-ycol(1))**2)
     lc=int(rigid*(1.d0-pois)/pi*dc0*b0/(b0-a0)**2/sigma0/ra)
     write(*,*) 'lc=',lc
-    do i=1,nmain
+    do i=1,min(nmain,ncell)
       tau(i)=tau(i)+exp(-dble(i-inloc)**2/lc**2)*intau*tau(inloc)/abs(tau(inloc))
     end do
     return
@@ -1491,6 +1492,7 @@ end select
         tautmp(i) = y(3*i-1)
         sigmatmp(i) = y(3*i)
         veltmp(i) = 2*vref*dexp(-phitmp(i)/a(i_))*dsinh(tautmp(i)/sigmatmp(i)/a(i_))
+
       enddo
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
       call MPI_ALLGATHERv(Veltmp,NCELL,MPI_REAL8,veltmpG,rcounts,displs,                &
@@ -1862,11 +1864,12 @@ end select
     !type(st_HACApK_leafmtxp),intent(in) :: st_leafmtxp
     !type(st_HACApK_calc_entry) :: st_bemv
     integer :: i,ierr
-    real(8) :: errmax,h,xnew,htemp
+    real(8) :: errmax,h,xnew,htemp,dtmin
     real(8),dimension(size(y))::yerr,ytemp
     real(8),parameter::SAFETY=0.9,PGROW=-0.2,PSHRNK=-0.25,ERRCON=1.89d-4
 
     h=htry
+    !dtmin=0.5d0*minval(ds)/vs
     do while(.true.)
       call rkck(y,dydx,x,h,ytemp,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
       errmax=0d0
@@ -1875,9 +1878,9 @@ end select
       do i=1,NCELL
         if(abs(yerr(4*i-3)/yscal(4*i-3))/eps.gt.errmax) errmax=abs(yerr(4*i-3)/yscal(4*i-3))/eps
       end do
-    case('2dp','3dp','2dn','2dn3','3dhf')
+    case('2dp','3dp','2dn3','3dhf')
       errmax=maxval(abs(yerr(:)/yscal(:)))/eps
-    case('3dnf')
+    case('3dnf','2dn')
       do i=1,NCELL
         if(abs(yerr(3*i-1)/yscal(3*i-1))/eps.gt.errmax) errmax=abs(yerr(3*i-1)/yscal(3*i-1))/eps
       end do
@@ -1894,14 +1897,20 @@ end select
         exit
       end if
 
+      ! if(h<dtmin) then
+      !   h=dtmin
+      !   exit
+      ! end if
       !htemp=SAFETY*h*(errmax_gb**PSHRNK)
       h=0.33d0*h
       !h=sign(max(abs(htemp),0.1*abs(h)),h)
+
       xnew=x+h
       if(xnew-x<1.d-15) then
       write(*,*)'dt is too small'
       stop
       end if
+
     end do
 
     hnext=min(1.5*h,SAFETY*h*(errmax_gb**PGROW),1d8)
