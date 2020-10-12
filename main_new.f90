@@ -16,7 +16,7 @@ program main
   logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode
-  real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv,wid
+  real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv,wid,normal
   real(8)::psi,vc0,mu0,dtinit,onset_time,tr,vw0,fw0,velmin,muinit,intau,errmax_gb
   real(8)::r,eps,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,eps_r,eps_h
   real(8)::dtime,dtnxt,dttry,dtdid,dtmin,alpha,ds0,amp,mui,strinit,velinit,phinit,velmax
@@ -588,9 +588,14 @@ time1=MPI_Wtime()
     !parallel computing for Runge-Kutta
     call rkqs(y,dydx,x,dttry,eps_r,yscal,dtdid,dtnxt,errmax_gb)
 
+    !limitsigma
     if(problem.eq."2dn") then
       do i=1,NCELL
-        if(y(3*i).lt.1d0) y(3*i)=1d0
+        if(y(3*i).lt.30d0) then
+          normal=y(3*i)
+          y(3*i)=30d0
+          y(3*i-1)=y(3*i-1)*30d0/normal
+        end if
       end do
     end if
 
@@ -1088,8 +1093,9 @@ contains
     ra=sqrt((xcol(2)-xcol(1))**2+(ycol(2)-ycol(1))**2)
     lc=int(rigid*(1.d0-pois)/pi*dc0*b0/(b0-a0)**2/sigma0/ra)
     write(*,*) 'lc=',lc
-    do i=1,min(nmain,ncell)
+    do i=1,min(nmain,ncellg)
       tau(i)=tau(i)+exp(-dble(i-inloc)**2/lc**2)*intau*tau(inloc)/abs(tau(inloc))
+      write(*,*) i,tau(i)
     end do
     return
   end subroutine
@@ -1233,11 +1239,11 @@ end select
     return
   end subroutine coordinate3dn
 
-  function bump(y,z)
+  function bump(y,amp,wid)
     implicit none
-    real(8)::y,z,bump,rr
-    rr=(y-5d0)**2+(z+10d0)**2
-    bump=max(exp(-rr/4d0)-1d-4,0d0)
+    real(8)::y,amp,wid,bump,rr
+    rr=(y-50d0)**2!+(z+10d0)**2
+    bump=amp*exp(-rr/wid**2)
     return
   end function
 
