@@ -14,6 +14,7 @@ program main
   integer::clock,cr,counts2,imax,jmax,NCELLm,seedsize,icomm,np,ierr,my_rank
   integer::hypoloc(1),load,eventcount,thec,inloc
   logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal
+  logical::backslip,sigmaconst
   integer,allocatable::seed(:)
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,x,time1,time2,moment,aslip,avv,wid,normal
@@ -180,6 +181,8 @@ end if
       read(pvalue,*) nmain
     case('slipmode')
       read(pvalue,*) slipmode
+    case('sigmaconst')
+      read(pvalue,*) sigmaconst
     end select
   end do
   close(33)
@@ -591,10 +594,10 @@ time1=MPI_Wtime()
     !limitsigma
     if(problem.eq."2dn") then
       do i=1,NCELL
-        if(y(3*i).lt.30d0) then
+        if(y(3*i).lt.10d0) then
           normal=y(3*i)
-          y(3*i)=30d0
-          y(3*i-1)=y(3*i-1)*30d0/normal
+          y(3*i)=10d0
+          !y(3*i-1)=y(3*i-1)*30d0/normal
         end if
       end do
     end if
@@ -1325,6 +1328,8 @@ end select
     real(8)::factor,edge,ret1,ret2
     integer::i
     character(128)::v
+    taudot=0d0
+    sigdot=0d0
     select case(problem)
     case('2dp','2dn3','3dp','2dh','3dhf')
       taudot=sr
@@ -1449,7 +1454,7 @@ end select
     !real(8) :: sum_xx2G(NCELLg),sum_xy2G(NCELLg),sum_yy2G(NCELLg),sum_xz2G(NCELLg),sum_yz2G(NCELLg),sum_zz2G(NCELLg)
     real(8) :: veltmpG(NCELLg),sum_gsg(NCELLg),sum_gng(NCELLg),sum_gdg(NCELLg)!,efftmpG(NCELLg)
     real(8) :: sum_gs2G(NCELLg),sum_gd2G(NCELLg),sum_gn2G(NCELLg)
-    real(8) :: time3,time4,c1, c2, c3, arg,c,g,tauss,Arot(3,3),p(6)
+    real(8) :: time3,time4,c1, c2, c3, arg,c,g,tauss,Arot(3,3),p(6),fac
     integer :: i, j, nc,ierr,lrtrn,i_
 
     !if(my_rank.eq.0) then
@@ -1505,12 +1510,21 @@ end select
       &     MPI_REAL8,MPI_COMM_WORLD,ierr)
 
       !matrix-vector mutiplation
+      if(load.eq.2) then
       st_bemv%v='xx'
       lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,veltmpG-vpl)
       st_bemv%v='xy'
       lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,veltmpG-vpl)
       st_bemv%v='yy'
       lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,veltmpG-vpl)
+    else
+      st_bemv%v='xx'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,veltmpG)
+      st_bemv%v='xy'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,veltmpG)
+      st_bemv%v='yy'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,veltmpG)
+    end if
 
       call MPI_SCATTERv(sum_xxG,rcounts,displs,MPI_REAL8,sum_xx,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
       call MPI_SCATTERv(sum_xyG,rcounts,displs,MPI_REAL8,sum_xy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
@@ -1527,6 +1541,7 @@ end select
         sum_gs(i)=sum_gs(i)+taudot(i_)
         sum_gn(i)=sum_gn(i)+sigdot(i_)
       end do
+      if(sigmaconst) sum_gn=0d0
       call deriv_d(sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,dphidt,dtaudt,dsigdt)
       do i = 1, NCELL
         dydx(3*i-2) = dphidt(i)
