@@ -599,6 +599,11 @@ time1=MPI_Wtime()
           y(3*i)=10d0
           !y(3*i-1)=y(3*i-1)*30d0/normal
         end if
+        if(y(3*i).gt.500d0) then
+          normal=y(3*i)
+          y(3*i)=500d0
+          !y(3*i-1)=y(3*i-1)*30d0/normal
+        end if
       end do
     end if
 
@@ -850,7 +855,7 @@ contains
     time2=MPi_Wtime()
     select case(problem)
     case('2dp','2dh','2dn','2dn3','3dp','3dnf','3dhf')
-    write(52,'(i7,f19.4,3e16.5,i7,2e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxloc(abs(vel)),minval(sigma),errmax_gb,time2-time1
+    write(52,'(i7,f19.4,6e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxval(sigma),minval(sigma),errmax_gb,time2-time1
     !write(52,'(i7,f19.4,4e16.5,i10,f16.4)')k,x,maxval(log10(abs(vel(10001:)))),sum(abs(disp(10001:))),log10(maxval(vel(1:nmain))),sum(disp(1:nmain)),maxloc(vel),time2-time1
     case('3dn','3dh')
       write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(vel)),sum(disps)/NCELLg,sum(mu)/NCELLg,maxloc(vel),dtdid*maxval(vel),time2-time1
@@ -1354,13 +1359,13 @@ end select
         !edge=ds*NCELLg/2
 
           v='s'
-          call kern(v,xcol(i),ycol(i),-500d0,yel(1),xel(1),yel(1),ang(i),0d0,ret1)
-          call kern(v,xcol(i),ycol(i),xer(nmain),yer(nmain),500d0,yer(nmain),ang(i),0d0,ret2)
+          call kern(v,xcol(i),ycol(i),-500d0,yel(1),xel(1),yel(1),ang(i),ang(1),ret1)
+          call kern(v,xcol(i),ycol(i),xer(nmain),yer(nmain),500d0,yer(nmain),ang(i),ang(nmain),ret2)
           taudot(i)=vpl*(ret1+ret2)
 
           v='n'
-          call kern(v,xcol(i),ycol(i),-500d0,yel(1),xel(1),yel(1),ang(i),0d0,ret1)
-          call kern(v,xcol(i),ycol(i),xer(nmain),yer(nmain),500d0,yer(nmain),ang(i),0d0,ret2)
+          call kern(v,xcol(i),ycol(i),-500d0,yel(1),xel(1),yel(1),ang(i),ang(1),ret1)
+          call kern(v,xcol(i),ycol(i),xer(nmain),yer(nmain),500d0,yer(nmain),ang(i),ang(nmain),ret2)
           sigdot(i)=vpl*(ret1+ret2)
           !write(*,*) 'debug'
           !write(15,*) taudot(i),sigdot(i)
