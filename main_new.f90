@@ -949,6 +949,12 @@ contains
         !if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
     end do
 
+    !uniform special
+    sigma=sigma0
+    tau=muinit*sigma0
+    vel= 2*vref*exp(-phi/a)*sinh(tau/sigma/a)
+
+
     if(my_rank.eq.0) open(16,file='initomega')
     if(aftershock) then
     do i=1,size(vel)
@@ -968,6 +974,7 @@ contains
         omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref/b(i)
         if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
     end do
+
 
     end if
 
@@ -1330,7 +1337,7 @@ end select
     integer,intent(in)::NCELLg
     real(8),intent(in)::sr
     real(8),intent(out)::taudot(:),tauddot(:),sigdot(:)
-    real(8)::factor,edge,ret1,ret2
+    real(8)::factor,edge,ret1,ret2,xx1,xx2,xy1,xy2,yy1,yy2
     integer::i
     character(128)::v
     taudot=0d0
@@ -1348,7 +1355,7 @@ end select
         sigdot(i)=0d0
       end do
     case('2dn')
-      !open(15,file='sr')
+      open(15,file='sr')
       !write(*,*) load
       do i=1,NCELLg
       select case(load)
@@ -1358,20 +1365,41 @@ end select
       case(1)
         !edge=ds*NCELLg/2
 
-          v='s'
-          call kern(v,xcol(i),ycol(i),-500d0,yel(1),xel(1),yel(1),ang(i),ang(1),ret1)
-          call kern(v,xcol(i),ycol(i),xer(nmain),yer(nmain),500d0,yer(nmain),ang(i),ang(nmain),ret2)
-          taudot(i)=vpl*(ret1+ret2)
-
-          v='n'
-          call kern(v,xcol(i),ycol(i),-500d0,yel(1),xel(1),yel(1),ang(i),ang(1),ret1)
-          call kern(v,xcol(i),ycol(i),xer(nmain),yer(nmain),500d0,yer(nmain),ang(i),ang(nmain),ret2)
-          sigdot(i)=vpl*(ret1+ret2)
+          ! v='s'
+          ! call kern(v,xcol(i),ycol(i),-500d0*cos(ang(1))+xel(1),-500d0*sin(ang(1))+yel(1),xel(1),yel(1),ang(i),ang(1),ret1)
+          ! call kern(v,xcol(i),ycol(i),xer(nmain),yer(nmain),xer(nmain)+500*cos(ang(nmain)),yer(nmain)+500*sin(ang(nmain)),ang(i),ang(nmain),ret2)
+          ! taudot(i)=vpl*(ret1+ret2)
+          !
+          ! v='n'
+          ! call kern(v,xcol(i),ycol(i),-500d0*cos(ang(1))+xel(1),-500d0*sin(ang(1))+yel(1),xel(1),yel(1),ang(i),ang(1),ret1)
+          ! call kern(v,xcol(i),ycol(i),xer(nmain),yer(nmain),xer(nmain)+500*cos(ang(nmain)),yer(nmain)+500*sin(ang(nmain)),ang(i),ang(nmain),ret2)
+          ! sigdot(i)=vpl*(ret1+ret2)
           !write(*,*) 'debug'
-          !write(15,*) taudot(i),sigdot(i)
+
+
+          v='xx'
+          xx1=tensor2d_load(xcol(i),ycol(i),-500d0*cos(ang(1))+xel(1),xel(1),-500d0*sin(ang(1))+yel(1),yel(1),ang(1),v)
+          xx2=tensor2d_load(xcol(i),ycol(i),xer(nmain),xer(nmain)+500*cos(ang(nmain)),yer(nmain),yer(nmain)+500*sin(ang(nmain)),ang(nmain),v)
+          v='xy'
+          xy1=tensor2d_load(xcol(i),ycol(i),-500d0*cos(ang(1))+xel(1),xel(1),-500d0*sin(ang(1))+yel(1),yel(1),ang(1),v)
+          xy2=tensor2d_load(xcol(i),ycol(i),xer(nmain),xer(nmain)+500*cos(ang(nmain)),yer(nmain),yer(nmain)+500*sin(ang(nmain)),ang(nmain),v)
+          v='yy'
+          yy1=tensor2d_load(xcol(i),ycol(i),-500d0*cos(ang(1))+xel(1),xel(1),-500d0*sin(ang(1))+yel(1),yel(1),ang(1),v)
+          yy2=tensor2d_load(xcol(i),ycol(i),xer(nmain),xer(nmain)+500*cos(ang(nmain)),yer(nmain),yer(nmain)+500*sin(ang(nmain)),ang(nmain),v)
+
+          !tau
+          ret1=0.5d0*(xx1-yy1)*dsin(-2*ang(i))+xy1*dcos(-2*ang(i))
+          ret2=0.5d0*(xx2-yy2)*dsin(-2*ang(i))+xy2*dcos(-2*ang(i))
+          taudot(i)=vpl*(ret1+ret2)
+          !sigma
+          ret1=-(0.5d0*(xx1+yy1)-0.5d0*(xx1-yy1)*dcos(2*ang(i))-xy1*dsin(2*ang(i)))
+          ret2=-(0.5d0*(xx2+yy2)-0.5d0*(xx2-yy2)*dcos(2*ang(i))-xy2*dsin(2*ang(i)))
+          sigdot(i)=vpl*(ret1+ret2)
+          write(15,*) taudot(i),sigdot(i)
       end select
 
     end do
+    close(15)
     !close(15)
     tauddot=0d0
   case('3dn','3dh')

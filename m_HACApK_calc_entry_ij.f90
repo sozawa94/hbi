@@ -49,6 +49,14 @@ contains
       HACApK_entry_ij=matel3dp_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
       & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
       & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
+    case('3dph')
+      HACApK_entry_ij&
+      &=matel3dp_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
+      & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
+      & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)&
+      &-matel3dp_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
+      & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
+      & -st_bemv%zs1,-st_bemv%zs2,-st_bemv%zs3,-st_bemv%zs4)
     case('3dn','3dnf')
       !HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
       HACApK_entry_ij=matel3dn_ij(i,j,st_bemv)
@@ -94,6 +102,43 @@ contains
       tensor2d_ij=-0.5d0*(kern11-kern22)*sin2+kern12*cos2
     case('yy')
       tensor2d_ij=0.5d0*(kern11+kern22)-0.5d0*(kern11-kern22)*cos2-kern12*sin2
+    end select
+  end function
+
+  real(8) function tensor2d_load(x,y,xsl,xsr,ysl,ysr,angs,v)
+    implicit none
+    real(8),intent(in)::x,y,xsl,xsr,ysl,ysr,angs
+    character(128),intent(in)::v
+    real(8)::xp,xm,yp,ym,kern11,kern12,kern22,sin2,cos2,ds
+
+    xp=cos(angs)*(x-xsl)+sin(angs)*(y-ysl)
+    xm=cos(angs)*(x-xsr)+sin(angs)*(y-ysr)
+    yp=-sin(angs)*(x-xsl)+cos(angs)*(y-ysl)
+    ym=-sin(angs)*(x-xsr)+cos(angs)*(y-ysr)
+    kern11=-0.5d0*rigid/vs*(inte11s(xp,yp)-inte11s(xm,ym))
+    kern12=-0.5d0*rigid/vs*(inte12s(xp,yp)-inte12s(xm,ym))
+    kern22=-0.5d0*rigid/vs*(inte22s(xp,yp)-inte22s(xm,ym))
+
+    ! xp=dcos(ang(j))*(xcol(i)-xcol(j))+dsin(ang(j))*(ycol(i)-ycol(j))
+    ! yp=-dsin(ang(j))*(xcol(i)-xcol(j))+dcos(ang(j))*(ycol(i)-ycol(j))
+    ! ds=dsqrt((xer(j)-xel(j))**2+(yer(j)-yel(j))**2)
+    ! !write(*,*) xp,yp,ds
+    ! kern11=-0.5d0*rigid/vs*(inte11s(xp+0.5d0*ds,yp)-inte11s(xp-0.5d0*ds,yp))
+    ! kern12=-0.5d0*rigid/vs*(inte12s(xp+0.5d0*ds,yp)-inte12s(xp-0.5d0*ds,yp))
+    ! kern22=-0.5d0*rigid/vs*(inte22s(xp+0.5d0*ds,yp)-inte22s(xp-0.5d0*ds,yp))
+    !kern12=-kern12
+    !write(*,*) kern11,kern22
+
+    !=>global coordinate system
+    sin2=dsin(-2*angs)
+    cos2=dcos(-2*angs)
+    select case(v)
+    case('xx')
+      tensor2d_load=0.5d0*(kern11+kern22)+0.5d0*(kern11-kern22)*cos2+kern12*sin2
+    case('xy')
+      tensor2d_load=-0.5d0*(kern11-kern22)*sin2+kern12*cos2
+    case('yy')
+      tensor2d_load=0.5d0*(kern11+kern22)-0.5d0*(kern11-kern22)*cos2-kern12*sin2
     end select
   end function
 
@@ -221,9 +266,11 @@ contains
 
       !normal
     case('n')
-      I1(1)=gx(1)/r(1)-gy(1)/r(1)*(2*nx*ny*(gy(1)**2-gx(1)**2)-2*(ny**2-nx**2)*gx(1)*gy(1))
+      !I1(1)=gx(1)/r(1)-gy(1)/r(1)*(2*nx*ny*(gy(1)**2-gx(1)**2)-2*(ny**2-nx**2)*gx(1)*gy(1))
+      I1(1)=gx(1)/r(1)+gy(1)/r(1)*(2*nx*ny*(gy(1)**2-gx(1)**2)-2*(ny**2-nx**2)*gx(1)*gy(1))
       I2(1)=gy(1)/r(1)+gx(1)/r(1)*(2*nx*ny*(gy(1)**2-gx(1)**2)-2*(ny**2-nx**2)*gx(1)*gy(1))
-      I1(2)=gx(2)/r(2)-gy(2)/r(2)*(2*nx*ny*(gy(2)**2-gx(2)**2)-2*(ny**2-nx**2)*gx(2)*gy(2))
+      !I1(2)=gx(2)/r(2)-gy(2)/r(2)*(2*nx*ny*(gy(2)**2-gx(2)**2)-2*(ny**2-nx**2)*gx(2)*gy(2))
+      I1(2)=gx(2)/r(2)+gy(2)/r(2)*(2*nx*ny*(gy(2)**2-gx(2)**2)-2*(ny**2-nx**2)*gx(2)*gy(2))
       I2(2)=gy(2)/r(2)+gx(2)/r(2)*(2*nx*ny*(gy(2)**2-gx(2)**2)-2*(ny**2-nx**2)*gx(2)*gy(2))
     end select
 
