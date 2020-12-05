@@ -56,7 +56,7 @@ program main
 
   !controls
   logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal
-  logical::backslip,sigmaconst,foward,inverse
+  logical::backslip,sigmaconst,foward,inverse,geofromfile
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal
   real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,muinit,intau
@@ -218,6 +218,8 @@ end if
       read(pvalue,*) foward
     case('inverse')
       read(pvalue,*) inverse
+    case('geofromfile')
+      read(pvalue,*) geofromfile
     end select
   end do
   close(33)
@@ -413,6 +415,7 @@ end if
 
   case('3dnf','3dhf')
     st_bemv%md='st'
+    if(slipmode.eq.'dip') st_bemv%md='dp'
     st_bemv%v='s'
     lrtrn=HACApK_generate(st_leafmtxp_s,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='n'
@@ -536,9 +539,9 @@ call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     open(42,file=fname)
     open(19,file='job.log',position='append')
     call date_and_time(sys_time(1), sys_time(2), sys_time(3), date_time)
-    write(19,'(a24,i0,a6,a12,a6,a12)') 'Starting job number=',number,'date',sys_time(1),'time',sys_time(2)
+    write(19,'(a20,i0,a6,a12,a6,a12)') 'Starting job number=',number,'date',sys_time(1),'time',sys_time(2)
     close(19)
-    open(73,file='output/fd2d',access='stream')
+    open(73,file='output/tofd2d',access='stream')
   end if
 
   !setting minimum time step by CFL condition
@@ -612,7 +615,7 @@ time1=MPI_Wtime()
     call rkqs(y,dydx,x,dttry,eps_r,yscal,dtdid,dtnxt,errmax_gb)
 
     !limitsigma
-    if(problem.eq."2dn") then
+    if(limitsigma) then
       do i=1,NCELL
         if(y(3*i).lt.10d0) then
           normal=y(3*i)
@@ -721,7 +724,7 @@ time1=MPI_Wtime()
 
     !event list
     if(.not.slipping) then
-     if(maxval(abs(vel)).gt.1d-2) then
+     if(maxval(abs(vel)).gt.1d-1) then
          slipping=.true.
          eventcount=eventcount+1
          idisp=disp
@@ -928,7 +931,7 @@ contains
       !phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
       phi(i)=f0(i)+b(i)*log(b(i)*vref/vel(i))-0.001
       omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref/b(i)
-      if(my_rank.eq.0)write(*,*) omega
+      !if(my_rank.eq.0)write(*,*) omega
     end do
   end subroutine
   subroutine initcond3dph(phi,sigma,tau,disp,vel)
@@ -944,7 +947,7 @@ contains
       phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
       disp(i)=0d0
       omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref
-      write(*,*) i,omega
+      !write(*,*) i,omega
       !if(my_rank.eq.0)write(*,*)phi(i),sigma(i),vel(i)
     end do
   end subroutine
@@ -961,8 +964,8 @@ contains
     !psi=30d0
     !psi=42d0
     sxx0=syy0*(1d0+2*sxy0/(syy0*dtan(2*psi/180d0*pi)))
-    write(*,*) 'sxx0,sxy0,syy0'
-    write(*,*) sxx0,sxy0,syy0
+    !write(*,*) 'sxx0,sxy0,syy0'
+    !write(*,*) sxx0,sxy0,syy0
     ! if(randomphi) then
     ! open(30,file='initphi')
     ! do i=1,600
@@ -1125,7 +1128,7 @@ contains
     real(8),intent(out)::phi(:),sigma(:),tau(:)
     real(8)::PS11,PS22,PS33,PS12
 
-    !depth dependent stress in a half-space
+    !depth dependent stress in a half-space(strike-slip dominant)
     do i=1,NCELLg
       PS11=-zcol(i)*16.7d0+10d0
       PS22=PS11
@@ -1133,6 +1136,13 @@ contains
       PS12=PS22*muinit
       tau(i) = ev11(i)*ev31(i)*PS11 + ev12(i)*ev32(i)*PS22+ (ev11(i)*ev32(i)+ev12(i)*ev31(i))*PS12 + ev13(i)*ev33(i)*PS33
       sigma(i) = ev31(i)*ev31(i)*PS11 + ev32(i)*ev32(i)*PS22+ (ev31(i)*ev32(i)+ev32(i)*ev31(i))*PS12 + ev33(i)*ev33(i)*PS33
+      vel(i)=velinit
+      phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
+    end do
+    !for planar normal fault
+    do i=1,NCELLg
+      sigma(i)=-zcol(i)*16.7d0+10d0
+      tau(i)=sigma(i)*muinit
       vel(i)=velinit
       phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
     end do
@@ -1148,10 +1158,10 @@ contains
     ra=sqrt((xcol(2)-xcol(1))**2+(ycol(2)-ycol(1))**2)
     lc=int(rigid*(1.d0-pois)/pi*dc0*b0/(b0-a0)**2/sigma0/ra)
     lc=100
-    write(*,*) 'lc=',lc
+    !write(*,*) 'lc=',lc
     do i=1,min(nmain,ncellg)
       tau(i)=tau(i)+exp(-dble(i-inloc)**2/lc**2)*intau*tau(inloc)/abs(tau(inloc))
-      write(*,*) i,tau(i)
+      !write(*,*) i,tau(i)
     end do
     return
   end subroutine
@@ -1184,10 +1194,38 @@ contains
     integer::i,j,k,file_size,n,Np,Nm,ncellf
     real(8),allocatable::data(:)
 
+    !ds0=0.05d0
+    do i=1,Ncellg
+      !flat fault approx
+      !xel(i)=5.12d0+ds*(i-1-NCELLg/2)
+      !xer(i)=5.12d0+ds*(i-NCELLg/2)
+      !yel(i)=0.3d0*exp(-(xel(i)-7.0)**2/1.d0**2)
+      !yer(i)=0.3d0*exp(-(xer(i)-7.0)**2/1.d0**2)
+
+      !double bend
+      xel(i)=ds0*(i-1-NCELLg/2)
+      xer(i)=ds0*(i-NCELLg/2)
+      yel(i)=-2.5*tanh((xel(i)-0d0)/5.0)
+      yer(i)=-2.5*tanh((xer(i)-0d0)/5.0)
+      !yel(i)=2.5*tanh((xel(i)-25d0)/5.0)-2.5*tanh((xel(i)+25d0)/5.0)
+      !yel(i)=1*log(1d0+exp(xel(i)/5))
+      !yel(i)=5*exp(-(xel(i)/10)**2)
+      !yel(i)=2.5*erf(xel(i)/5.d0)
+
+      !yer(i)=2.5*tanh((xer(i)-25d0)/5.0)-2.5*tanh((xer(i)+25d0)/5.0)
+      !yer(i)=1*log(1d0+exp(xer(i)/5))
+      !yer(i)=5*exp(-(xer(i)/10)**2)
+      !yer(i)=2.5*erf(xer(i)/5.d0)
+
+      !write(*,*) xel(i),yel(i)
+    end do
+
     !reading mesh data from mkelm.f90
-    geofile2='geos/'//geofile
-    open(20,file=geofile2,access='stream')
-    read(20) xel,xer,yel,yer
+    if(geofromfile) then
+      geofile2='geos/'//geofile
+      open(20,file=geofile2,access='stream')
+      read(20) xel,xer,yel,yer
+    end if
 
     !computing local angles and collocation points
     do i=1,NCELLg
@@ -1270,12 +1308,14 @@ contains
 end select
 
 do i=1,NCELLg
-read(20,*) k,ys1(i),xs1(i),zs1(i),ys2(i),xs2(i),zs2(i),ys3(i),xs3(i),zs3(i),ycol(i),xcol(i),zcol(i)
+!read(20,*) k,ys1(i),xs1(i),zs1(i),ys2(i),xs2(i),zs2(i),ys3(i),xs3(i),zs3(i),ycol(i),xcol(i),zcol(i)
+read(20,*) k,xs1(i),ys1(i),zs1(i),xs2(i),ys2(i),zs2(i),xs3(i),ys3(i),zs3(i),xcol(i),ycol(i),zcol(i)
 !bump
- ys1(i)=dbend(xs1(i),amp,wid)
- ys2(i)=dbend(xs2(i),amp,wid)
- ys3(i)=dbend(xs3(i),amp,wid)
- ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
+ !ys1(i)=dbend(xs1(i),amp,wid)
+ !ys2(i)=dbend(xs2(i),amp,wid)
+ !ys3(i)=dbend(xs3(i),amp,wid)
+ !ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
+ !write(*,*) xcol(i),ycol(i),zcol(i)
 end do
 
     rough=.false.
