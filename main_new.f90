@@ -643,7 +643,7 @@ time1=MPI_Wtime()
     call rkqs(y,dydx,x,dttry,eps_r,yscal,dtdid,dtnxt,errmax_gb)
 
     !limitsigma
-    if(limitsigma) then
+    if(limitsigma.and.(problem.eq.'2dn')) then
       do i=1,NCELL
         if(y(3*i).lt.minsig) then
           normal=y(3*i)
@@ -1546,7 +1546,7 @@ end do
     taudot=0d0
     sigdot=0d0
     select case(problem)
-    case('2dp','2dn3','3dp','2dh','3dhf','3dph')
+    case('2dp','3dp','2dh','3dhf','3dph')
       taudot=sr
       tauddot=0d0
       sigdot=0d0
@@ -1557,6 +1557,25 @@ end do
         taudot(i)=sr
         sigdot(i)=0d0
       end do
+
+    case('2dn3')
+      open(15,file='sr')
+      sigdot=0d0
+      tauddot=0d0
+      !write(*,*) load
+      select case(load)
+      case(0)
+        taudot=sr
+      case(1)
+        do i=1,NCELLg
+          ret1=tensor2d3_load(xcol(i),ycol(i),-500d0*cos(ang(1))+xel(1),xel(1),-500d0*sin(ang(1))+yel(1),yel(1),ang(1))
+          ret2=tensor2d3_load(xcol(i),ycol(i),xer(nmain),xer(nmain)+500*cos(ang(nmain)),yer(nmain),yer(nmain)+500*sin(ang(nmain)),ang(nmain))
+          taudot(i)=vpl*(ret1+ret2)
+          write(15,*) taudot(i)
+        end do
+      end select
+    close(15)
+
     case('2dn')
       open(15,file='sr')
       !write(*,*) load
@@ -1704,16 +1723,21 @@ end do
         tautmp(i) = y(2*i)
         sigmatmp(i)=sigma(i_) !normal stress is constant for planar fault
         veltmp(i) = 2*vref*dexp(-phitmp(i)/a(i_))*dsinh(tautmp(i)/sigmatmp(i)/a(i_))
+        !write(*,*) veltmp(i)
       enddo
       call MPI_BARRIER(MPI_COMM_WORLD,ierr)
       call MPI_ALLGATHERv(veltmp,NCELL,MPI_REAL8,veltmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
 
       !matrix-vector mutiplation
-      select case(load)
-      case(0)
+      !select case(load)
+      !case(0)
         !time3=MPI_Wtime()
-        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
-        call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+        if(load.eq.2) then
+          lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG-vpl)
+        else
+          lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
+        end if
+      call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
         !time4=MPI_Wtime()
         !if(my_rank.eq.0) write(*,*) time4-time3
         do i=1,NCELL
@@ -1721,10 +1745,10 @@ end do
           sum_gn(i)=0.d0
           sum_gs(i)=sum_gs(i)+taudot(i_)
         end do
-      case(1)
-        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG-vpl)
-        call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      end select
+      !case(1)
+      !  lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG-vpl)
+      !  call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      !end select
 
       !call deriv_d(sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,dphidt,dtaudt,dsigdt)
       call deriv_c(sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,dphidt,dtaudt,dsigdt)
