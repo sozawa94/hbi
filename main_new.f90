@@ -117,8 +117,8 @@ end if
   slipevery=.false.
   foward=.false.
   inverse=.false.
-  maxsig=200d0
-  minsig=30d0
+  maxsig=300d0
+  minsig=20d0
   amp=0d0
   vc0=1d6
   vw0=1d6
@@ -1241,7 +1241,7 @@ contains
     real(8),allocatable::data(:),yr(:)
 
     !ds0=0.05d0
-    geom='bump'
+    geom='dbend'
     do i=1,Ncellg
       select case(geom)
       !flat fault approx
@@ -1250,15 +1250,17 @@ contains
       !xer(i)=5.12d0+ds0*(i-NCELLg/2)
       xel(i)=ds0*(i-1-NCELLg/2)
       xer(i)=ds0*(i-NCELLg/2)
-      yel(i)=amp*exp(-(xel(i)-0.0)**2/5.d0**2)
-      yer(i)=amp*exp(-(xer(i)-0.0)**2/5.d0**2)
+      yel(i)=amp*exp(-(xel(i)-0.0)**2/wid**2)
+      yer(i)=amp*exp(-(xer(i)-0.0)**2/wid**2)
       !write(*,*) xel(i),yel(i)
       !double bend
     case('dbend')
       xel(i)=ds0*(i-1-NCELLg/2)
       xer(i)=ds0*(i-NCELLg/2)
-      yel(i)=amp*tanh((xel(i)-0d0)/5.0)
-      yer(i)=amp*tanh((xer(i)-0d0)/5.0)
+      !yel(i)=amp*tanh((xel(i)-0d0)/5.0)
+      !yer(i)=amp*tanh((xer(i)-0d0)/5.0)
+      yel(i)=2.5*tanh((xel(i)-25d0)/5.0)-2.5*tanh((xel(i)+25d0)/5.0)
+      yer(i)=2.5*tanh((xer(i)-25d0)/5.0)-2.5*tanh((xer(i)+25d0)/5.0)
       end select
 
       !yel(i)=2.5*tanh((xel(i)-25d0)/5.0)-2.5*tanh((xel(i)+25d0)/5.0)
@@ -1461,7 +1463,7 @@ end do
         end select
       end if
       if(creep) then
-        if(abs(i-1000).lt.100) a(i)=0.030d0
+        if(abs(i-1000).lt.100) a(i)=0.024d0
       end if
       b(i)=b0
       dc(i)=dc0
@@ -1750,8 +1752,8 @@ end do
       !  call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
       !end select
 
-      !call deriv_d(sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,dphidt,dtaudt,dsigdt)
-      call deriv_c(sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,dphidt,dtaudt,dsigdt)
+      call deriv_d(sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,dphidt,dtaudt,dsigdt)
+      !call deriv_c(sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,dphidt,dtaudt,dsigdt)
 
       do i = 1, NCELL
         dydx(2*i-1) = dphidt(i)
@@ -2317,7 +2319,7 @@ end do
     implicit none
     real(8)::rr
     integer::p
-    vel=0d0
+    vel=1d0
     p=532
     vel(p)=1d0
 
@@ -2328,10 +2330,10 @@ end do
   select case(problem)
   case('2dn')
     !slip from file
-    open(45,file='../fd2d/rupt2.dat')
-    do i=1,NCELLg
-      read(45,*) a(i),vel(i),b(i)
-    end do
+    ! open(45,file='../fd2d/rupt2.dat')
+    ! do i=1,NCELLg
+    !   read(45,*) a(i),vel(i),b(i)
+    ! end do
 
     st_bemv%v='xx'
     lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,a,vel)
