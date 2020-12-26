@@ -559,6 +559,8 @@ call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     open(48,file=fname)
     write(fname,'("output/slip",i0,".dat")') number
     open(46,file=fname,form='unformatted',access='stream')
+    write(fname,'("output/vel",i0,".dat")') number
+    open(47,file=fname,form='unformatted',access='stream')
     write(fname,'("output/event",i0,".dat")') number
     open(44,file=fname)
     write(fname,'("output/local",i0,".dat")') number
@@ -773,6 +775,7 @@ time1=MPI_Wtime()
          !onset save
          if(slipevery.and.(my_rank.eq.0)) then
            write(46) disp
+           write(47) vel
            call output_field()
          end if
          if(my_rank.eq.0) then
@@ -805,6 +808,7 @@ time1=MPI_Wtime()
            !end do
            !write(46,*)
            write(46) disp
+           write(47) vel
            end if
         end if
       end if
@@ -872,6 +876,7 @@ time1=MPI_Wtime()
   close(52)
   close(50)
   close(48)
+  close(47)
   close(46)
   close(44)
   close(19)
@@ -1561,6 +1566,7 @@ end do
       end do
 
     case('2dn3')
+      factor=1.0 !unbalanced loading
       open(15,file='sr')
       sigdot=0d0
       tauddot=0d0
@@ -1572,7 +1578,7 @@ end do
         do i=1,NCELLg
           ret1=tensor2d3_load(xcol(i),ycol(i),-500d0*cos(ang(1))+xel(1),xel(1),-500d0*sin(ang(1))+yel(1),yel(1),ang(1))
           ret2=tensor2d3_load(xcol(i),ycol(i),xer(nmain),xer(nmain)+500*cos(ang(nmain)),yer(nmain),yer(nmain)+500*sin(ang(nmain)),ang(nmain))
-          taudot(i)=vpl*(ret1+ret2)
+          taudot(i)=vpl*(ret1+factor*ret2)
           write(15,*) taudot(i)
         end do
       end select
@@ -1601,7 +1607,7 @@ end do
           ! call kern(v,xcol(i),ycol(i),xer(nmain),yer(nmain),xer(nmain)+500*cos(ang(nmain)),yer(nmain)+500*sin(ang(nmain)),ang(i),ang(nmain),ret2)
           ! sigdot(i)=vpl*(ret1+ret2)
           !write(*,*) 'debug'
-
+          !factor=2.0 unbalanced loading
 
           v='xx'
           xx1=tensor2d_load(xcol(i),ycol(i),-500d0*cos(ang(1))+xel(1),xel(1),-500d0*sin(ang(1))+yel(1),yel(1),ang(1),v)
