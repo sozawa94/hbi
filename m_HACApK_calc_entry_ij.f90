@@ -22,6 +22,7 @@ contains
   real*8 function HACApK_entry_ij(i, j, st_bemv)
     ! zbemv is data needed for calculating the value of the element
     integer::i,j
+    real(8)::tmp1,tmp2
     type(st_HACApK_calc_entry) :: st_bemv
     select case(st_bemv%problem)
     case('2dp')
@@ -50,13 +51,9 @@ contains
       & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
       & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
     case('3dph')
-      HACApK_entry_ij&
-      &=matel3dp_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
+      HACApK_entry_ij=matel3dph_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
       & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
-      & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)&
-      &-matel3dp_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
-      & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
-      & -st_bemv%zs1,-st_bemv%zs2,-st_bemv%zs3,-st_bemv%zs4)
+      & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
     case('3dn','3dnf')
       !HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
       HACApK_entry_ij=matel3dn_ij(i,j,st_bemv)
@@ -152,10 +149,27 @@ contains
     xm=cos(ang(j))*(xcol(i)-xer(j))+sin(ang(j))*(ycol(i)-yer(j))
     yp=-sin(ang(j))*(xcol(i)-xel(j))+cos(ang(j))*(ycol(i)-yel(j))
     ym=-sin(ang(j))*(xcol(i)-xer(j))+cos(ang(j))*(ycol(i)-yer(j))
+
     kern31=-0.5d0*rigid/vs*(inte31s(xp,yp)-inte31s(xm,ym))
     kern32=-0.5d0*rigid/vs*(inte32s(xp,yp)-inte32s(xm,ym))
     !=>global coordinate system
     tensor2d3_ij=sin(ang(i))*kern31+cos(ang(i))*kern32
+  end function
+
+  real(8) function tensor2d3_load(x,y,xsl,xsr,ysl,ysr,angs)
+    implicit none
+    real(8),intent(in)::x,y,xsl,xsr,ysl,ysr,angs
+    real(8)::xp,xm,yp,ym,kern31,kern32,sin2,cos2,ds
+
+    xp=cos(angs)*(x-xsl)+sin(angs)*(y-ysl)
+    xm=cos(angs)*(x-xsr)+sin(angs)*(y-ysr)
+    yp=-sin(angs)*(x-xsl)+cos(angs)*(y-ysl)
+    ym=-sin(angs)*(x-xsr)+cos(angs)*(y-ysr)
+
+    kern31=-0.5d0*rigid/vs*(inte31s(xp,yp)-inte31s(xm,ym))
+    kern32=-0.5d0*rigid/vs*(inte32s(xp,yp)-inte32s(xm,ym))
+    !=>global coordinate system
+    tensor2d3_load=sin(angs)*kern31+cos(angs)*kern32
 
   end function
 
@@ -168,6 +182,19 @@ contains
     matel3dp_ij=ret3dp(xcol(i)-xs1(j),xcol(i)-xs2(j),xcol(i)-xs3(j),xcol(i)-xs4(j),&
     & zcol(i)-zs1(j),zcol(i)-zs2(j),zcol(i)-zs3(j),zcol(i)-zs4(j))
 
+  end function
+  real(8) function matel3dph_ij(i,j,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
+    implicit none
+    integer,intent(in)::i,j
+    real(8),intent(in)::xcol(:),zcol(:)
+    real(8),intent(in)::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
+    real(8)::tmp1,tmp2
+
+    tmp1=ret3dp(xcol(i)-xs1(j),xcol(i)-xs2(j),xcol(i)-xs3(j),xcol(i)-xs4(j),&
+    & zcol(i)-zs1(j),zcol(i)-zs2(j),zcol(i)-zs3(j),zcol(i)-zs4(j))
+    tmp2=ret3dp(xcol(i)-xs1(j),xcol(i)-xs2(j),xcol(i)-xs3(j),xcol(i)-xs4(j),&
+    & zcol(i)+zs1(j),zcol(i)+zs2(j),zcol(i)+zs3(j),zcol(i)+zs4(j))
+    matel3dph_ij=tmp1-tmp2
   end function
 
   real(8) function ret3dp(dx1,dx2,dx3,dx4,dz1,dz2,dz3,dz4)
@@ -459,7 +486,7 @@ contains
     integer,intent(in)::i,j
     real(8)::P1(3),P2(3),P3(3)
     real(8)::Sxx,Syy,Szz,Sxy,Sxz,Syz
-    real(8)::p(6),Arot(3,3)
+    real(8)::p(6),Arot(3,3),rr,theta
 
     P1=(/st_bemv%xs1(j),st_bemv%ys1(j),st_bemv%zs1(j)/)
     P2=(/st_bemv%xs2(j),st_bemv%ys2(j),st_bemv%zs2(j)/)
@@ -486,6 +513,10 @@ contains
       matel3dn_ij=p(6)
     case('n')
       matel3dn_ij=p(3)
+    case('power')
+      rr=(st_bemv%ycol(i)-st_bemv%ys1(j))**2+(st_bemv%zcol(i)-st_bemv%zs1(j))**2
+      theta=atan2(st_bemv%ycol(i)-st_bemv%ys1(j),st_bemv%zcol(i)-st_bemv%zs1(j))
+      matel3dn_ij=1.d0/rr**(1+cos(theta))
     end select
   end function matel3dn_ij
   real(8) function matel3dh_ij(i,j,st_bemv)
