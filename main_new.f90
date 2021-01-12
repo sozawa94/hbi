@@ -232,6 +232,10 @@ end if
       read(pvalue,*) melange
     case('creep')
       read(pvalue,*) creep
+    case('maxsig')
+      read(pvalue,*) maxsig
+    case('minsig')
+      read(pvalue,*) minsig
     end select
   end do
   close(33)
@@ -332,6 +336,8 @@ end if
       call evcalc(xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,ev11,ev12,ev13,ev21,ev22,ev23,ev31,ev32,ev33)
     end select
 
+  !call initcond3dn(phi,sigma,taus,taud)
+  !stop
   !random number seed
   call random_seed(size=seedsize)
   allocate(seed(seedsize))
@@ -1098,7 +1104,7 @@ contains
   subroutine initcond3dn(phi,sigma,taus,taud)
     implicit none
     real(8),intent(out)::phi(:),sigma(:),taus(:),taud(:)
-    real(8)::PS11,PS22,PS33,PS12
+    real(8)::PS11,PS22,PS33,PS12,tp,tr,svalue
 
     !uniform
     sigma=sigma0
@@ -1118,14 +1124,19 @@ contains
     PS22=sigma0
     PS33=sigma0
     PS12=PS22*muinit
+    open(97,file='psd.dat')
     do i=1,NCELLg
       taus(i) = ev11(i)*ev31(i)*PS11 + ev12(i)*ev32(i)*PS22+ (ev11(i)*ev32(i)+ev12(i)*ev31(i))*PS12 + ev13(i)*ev33(i)*PS33
       taud(i) = ev21(i)*ev31(i)*PS11 + ev22(i)*ev32(i)*PS22+ (ev21(i)*ev32(i)+ev22(i)*ev31(i))*PS12 + ev23(i)*ev33(i)*PS33
       sigma(i) = ev31(i)*ev31(i)*PS11 + ev32(i)*ev32(i)*PS22+ (ev31(i)*ev32(i)+ev32(i)*ev31(i))*PS12 + ev33(i)*ev33(i)*PS33
-      vel(i)=velinit
-       phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(sqrt(taus(i)**2+taud(i)**2)/sigma(i)/a(i)))
+      !vel(i)=velinit
+      !phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(sqrt(taus(i)**2+taud(i)**2)/sigma(i)/a(i)))
+      tp=sigma(i)*0.5d0
+      tr=sigma(i)*0.3d0
+      svalue=(tp-taus(i))/(taus(i)-tr)
+       write(97,*) ycol(i),zcol(i),svalue
      end do
-
+    close(97)
   end subroutine
   subroutine initcond3dh(phi,sigma,taus,taud)
     implicit none
@@ -1262,10 +1273,10 @@ contains
     case('dbend')
       xel(i)=ds0*(i-1-NCELLg/2)
       xer(i)=ds0*(i-NCELLg/2)
-      !yel(i)=amp*tanh((xel(i)-0d0)/5.0)
-      !yer(i)=amp*tanh((xer(i)-0d0)/5.0)
-      yel(i)=2.5*tanh((xel(i)-25d0)/5.0)-2.5*tanh((xel(i)+25d0)/5.0)
-      yer(i)=2.5*tanh((xer(i)-25d0)/5.0)-2.5*tanh((xer(i)+25d0)/5.0)
+      yel(i)=amp*tanh((xel(i)-0d0)/5.0)
+      yer(i)=amp*tanh((xer(i)-0d0)/5.0)
+      !yel(i)=2.5*tanh((xel(i)-25d0)/5.0)-2.5*tanh((xel(i)+25d0)/5.0)
+      !yer(i)=2.5*tanh((xer(i)-25d0)/5.0)-2.5*tanh((xer(i)+25d0)/5.0)
       end select
 
       !yel(i)=2.5*tanh((xel(i)-25d0)/5.0)-2.5*tanh((xel(i)+25d0)/5.0)
@@ -1289,7 +1300,9 @@ contains
       read(20) xel,xer,yel,yer
     end if
 
-    ! open(32,file='N1025Lmin20seed12.curve',access='stream')
+
+    ! geofile2='alpha0.001Lmin2N5001seed1.curve'
+    ! open(32,file=geofile2,access='stream')
     ! inquire(32, size=file_size)
     ! q=file_size/8
     ! write(*,*) 'q=',q
@@ -1299,10 +1312,10 @@ contains
     ! close(32)
     ! yr(1:q/4)=data(q/4+1:q/2)
     ! do i=1,NCELLg
-    !   xel(i)=5.12d0+ds0*(i-1-NCELLg/2)
-    !   xer(i)=5.12d0+ds0*(i-NCELLg/2)
-    !   yel(i)=yr(i-1)*amp
-    !   yer(i)=yr(i)*amp
+    !   !xel(i)=5.12d0+ds0*(i-1-NCELLg/2)
+    !   !xer(i)=5.12d0+ds0*(i-NCELLg/2)
+    !   yel(i)=yel(i)+yr(i-1)*amp
+    !   yer(i)=yer(i)+yr(i)*amp
     ! end do
 
     !computing local angles and collocation points
@@ -1311,6 +1324,7 @@ contains
       ang(i)=datan2(yer(i)-yel(i),xer(i)-xel(i))
       xcol(i)=0.5d0*(xel(i)+xer(i))
       ycol(i)=0.5d0*(yel(i)+yer(i))
+      !write(*,*) xcol(i),ycol(i)
     end do
 
     ! i=123
@@ -1693,7 +1707,7 @@ end do
         ev21(k) = ev32(k)*ev13(k)-ev33(k)*ev12(k)
         ev22(k) = ev33(k)*ev11(k)-ev31(k)*ev13(k)
         ev23(k) = ev31(k)*ev12(k)-ev32(k)*ev11(k)
-        !write(*,*)ev21(k),ev22(k),ev23(k)
+        write(*,*)ev21(k),ev22(k),ev23(k)
     end do
   end subroutine
 
@@ -2323,11 +2337,18 @@ end do
 
   subroutine foward_check()
     implicit none
-    real(8)::rr
+    real(8)::rr,lc
     integer::p
-    vel=1d0
-    p=532
-    vel(p)=1d0
+
+    vel=0d0
+    lc=0.3d0
+    do i=1,NCELLg
+      rr=ycol(i)**2+zcol(i)**2
+      if(rr<lc**2) vel(i)=5d0/rigid*sqrt(lc**2-rr)
+    end do
+    ! vel=1d0
+    ! p=532
+    ! vel(p)=1d0
 
 
       write(fname,'("stress",i0)') number
@@ -2365,7 +2386,7 @@ end do
    if(my_rank.eq.0) then
    do i=1,NCELLg
      rr=(ycol(i)-ycol(p))**2+(zcol(i)-zcol(p))**2
-     write(29,'(6e16.4)') ycol(i),zcol(i),sqrt(rr),a(i),b(i),dc(i)
+     write(29,'(6e16.4)') ycol(i),zcol(i),sqrt(rr),35d0+a(i),b(i),dc(i)
    end do
    end if
   end select
