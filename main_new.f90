@@ -51,7 +51,7 @@ program main
   real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:)
 
 
-  integer::lp,i,i_,j,k,m,counts,interval,lrtrn,nl,ios,nmain
+  integer::lp,i,i_,j,k,m,counts,interval,lrtrn,nl,ios,nmain,locid(10)
   integer::hypoloc(1),load,eventcount,thec,inloc,sw
 
   !controls
@@ -94,18 +94,18 @@ program main
   open(33,file=input_file,iostat=ios)
   !if(my_rank.eq.0) write(*,*) 'input_file',input_file
   if(ios /= 0) then
-     write(*,*) 'Failed to open inputfile'
-     stop
+    write(*,*) 'Failed to open inputfile'
+    stop
   end if
 
-!get filenumber
-number=0
-if(input_file(1:2).eq.'in') then
-  input_file=adjustl(input_file(7:))
-  write(*,*) input_file
-  read(input_file,*) number
-  write(*,*) number
-end if
+  !get filenumber
+  number=0
+  if(input_file(1:2).eq.'in') then
+    input_file=adjustl(input_file(7:))
+    write(*,*) input_file
+    read(input_file,*) number
+    write(*,*) number
+  end if
   time1=MPI_Wtime()
 
   !new input reading system(under construction)
@@ -324,17 +324,17 @@ end if
 
   !mesh generation (rectangular assumed)
   if(my_rank.eq.0) write(*,*) 'Generating mesh'
-    select case(problem)
-    case('2dp','2dh')
-      call coordinate2dp(NCELLg,ds0,xel,xer,xcol)
-    case('2dn','2dn3') !geometry file is necessary
-      call coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang,ds)
-    case('3dp','3dph')
-      call coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
-    case('3dn','3dh','3dnf','3dhf','fdph_FP11')
-      call coordinate3dn(NCELLg,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3)
-      call evcalc(xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,ev11,ev12,ev13,ev21,ev22,ev23,ev31,ev32,ev33)
-    end select
+  select case(problem)
+  case('2dp','2dh')
+    call coordinate2dp(NCELLg,ds0,xel,xer,xcol)
+  case('2dn','2dn3') !geometry file is necessary
+    call coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang,ds)
+  case('3dp','3dph')
+    call coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
+  case('3dn','3dh','3dnf','3dhf','fdph_FP11')
+    call coordinate3dn(NCELLg,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3)
+    call evcalc(xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,ev11,ev12,ev13,ev21,ev22,ev23,ev31,ev32,ev33)
+  end select
 
   !call initcond3dn(phi,sigma,taus,taud)
   !stop
@@ -511,7 +511,7 @@ end if
 
 
 
-call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+  call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
 
   !setting initial condition
@@ -561,8 +561,8 @@ call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     open(52,file=fname)
     write(fname,'("output/",i0,".dat")') number
     open(50,file=fname)
-    write(fname,'("output/rupt",i0,".dat")') number
-    open(48,file=fname)
+    !write(fname,'("output/rupt",i0,".dat")') number
+    !open(48,file=fname)
     write(fname,'("output/slip",i0,".dat")') number
     open(46,file=fname,form='unformatted',access='stream')
     write(fname,'("output/vel",i0,".dat")') number
@@ -571,11 +571,29 @@ call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     open(44,file=fname)
     write(fname,'("output/local",i0,".dat")') number
     open(42,file=fname)
+
     open(19,file='job.log',position='append')
     call date_and_time(sys_time(1), sys_time(2), sys_time(3), date_time)
     write(19,'(a20,i0,a6,a12,a6,a12)') 'Starting job number=',number,'date',sys_time(1),'time',sys_time(2)
     close(19)
     open(73,file='output/tofd2d',access='stream')
+
+    !SEAS BP5
+    if(problem.eq.'3dph')then
+      locid=(/521,1361,2001,2641,3441,1051,1331,2011,2651,1983/)
+      open(101,file="output/fltst_strk-36dp+00")
+      open(102,file="output/fltst_strk-16dp+00")
+      open(103,file="output/fltst_strk+00dp+00")
+      open(104,file="output/fltst_strk+16dp+00")
+      open(105,file="output/fltst_strk+36dp+00")
+      open(106,file="output/fltst_strk-24dp+10")
+      open(107,file="output/fltst_strk-16dp+10")
+      open(108,file="output/fltst_strk+00dp+10")
+      open(109,file="output/fltst_strk+16dp+10")
+      open(110,file="output/fltst_strk+00dp+22")
+      open(120,file="output/global.dat")
+      open(130,file="output/rupture.dat")
+    end if
   end if
 
   !setting minimum time step by CFL condition
@@ -583,7 +601,7 @@ call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
   x=0.d0 !x is time
   k=0
-  rupt=0d0
+  rupt=1d9
   rupsG=0
   dtnxt = dtinit
   !outv=1d-6
@@ -596,6 +614,9 @@ call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     !call output_field_fd2d()
     call output_field()
     call output_monitor()
+    if(problem.eq.'3dph') call output_local_BP(locid)
+    if(problem.eq.'3dph')  call output_global_BP()
+
   end if
   !time2=MPI_Wtime()
   !output initial values
@@ -635,10 +656,10 @@ call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     end do
     !call MPI_SCATTERv(yG,4*rcounts,4*displs,MPI_REAL8,y,4*NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
   end select
-!stop
-time2=MPI_Wtime()
-if(my_rank.eq.0) write(*,*) 'Finished all initial processing, time(s)=',time2-time1
-time1=MPI_Wtime()
+  !stop
+  time2=MPI_Wtime()
+  if(my_rank.eq.0) write(*,*) 'Finished all initial processing, time(s)=',time2-time1
+  time1=MPI_Wtime()
   do k=1,NSTEP1
     dttry = dtnxt
 
@@ -670,7 +691,7 @@ time1=MPI_Wtime()
 
     select case(problem)
     case('2dp','2dh','2dn3','3dp','3dph')
-       call MPI_ALLGATHERv(y,2*NCELL,MPI_REAL8,yG,2*rcounts,2*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+      call MPI_ALLGATHERv(y,2*NCELL,MPI_REAL8,yG,2*rcounts,2*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
       do i = 1, NCELLg
         !i=vars(i_)
         !write(*,*) my_rank,i
@@ -684,7 +705,7 @@ time1=MPI_Wtime()
         mu(i)=tau(i)/sigma(i)
       end do
     case('2dn','3dnf','3dhf')
-       call MPI_ALLGATHERv(y,3*NCELL,MPI_REAL8,yG,3*rcounts,3*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+      call MPI_ALLGATHERv(y,3*NCELL,MPI_REAL8,yG,3*rcounts,3*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
       do i = 1, NCELLg
         phi(i) = yG(3*i-2)
         tau(i) = yG(3*i-1)
@@ -730,6 +751,9 @@ time1=MPI_Wtime()
     !output
     if(my_rank.eq.0) then
       call output_monitor()
+      if(problem.eq.'3dph')  call output_local_BP(locid)
+      if(problem.eq.'3dph')  call output_global_BP()
+
       !do i=1,size(vmax)
       !  vmax(i)=max(vmax(i),vel(i))
       !  vmaxin(i)=k
@@ -740,7 +764,7 @@ time1=MPI_Wtime()
       !PsiG=a*dlog(2.d0*vref/vel*dsinh(tau/sigma/a))
       !rupture time
       do i=1,NCELLg
-        if(abs(vel(i)).gt.1d-2.and.rupt(i).le.1d-6) then
+        if(abs(vel(i)).gt.1d-3.and.rupt(i).ge.0.99d9) then
           rupt(i)=x
           !rupsG(i)=k
         end if
@@ -771,58 +795,58 @@ time1=MPI_Wtime()
 
     !event list
     if(.not.slipping) then
-     if(maxval(abs(vel)).gt.1d-1) then
-         slipping=.true.
-         eventcount=eventcount+1
-         idisp=disp
-         hypoloc=maxloc(abs(vel))
-         onset_time=x
+      if(maxval(abs(vel)).gt.1d-1) then
+        slipping=.true.
+        eventcount=eventcount+1
+        idisp=disp
+        hypoloc=maxloc(abs(vel))
+        onset_time=x
 
-         !onset save
-         if(slipevery.and.(my_rank.eq.0)) then
-           write(46) disp
-           write(47) vel
-           call output_field()
-         end if
-         if(my_rank.eq.0) then
-           write(73) phi,tau,sigma
-         end if
-    !     lapse=0.d0
-    !     if(my_rank.eq.0) write(44,*) eventcount,x,maxloc(abs(vel))
-    !     if(my_rank.eq.0) write(fname,'("output/event",i0,".dat")') number
-    !     if(my_rank.eq.0) open(53,file=fname)
-       end if
-     end if
+        !onset save
+        if(slipevery.and.(my_rank.eq.0)) then
+          write(46) disp
+          write(47) vel
+          call output_field()
+        end if
+        if(my_rank.eq.0) then
+          write(73) phi,tau,sigma
+        end if
+        !     lapse=0.d0
+        !     if(my_rank.eq.0) write(44,*) eventcount,x,maxloc(abs(vel))
+        !     if(my_rank.eq.0) write(fname,'("output/event",i0,".dat")') number
+        !     if(my_rank.eq.0) open(53,file=fname)
+      end if
+    end if
     !
     if(slipping) then
       if(maxval(abs(vel)).lt.5d-3) then
-         slipping=.false.
-         select case(problem)
-         case('2dn','2dp','2dh','2dn3')
-         moment=sum((disp-idisp)*ds)
-       case('3dp','3dn','3dh','3dnf','3dhf','3dph')
-         moment=sum(disp-idisp)
-         end select
-         !eventcount=eventcount+1
-         !end of an event
-         if(my_rank.eq.0) then
-           write(44,'(i0,f19.4,i7,e15.6)') eventcount,onset_time,hypoloc,moment
-           if(slipevery) then
-             call output_field()
-           !do i=1,NCELLg
-           !  write(46,*) i,disp(i),mu(i)
-           !end do
-           !write(46,*)
-           write(46) disp
-           write(47) vel
-           end if
+        slipping=.false.
+        select case(problem)
+        case('2dn','2dp','2dh','2dn3')
+          moment=sum((disp-idisp)*ds)
+        case('3dp','3dn','3dh','3dnf','3dhf','3dph')
+          moment=sum(disp-idisp)
+        end select
+        !eventcount=eventcount+1
+        !end of an event
+        if(my_rank.eq.0) then
+          write(44,'(i0,f19.4,i7,e15.6)') eventcount,onset_time,hypoloc,moment
+          if(slipevery) then
+            call output_field()
+            !do i=1,NCELLg
+            !  write(46,*) i,disp(i),mu(i)
+            !end do
+            !write(46,*)
+            write(46) disp
+            write(47) vel
+          end if
         end if
       end if
-    !   vmaxevent=max(vmaxevent,maxval(vel))
-    !   !write(53,'(i6,4e16.6)') !k,x-onset_time,sum(disp-idisp),sum(vel),sum(acg**2)
-    !   !if(x-onset_time.gt.lapse) then
-    !   !  lapse=lapse+dlapse
-    !   !end if
+      !   vmaxevent=max(vmaxevent,maxval(vel))
+      !   !write(53,'(i6,4e16.6)') !k,x-onset_time,sum(disp-idisp),sum(vel),sum(acg**2)
+      !   !if(x-onset_time.gt.lapse) then
+      !   !  lapse=lapse+dlapse
+      !   !end if
     end if
 
     !simulation ends before nstep1 when
@@ -853,25 +877,27 @@ time1=MPI_Wtime()
 
   !output for FDMAP communication
   !call output_to_FDMAP()
-   if(slipfinal) then
-   if(my_rank.eq.0) then
-     select case(problem)
-     case('2dp','2dh')
-     do i=1,NCELLg
-       !write(46,*) i,disp(i)
-       write(48,*) i,rupt(i)
-     end do
-     write(46) disp
+  if(slipfinal) then
+    if(my_rank.eq.0) then
+      select case(problem)
+      case('2dp','2dh')
+        do i=1,NCELLg
+          !write(46,*) i,disp(i)
+          write(48,*) i,rupt(i)
+        end do
+        write(46) disp
 
-     case('2dn')
-     do i=1,NCELLg
-       !write(46,'(5f16.4)') xcol(i),ycol(i),disp(i),ang(i)
-       write(48,'(4f16.4)') xcol(i),ycol(i),rupt(i),ang(i)
-     end do
-     write(46) disp
-     end select
-   end if
+      case('2dn')
+        do i=1,NCELLg
+          !write(46,'(5f16.4)') xcol(i),ycol(i),disp(i),ang(i)
+          write(48,'(4f16.4)') xcol(i),ycol(i),rupt(i),ang(i)
+        end do
+        write(46) disp
+      end select
+    end if
   end if
+
+  if(problem.eq.'3dph'.and.my_rank.eq.0)  call output_rupt_BP()
 
   time2= MPI_Wtime()
   200  if(my_rank.eq.0) then
@@ -926,13 +952,14 @@ lrtrn=HACApK_finalize(st_ctl)
 Call MPI_FINALIZE(ierr)
 stop
 contains
+  !------------output-----------------------------------------------------------!
   subroutine output_monitor()
     implicit none
     time2=MPi_Wtime()
     select case(problem)
     case('2dp','3dp','2dh','2dn','2dn3','3dph','3dnf','3dhf')
-    write(52,'(i7,f19.4,6e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxval(sigma),minval(sigma),errmax_gb,time2-time1
-    !write(52,'(i7,f19.4,4e16.5,i10,f16.4)')k,x,maxval(log10(abs(vel(10001:)))),sum(abs(disp(10001:))),log10(maxval(vel(1:nmain))),sum(disp(1:nmain)),maxloc(vel),time2-time1
+      write(52,'(i7,f19.4,6e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxval(sigma),minval(sigma),errmax_gb,time2-time1
+      !write(52,'(i7,f19.4,4e16.5,i10,f16.4)')k,x,maxval(log10(abs(vel(10001:)))),sum(abs(disp(10001:))),log10(maxval(vel(1:nmain))),sum(disp(1:nmain)),maxloc(vel),time2-time1
     case('3dn','3dh')
       write(52,'(i7,f18.5,3e16.5,i7,e16.5,f16.4)')k,x,maxval(log10(vel)),sum(disps)/NCELLg,sum(mu)/NCELLg,maxloc(vel),dtdid*maxval(vel),time2-time1
     end select
@@ -977,6 +1004,31 @@ contains
     end do
     write(50,*)
   end subroutine
+  subroutine output_local_BP(locid)
+    implicit none
+    integer,intent(in)::locid(:)
+    do i=1,10
+      write(100+i,'(e22.14,7e15.7)') x,disp(locid(i)),0d0,log10(vel(locid(i))),-20d0,tau(locid(i)),0d0,log10(dc(locid(i))/vref*exp((phi(locid(i))-f0(locid(i)))/b(locid(i))))
+      !write(100+i,'(e22.14,4e15.7)') x,disp(locid(i)),log10(vel(locid(i))),tau(locid(i)),log10(dc(locid(i))/vref*exp((phi(locid(i))-f0(locid(i)))/b(locid(i))))
+    end do
+  end subroutine
+  subroutine output_global_BP()
+    implicit none
+    real(8)::sumv
+    sumv=0d0
+    do i=1,ncellg
+      if(abs(xcol(i).lt.34d0).and.zcol(i).gt.-20d0)sumv=sumv+vel(i)*1e6
+    end do
+    write(120,'(e22.14,2e15.7)') x,log10(maxval(vel)),sumv*rigid*1e9
+  end subroutine
+  subroutine output_rupt_BP()
+    implicit none
+    do i=1,ncellg
+      if(abs(xcol(i)).lt.34d0.and.zcol(i).gt.-20d0) write(130,'(3e22.14)') xcol(i)*1e3,-zcol(i)*1e3,rupt(i)
+    end do
+  end subroutine
+
+  !------------initond-----------------------------------------------------------!
   subroutine initcond2dh(phi,sigma,tau,disp,vel)
     implicit none
     real(8),intent(out)::phi(:),sigma(:),tau(:),disp(:),vel(:)
@@ -994,14 +1046,17 @@ contains
   subroutine initcond3dph(phi,sigma,tau,disp,vel)
     implicit none
     real(8),intent(out)::phi(:),sigma(:),tau(:),disp(:),vel(:)
-    real(8)::omega
+    real(8)::omega,dep
     do i=1,NCELLg
       !sigma(i)=min(17.0*zcol(i)+10d0,240d0)
       sigma(i)=25d0
       vel(i)=velinit
-      mu(i)=f0(i)+(a(i)-b(i))*log(vel(i)/vref)
+      dep=-zcol(i)
+      if((abs(xcol(i)+24d0).lt.6d0).and.(abs(dep-10d0).lt.6d0)) vel(i)=1d-2
+      !mu(i)=f0(i)+(a(i)-b(i))*log(vel(i)/vref)
+      mu(i)=a(i)*asinh(0.5d0*vel(i)/vref*exp((f0(i)+b(i)*log(vref/velinit))/a(i)))+rigid/(2*Vs)*vel(i)
       tau(i)=mu(i)*sigma(i)
-      phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
+      phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(abs(tau(i))/sigma(i)/a(i)))
       disp(i)=0d0
       omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref
       !write(*,*) i,omega
@@ -1032,21 +1087,21 @@ contains
     ! end if
     do i=1,size(vel)
       !i_=vars(i)
-        tau(i)=sxy0*cos(2*ang(i))+0.5d0*(sxx0-syy0)*sin(2*ang(i))
-        !if(i.le.nmain) tau(i)=tau(i)+6d0
-        sigma(i)=sin(ang(i))**2*sxx0+cos(ang(i))**2*syy0+sxy0*sin(2*ang(i))
+      tau(i)=sxy0*cos(2*ang(i))+0.5d0*(sxx0-syy0)*sin(2*ang(i))
+      !if(i.le.nmain) tau(i)=tau(i)+6d0
+      sigma(i)=sin(ang(i))**2*sxx0+cos(ang(i))**2*syy0+sxy0*sin(2*ang(i))
 
-        !constant velocity
-        vel(i)=velinit*tau(i)/abs(tau(i))
-        phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
+      !constant velocity
+      vel(i)=velinit*tau(i)/abs(tau(i))
+      phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
 
-        !constant Phi
-        !phi(i)=phinit
-        !if(i.le.nmain) phi(i)=0.55d0
-        !if(randomphi.and.i.gt.nmain) phi(i)=phinit+0.1*(phir((i-nmain)/600+1)-0.5)
-        !vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
-        !omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref/b(i)
-        !if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
+      !constant Phi
+      !phi(i)=phinit
+      !if(i.le.nmain) phi(i)=0.55d0
+      !if(randomphi.and.i.gt.nmain) phi(i)=phinit+0.1*(phir((i-nmain)/600+1)-0.5)
+      !vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
+      !omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref/b(i)
+      !if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
     end do
 
     !uniform special
@@ -1057,8 +1112,8 @@ contains
 
     if(my_rank.eq.0) open(16,file='initomega')
     if(aftershock) then
-    do i=1,size(vel)
-      !i_=vars(i)
+      do i=1,size(vel)
+        !i_=vars(i)
         tau(i)=sxy0*cos(2*ang(i))+0.5d0*(sxx0-syy0)*sin(2*ang(i))
         !if(i.le.nmain) tau(i)=tau(i)+6d0
         sigma(i)=sin(ang(i))**2*sxx0+cos(ang(i))**2*syy0+sxy0*sin(2*ang(i))
@@ -1073,30 +1128,30 @@ contains
         vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
         omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref/b(i)
         if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
-    end do
+      end do
 
 
     end if
 
     !predefined sigma and tau(debug)
     if(slowslip) then
-    sigma=sigma0
-    tmin=sigma0*(mu0+(a0-b0)*dlog(1e-2/vref))
-    tmax=sigma0*(mu0+(a0-b0)*dlog(1e-9/vref))
-    do i=1,nmain
-      tau(i)=tmin
-      vel(i)=velinit
-      phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
-      if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
-    end do
+      sigma=sigma0
+      tmin=sigma0*(mu0+(a0-b0)*dlog(1e-2/vref))
+      tmax=sigma0*(mu0+(a0-b0)*dlog(1e-9/vref))
+      do i=1,nmain
+        tau(i)=tmin
+        vel(i)=velinit
+        phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
+        if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
+      end do
 
-    do i=nmain+1,NCELLg
-      !tau(i)=tmin+(tmax-tmin)*(i-10000)/100d0/150d0
-      tau(i)=tmax
-      vel(i)=velinit
-      phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
-      if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
-    end do
+      do i=nmain+1,NCELLg
+        !tau(i)=tmin+(tmax-tmin)*(i-10000)/100d0/150d0
+        tau(i)=tmax
+        vel(i)=velinit
+        phi(i)=a(i)*dlog(2*vref/velinit*sinh(abs(tau(i))/sigma(i)/a(i)))
+        if(my_rank.eq.0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
+      end do
     end if
     if(my_rank.eq.0) close(16)
 
@@ -1134,8 +1189,8 @@ contains
       tp=sigma(i)*0.5d0
       tr=sigma(i)*0.3d0
       svalue=(tp-taus(i))/(taus(i)-tr)
-       write(97,*) ycol(i),zcol(i),svalue
-     end do
+      write(97,*) ycol(i),zcol(i),svalue
+    end do
     close(97)
   end subroutine
   subroutine initcond3dh(phi,sigma,taus,taud)
@@ -1165,16 +1220,16 @@ contains
     !depth dependent stress in a half-space
     select case(slipmode)
     case('mode2')
-    do i=1,NCELLg
-      PS11=sigma0
-      PS22=PS11
-      PS33=PS11
-      PS12=-PS22*muinit
-      tau(i) = ev11(i)*ev31(i)*PS11 + ev12(i)*ev32(i)*PS22+ (ev11(i)*ev32(i)+ev12(i)*ev31(i))*PS12 + ev13(i)*ev33(i)*PS33
-      sigma(i) = ev31(i)*ev31(i)*PS11 + ev32(i)*ev32(i)*PS22+ (ev31(i)*ev32(i)+ev32(i)*ev31(i))*PS12 + ev33(i)*ev33(i)*PS33
-      vel(i)=velinit
-      phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
-    end do
+      do i=1,NCELLg
+        PS11=sigma0
+        PS22=PS11
+        PS33=PS11
+        PS12=-PS22*muinit
+        tau(i) = ev11(i)*ev31(i)*PS11 + ev12(i)*ev32(i)*PS22+ (ev11(i)*ev32(i)+ev12(i)*ev31(i))*PS12 + ev13(i)*ev33(i)*PS33
+        sigma(i) = ev31(i)*ev31(i)*PS11 + ev32(i)*ev32(i)*PS22+ (ev31(i)*ev32(i)+ev32(i)*ev31(i))*PS12 + ev33(i)*ev33(i)*PS33
+        vel(i)=velinit
+        phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
+      end do
     case('mode3')
       do i=1,NCELLg
         tau(i) = sigma0*muinit
@@ -1228,23 +1283,25 @@ contains
     return
   end subroutine
 
-  subroutine coordinate2dp(NCELLg,ds0,xel,xer,xcol)
-      implicit none
-      integer,intent(in)::NCELLg
-      real(8),intent(in)::ds0
-      real(8),intent(out)::xel(:),xer(:),xcol(:)
-      integer::i,j,k
 
-      !flat fault with element size ds
-      do i=1,NCELLg
-        ds(i)=ds0
-        xel(i)=(i-1)*ds0
-        xer(i)=i*ds0
-        xcol(i)=0.5d0*(xel(i)+xer(i))
-        !write(14,'(3e16.6)') xcol(i),xel(i),xer(i)
-      enddo
-      !close(14)
-      return
+  !------------coordinate-----------------------------------------------------------!
+  subroutine coordinate2dp(NCELLg,ds0,xel,xer,xcol)
+    implicit none
+    integer,intent(in)::NCELLg
+    real(8),intent(in)::ds0
+    real(8),intent(out)::xel(:),xer(:),xcol(:)
+    integer::i,j,k
+
+    !flat fault with element size ds
+    do i=1,NCELLg
+      ds(i)=ds0
+      xel(i)=(i-1)*ds0
+      xer(i)=i*ds0
+      xcol(i)=0.5d0*(xel(i)+xer(i))
+      !write(14,'(3e16.6)') xcol(i),xel(i),xer(i)
+    enddo
+    !close(14)
+    return
   end subroutine
 
   subroutine coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang,ds)
@@ -1260,23 +1317,23 @@ contains
     geom='dbend'
     do i=1,Ncellg
       select case(geom)
-      !flat fault approx
-    case('bump')
-      !xel(i)=5.12d0+ds0*(i-1-NCELLg/2)
-      !xer(i)=5.12d0+ds0*(i-NCELLg/2)
-      xel(i)=ds0*(i-1-NCELLg/2)
-      xer(i)=ds0*(i-NCELLg/2)
-      yel(i)=amp*exp(-(xel(i)-0.0)**2/wid**2)
-      yer(i)=amp*exp(-(xer(i)-0.0)**2/wid**2)
-      !write(*,*) xel(i),yel(i)
-      !double bend
-    case('dbend')
-      xel(i)=ds0*(i-1-NCELLg/2)
-      xer(i)=ds0*(i-NCELLg/2)
-      yel(i)=amp*tanh((xel(i)-0d0)/5.0)
-      yer(i)=amp*tanh((xer(i)-0d0)/5.0)
-      !yel(i)=2.5*tanh((xel(i)-25d0)/5.0)-2.5*tanh((xel(i)+25d0)/5.0)
-      !yer(i)=2.5*tanh((xer(i)-25d0)/5.0)-2.5*tanh((xer(i)+25d0)/5.0)
+        !flat fault approx
+      case('bump')
+        !xel(i)=5.12d0+ds0*(i-1-NCELLg/2)
+        !xer(i)=5.12d0+ds0*(i-NCELLg/2)
+        xel(i)=ds0*(i-1-NCELLg/2)
+        xer(i)=ds0*(i-NCELLg/2)
+        yel(i)=amp*exp(-(xel(i)-0.0)**2/wid**2)
+        yer(i)=amp*exp(-(xer(i)-0.0)**2/wid**2)
+        !write(*,*) xel(i),yel(i)
+        !double bend
+      case('dbend')
+        xel(i)=ds0*(i-1-NCELLg/2)
+        xer(i)=ds0*(i-NCELLg/2)
+        yel(i)=amp*tanh((xel(i)-0d0)/5.0)
+        yer(i)=amp*tanh((xer(i)-0d0)/5.0)
+        !yel(i)=2.5*tanh((xel(i)-25d0)/5.0)-2.5*tanh((xel(i)+25d0)/5.0)
+        !yer(i)=2.5*tanh((xer(i)-25d0)/5.0)-2.5*tanh((xer(i)+25d0)/5.0)
       end select
 
       !yel(i)=2.5*tanh((xel(i)-25d0)/5.0)-2.5*tanh((xel(i)+25d0)/5.0)
@@ -1347,6 +1404,7 @@ contains
     real(8),intent(out)::xcol(:),zcol(:)
     real(8),intent(out)::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
     integer::i,j,k
+
     do i=1,imax
       do j=1,jmax
         k=(i-1)*jmax+j
@@ -1381,64 +1439,48 @@ contains
 
     select case(slipmode)
     case('mode2')
-    do i=1,NCELLg
-    read(20,*) k,ys1(i),xs1(i),zs1(i),ys2(i),xs2(i),zs2(i),ys3(i),xs3(i),zs3(i),ycol(i),xcol(i),zcol(i)
-    !bump
-     ys1(i)=dbend(xs1(i),amp,wid)
-     ys2(i)=dbend(xs2(i),amp,wid)
-     ys3(i)=dbend(xs3(i),amp,wid)
-     ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
-    end do
-  case('mode3')
-  do i=1,NCELLg
-  read(20,*) k,ys1(i),zs1(i),xs1(i),ys2(i),zs2(i),xs2(i),ys3(i),zs3(i),xs3(i),ycol(i),zcol(i),xcol(i)
-  !bump
-   ys1(i)=dbend(zs1(i),amp,wid)
-   ys2(i)=dbend(zs2(i),amp,wid)
-   ys3(i)=dbend(zs3(i),amp,wid)
-   ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
-  end do
-end select
-
-do i=1,NCELLg
-!read(20,*) k,ys1(i),xs1(i),zs1(i),ys2(i),xs2(i),zs2(i),ys3(i),xs3(i),zs3(i),ycol(i),xcol(i),zcol(i)
-read(20,*) k,xs1(i),ys1(i),zs1(i),xs2(i),ys2(i),zs2(i),xs3(i),ys3(i),zs3(i),xcol(i),ycol(i),zcol(i)
-!bump
-!zs1(i)=zs1(i)-100d0
-!zs2(i)=zs2(i)-100d0
-!zs3(i)=zs3(i)-100d0
-!zcol(i)=zcol(i)-100d0
-
- !ys1(i)=dbend(xs1(i),amp,wid)
- !ys2(i)=dbend(xs2(i),amp,wid)
- !ys3(i)=dbend(xs3(i),amp,wid)
- area=0.5d0*abs((ys2(i)-ys1(i))*(zs3(i)-zs1(i))-(ys3(i)-ys1(i))*(zs2(i)-zs1(i)))
- !ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
- !write(*,*) ycol(i),zcol(i),area
-end do
+      do i=1,NCELLg
+        read(20,*) k,ys1(i),xs1(i),zs1(i),ys2(i),xs2(i),zs2(i),ys3(i),xs3(i),zs3(i),ycol(i),xcol(i),zcol(i)
+        !bump
+        ys1(i)=dbend(xs1(i),amp,wid)
+        ys2(i)=dbend(xs2(i),amp,wid)
+        ys3(i)=dbend(xs3(i),amp,wid)
+        ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
+      end do
+    case('mode3')
+      do i=1,NCELLg
+        read(20,*) k,ys1(i),zs1(i),xs1(i),ys2(i),zs2(i),xs2(i),ys3(i),zs3(i),xs3(i),ycol(i),zcol(i),xcol(i)
+        !bump
+        ys1(i)=dbend(zs1(i),amp,wid)
+        ys2(i)=dbend(zs2(i),amp,wid)
+        ys3(i)=dbend(zs3(i),amp,wid)
+        ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
+        !area=0.5d0*abs((ys2(i)-ys1(i))*(zs3(i)-zs1(i))-(ys3(i)-ys1(i))*(zs2(i)-zs1(i)))
+      end do
+    end select
 
     rough=.false.
     !rough fault
     if(rough) then
-    open(30,file='roughsurf.txt')
-    do k=0,2048
-      read(30,*) xl(k,0:2048)
-    end do
-    close(30)
-    if(my_rank.eq.0) open(32,file='tmp')
-    do i=1,NCELLg
-      j=int((ys1(i)+10)*102.4)
-      k=int(-102.4*zs1(i))
-      xs1(i)=xl(j,k)*amp
-      j=int((ys2(i)+10)*102.4)
-      k=int(-102.4*zs2(i))
-      xs2(i)=xl(j,k)*amp
-      j=int((ys3(i)+10)*102.4)
-      k=int(-102.4*zs3(i))
-      xs3(i)=xl(j,k)*amp
-      xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
-      if(my_rank.eq.0) write(32,*) xcol(i),ycol(i),zcol(i)
-    end do
+      open(30,file='roughsurf.txt')
+      do k=0,2048
+        read(30,*) xl(k,0:2048)
+      end do
+      close(30)
+      if(my_rank.eq.0) open(32,file='tmp')
+      do i=1,NCELLg
+        j=int((ys1(i)+10)*102.4)
+        k=int(-102.4*zs1(i))
+        xs1(i)=xl(j,k)*amp
+        j=int((ys2(i)+10)*102.4)
+        k=int(-102.4*zs2(i))
+        xs2(i)=xl(j,k)*amp
+        j=int((ys3(i)+10)*102.4)
+        k=int(-102.4*zs3(i))
+        xs3(i)=xl(j,k)*amp
+        xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
+        if(my_rank.eq.0) write(32,*) xcol(i),ycol(i),zcol(i)
+      end do
     end if
     return
   end subroutine coordinate3dn
@@ -1452,9 +1494,9 @@ end do
   end function
 
   function dbend(y,amp,wid)
-   implicit none
-   real(8)::y,amp,wid,dbend
-   dbend=amp*tanh((y-50)/wid)
+    implicit none
+    real(8)::y,amp,wid,dbend
+    dbend=amp*tanh((y-50)/wid)
   end function
 
   subroutine params(problem,NCELLg,a0,b0,dc0,mu0,a,b,dc,f0,fw,vw)
@@ -1469,90 +1511,90 @@ end do
     if(my_rank.eq.0) open(91,file='fparams')
     select case(problem)
     case('2dp','2dn','3dp','3dn','3dh','3dnf','3dhf','2dn3')
-    do i=1,NCELLg
-      a(i)=a0
-      !if(abs(xcol(i)-50d0).gt.30d0) a(i)=0.024d0 !for cycle
-      if(buffer) then
-        select case(problem)
-        case('2dn')
-          if(abs(i-NCELLg/2).gt.NCELLg*1/3) a(i)=0.032d0
-        case('3dp')
-          cent=0.5*imax*ds0
-          if(((xcol(i)-cent)**2+(zcol(i)-cent)**2).gt.cent**2) a(i)=0.032d0
-        end select
-      end if
-      if(creep) then
-        if(abs(i-1000).lt.100) a(i)=0.024d0
-      end if
-      b(i)=b0
-      dc(i)=dc0
-      f0(i)=mu0
-      if(aftershock.and.i.le.nmain) f0(i)=mu0-0.05d0
-      if(melange.and.abs(i-1000).ge.100) f0(i)=1.0d0
-      !dc is proportional to fault size
-      if(dcscale) then
-        dc(i)=ds(i)/0.004d0*0.001d0
-      end if
-      if(aftershock.and.(i.gt.nmain)) dc(i)=0.001d0
-      if(slowslip.and.(i.gt.nmain)) dc(i)=0.001d0
-      vc(i)=vc0
-      if(slowslip.and.(i.gt.nmain)) vc(i)=1d6
-      fw(i)=fw0
-      vw(i)=vw0
-      if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
-      !if(my_rank.eq.0) write(91,*)a(i),xcol(i),zcol(i)
-    end do
-
-    !depth-dependent frictional properties
-  case('2dh')
-    do i=1,NCELLg
-      dep=xcol(i)
-      if(dep.lt.4d0) then
-        a(i)=0.015d0+0.0025d0*(-dep+4d0)
-      else if(dep.lt.13d0) then
-        a(i)=0.015d0
-      else
-        a(i)=0.015d0-0.0025d0*(-dep+13d0)
-      end if
-      b(i)=0.020d0
-      dc(i)=dc0
-      if(dep.gt.15d0) dc(i)=dc0+dc0*(dep-15d0)
-      vc(i)=vc0
-      fw(i)=fw0
-      vw(i)=vw0
-      if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
-    end do
-  case('3dph')
-    a_max=0.04
-    do i=1,NCELLg
-      f0(i)=mu0
-      dep=-zcol(i)
-
-      !for BP5
-      if((dep.gt.4d0).and.(dep.lt.16).and.(abs(xcol(i)).lt.30d0)) then
+      do i=1,NCELLg
         a(i)=a0
-      else if((dep.lt.2d0).or.(dep.gt.18d0).or.((abs(xcol(i)).gt.32d0))) then
-        a(i)=a_max
-      else
-        r=max(abs(dep-10d0)-6d0,abs(xcol(i))-30d0)/2d0
-        a(i)=a0+r*(a_max-a0)
-      end if
-      !a(i)=0.02d0
-      b(i)=b0
-      dc(i)=dc0
+        !if(abs(xcol(i)-50d0).gt.30d0) a(i)=0.024d0 !for cycle
+        if(buffer) then
+          select case(problem)
+          case('2dn')
+            if(abs(i-NCELLg/2).gt.NCELLg*1/3) a(i)=0.032d0
+          case('3dp')
+            cent=0.5*imax*ds0
+            if(((xcol(i)-cent)**2+(zcol(i)-cent)**2).gt.cent**2) a(i)=0.032d0
+          end select
+        end if
+        if(creep) then
+          if(abs(i-1000).lt.100) a(i)=0.024d0
+        end if
+        b(i)=b0
+        dc(i)=dc0
+        f0(i)=mu0
+        if(aftershock.and.i.le.nmain) f0(i)=mu0-0.05d0
+        if(melange.and.abs(i-1000).ge.100) f0(i)=1.0d0
+        !dc is proportional to fault size
+        if(dcscale) then
+          dc(i)=ds(i)/0.004d0*0.001d0
+        end if
+        if(aftershock.and.(i.gt.nmain)) dc(i)=0.001d0
+        if(slowslip.and.(i.gt.nmain)) dc(i)=0.001d0
+        vc(i)=vc0
+        if(slowslip.and.(i.gt.nmain)) vc(i)=1d6
+        fw(i)=fw0
+        vw(i)=vw0
+        if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
+        !if(my_rank.eq.0) write(91,*)a(i),xcol(i),zcol(i)
+      end do
 
-      !for BP5
-      if((abs(xcol(i)+24d0).lt.6d0).and.(abs(dep-10d0).lt.6d0)) dc(i)=0.13d0
+      !depth-dependent frictional properties
+    case('2dh')
+      do i=1,NCELLg
+        dep=xcol(i)
+        if(dep.lt.4d0) then
+          a(i)=0.015d0+0.0025d0*(-dep+4d0)
+        else if(dep.lt.13d0) then
+          a(i)=0.015d0
+        else
+          a(i)=0.015d0-0.0025d0*(-dep+13d0)
+        end if
+        b(i)=0.020d0
+        dc(i)=dc0
+        if(dep.gt.15d0) dc(i)=dc0+dc0*(dep-15d0)
+        vc(i)=vc0
+        fw(i)=fw0
+        vw(i)=vw0
+        if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
+      end do
+    case('3dph')
+      a_max=0.04
+      do i=1,NCELLg
+        f0(i)=mu0
+        dep=-zcol(i)
 
-      !if(dep.gt.15d0) dc(i)=dc0+dc0*(dep-15d0)
-      vc(i)=vc0
-      fw(i)=fw0
-      vw(i)=vw0
-      !if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
-      !if(my_rank.eq.0) write(91,*)a(i),xcol(i),zcol(i)
-    end do
+        !for BP5
+        if((dep.gt.4d0).and.(dep.lt.16).and.(abs(xcol(i)).lt.30d0)) then
+          a(i)=a0
+        else if((dep.lt.2d0).or.(dep.gt.18d0).or.((abs(xcol(i)).gt.32d0))) then
+          a(i)=a_max
+        else
+          r=max(abs(dep-10d0)-6d0,abs(xcol(i))-30d0)/2d0
+          a(i)=a0+r*(a_max-a0)
+        end if
+        !a(i)=0.02d0
+        b(i)=b0
+        dc(i)=dc0
 
-  end select
+        !for BP5
+        if((abs(xcol(i)+24d0).lt.6d0).and.(abs(dep-10d0).lt.6d0)) dc(i)=0.13d0
+
+        !if(dep.gt.15d0) dc(i)=dc0+dc0*(dep-15d0)
+        vc(i)=vc0
+        fw(i)=fw0
+        vw(i)=vw0
+        !if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
+        !if(my_rank.eq.0) write(91,*)a(i),xcol(i),zcol(i)
+      end do
+
+    end select
 
   end subroutine
 
@@ -1596,20 +1638,20 @@ end do
           write(15,*) taudot(i)
         end do
       end select
-    close(15)
+      close(15)
 
     case('2dn')
       open(15,file='sr')
       !write(*,*) load
       do i=1,NCELLg
-      select case(load)
-      case(0)
-        lang=ang(i)+(45d0-psi)/180d0*pi
-        taudot(i)=sr*cos(2*lang)
-        sigdot(i)=sr*sin(2*lang)
-        write(15,*) taudot(i),sigdot(i)
-      case(1)
-        !edge=ds*NCELLg/2
+        select case(load)
+        case(0)
+          lang=ang(i)+(45d0-psi)/180d0*pi
+          taudot(i)=sr*cos(2*lang)
+          sigdot(i)=sr*sin(2*lang)
+          write(15,*) taudot(i),sigdot(i)
+        case(1)
+          !edge=ds*NCELLg/2
 
           ! v='s'
           ! call kern(v,xcol(i),ycol(i),-500d0*cos(ang(1))+xel(1),-500d0*sin(ang(1))+yel(1),xel(1),yel(1),ang(i),ang(1),ret1)
@@ -1642,24 +1684,24 @@ end do
           ret2=-(0.5d0*(xx2+yy2)-0.5d0*(xx2-yy2)*dcos(2*ang(i))-xy2*dsin(2*ang(i)))
           sigdot(i)=vpl*(ret1+ret2)
           write(15,*) taudot(i),sigdot(i)
-      end select
+        end select
 
-    end do
-    close(15)
-    !close(15)
-    tauddot=0d0
-  case('3dn','3dh')
-    taudot=sr
-    !taudot=0d0
-    tauddot=0d0
-    sigdot=0d0
-    !case('2dpv','2dnv')
-    !  factor=rigid/(2.d0*pi*(1.d0-pois))
-    !  edge=-ds*NCELLg
-    !  do i=1,NCELLg
-    !    taudotg(i)=vpl*factor*(1.d0/xcol(i)-1.d0/(xcol(i)-edge))
-    !    sigdotG(i)=0d0
-    !  end do
+      end do
+      close(15)
+      !close(15)
+      tauddot=0d0
+    case('3dn','3dh')
+      taudot=sr
+      !taudot=0d0
+      tauddot=0d0
+      sigdot=0d0
+      !case('2dpv','2dnv')
+      !  factor=rigid/(2.d0*pi*(1.d0-pois))
+      !  edge=-ds*NCELLg
+      !  do i=1,NCELLg
+      !    taudotg(i)=vpl*factor*(1.d0/xcol(i)-1.d0/(xcol(i)-edge))
+      !    sigdotG(i)=0d0
+      !  end do
     end select
   end subroutine
   subroutine varscalc(NCELL,displs,vars)
@@ -1680,34 +1722,34 @@ end do
     real(8)::rr,vba(0:2),vca(0:2)
 
     do k=1,NCELLg
-        vba(0) = xs2(k)-xs1(k)
-        vba(1) = ys2(k)-ys1(k)
-        vba(2) = zs2(k)-zs1(k)
-        vca(0) = xs3(k)-xs1(k)
-        vca(1) = ys3(k)-ys1(k)
-        vca(2) = zs3(k)-zs1(k)
+      vba(0) = xs2(k)-xs1(k)
+      vba(1) = ys2(k)-ys1(k)
+      vba(2) = zs2(k)-zs1(k)
+      vca(0) = xs3(k)-xs1(k)
+      vca(1) = ys3(k)-ys1(k)
+      vca(2) = zs3(k)-zs1(k)
 
-        ev31(k) = vba(1)*vca(2)-vba(2)*vca(1)
-        ev32(k) = vba(2)*vca(0)-vba(0)*vca(2)
-        ev33(k) = vba(0)*vca(1)-vba(1)*vca(0)
-        !if(my_rank.eq.0) write(*,*) ev31(k),ev32(k),ev33(k)
-        rr = sqrt(ev31(k)*ev31(k)+ev32(k)*ev32(k)+ev33(k)*ev33(k))
-        !// unit vectors for local coordinates of elements
-        ev31(k) = ev31(k)/rr ; ev32(k) = ev32(k)/rr ; ev33(k) = ev33(k)/rr
-        !write(*,*) ev31(k),ev32(k),ev33(k)
+      ev31(k) = vba(1)*vca(2)-vba(2)*vca(1)
+      ev32(k) = vba(2)*vca(0)-vba(0)*vca(2)
+      ev33(k) = vba(0)*vca(1)-vba(1)*vca(0)
+      !if(my_rank.eq.0) write(*,*) ev31(k),ev32(k),ev33(k)
+      rr = sqrt(ev31(k)*ev31(k)+ev32(k)*ev32(k)+ev33(k)*ev33(k))
+      !// unit vectors for local coordinates of elements
+      ev31(k) = ev31(k)/rr ; ev32(k) = ev32(k)/rr ; ev33(k) = ev33(k)/rr
+      !write(*,*) ev31(k),ev32(k),ev33(k)
 
-        if( abs(ev33(k)) < 1.0d0 ) then
-           ev11(k) = -ev32(k) ; ev12(k) = ev31(k) ; ev13(k) = 0.0d0
-           rr = sqrt(ev11(k)*ev11(k) + ev12(k)*ev12(k))
-           ev11(k) = ev11(k)/rr ; ev12(k) = ev12(k)/rr;
-        else
-           ev11(k) = 1.0d0 ; ev12(k) = 0.0d0 ; ev13(k) = 0.0d0
-        end if
+      if( abs(ev33(k)) < 1.0d0 ) then
+        ev11(k) = -ev32(k) ; ev12(k) = ev31(k) ; ev13(k) = 0.0d0
+        rr = sqrt(ev11(k)*ev11(k) + ev12(k)*ev12(k))
+        ev11(k) = ev11(k)/rr ; ev12(k) = ev12(k)/rr;
+      else
+        ev11(k) = 1.0d0 ; ev12(k) = 0.0d0 ; ev13(k) = 0.0d0
+      end if
 
-        ev21(k) = ev32(k)*ev13(k)-ev33(k)*ev12(k)
-        ev22(k) = ev33(k)*ev11(k)-ev31(k)*ev13(k)
-        ev23(k) = ev31(k)*ev12(k)-ev32(k)*ev11(k)
-        write(*,*)ev21(k),ev22(k),ev23(k)
+      ev21(k) = ev32(k)*ev13(k)-ev33(k)*ev12(k)
+      ev22(k) = ev33(k)*ev11(k)-ev31(k)*ev13(k)
+      ev23(k) = ev31(k)*ev12(k)-ev32(k)*ev11(k)
+      write(*,*)ev21(k),ev22(k),ev23(k)
     end do
   end subroutine
 
@@ -1753,20 +1795,20 @@ end do
       !matrix-vector mutiplation
       !select case(load)
       !case(0)
-        !time3=MPI_Wtime()
-        if(load.eq.2) then
-          lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG-vpl)
-        else
-          lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
-        end if
+      !time3=MPI_Wtime()
+      if(load.eq.2) then
+        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG-vpl)
+      else
+        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
+      end if
       call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-        !time4=MPI_Wtime()
-        !if(my_rank.eq.0) write(*,*) time4-time3
-        do i=1,NCELL
-          i_=vars(i)
-          sum_gn(i)=0.d0
-          sum_gs(i)=sum_gs(i)+taudot(i_)
-        end do
+      !time4=MPI_Wtime()
+      !if(my_rank.eq.0) write(*,*) time4-time3
+      do i=1,NCELL
+        i_=vars(i)
+        sum_gn(i)=0.d0
+        sum_gs(i)=sum_gs(i)+taudot(i_)
+      end do
       !case(1)
       !  lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG-vpl)
       !  call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
@@ -1796,20 +1838,20 @@ end do
 
       !matrix-vector mutiplation
       if(load.eq.2) then
-      st_bemv%v='xx'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,veltmpG-vpl)
-      st_bemv%v='xy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,veltmpG-vpl)
-      st_bemv%v='yy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,veltmpG-vpl)
-    else
-      st_bemv%v='xx'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,veltmpG)
-      st_bemv%v='xy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,veltmpG)
-      st_bemv%v='yy'
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,veltmpG)
-    end if
+        st_bemv%v='xx'
+        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,veltmpG-vpl)
+        st_bemv%v='xy'
+        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,veltmpG-vpl)
+        st_bemv%v='yy'
+        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,veltmpG-vpl)
+      else
+        st_bemv%v='xx'
+        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,veltmpG)
+        st_bemv%v='xy'
+        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,veltmpG)
+        st_bemv%v='yy'
+        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,veltmpG)
+      end if
 
       call MPI_SCATTERv(sum_xxG,rcounts,displs,MPI_REAL8,sum_xx,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
       call MPI_SCATTERv(sum_xyG,rcounts,displs,MPI_REAL8,sum_xy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
@@ -1874,93 +1916,93 @@ end do
         dydx(3*i) = dsigdt(i)
       enddo
 
-    ! case('3dn_tensor')
-    !   do i = 1, NCELL
-    !     i_=vars(i)
-    !     phitmp(i) = y(4*i-3)
-    !     taustmp(i) = y(4*i-2)
-    !     taudtmp(i) = y(4*i-1)
-    !     sigmatmp(i) = y(4*i)
-    !     tautmp(i)=sqrt(taustmp(i)**2+taudtmp(i)**2)
-    !     veltmp(i)=2*vref*dexp(-phitmp(i)/a(i_))*dsinh(tautmp(i)/sigmatmp(i)/a(i_))
-    !     velstmp(i)=veltmp(i)*taustmp(i)/tautmp(i)
-    !     veldtmp(i)=veltmp(i)*taudtmp(i)/tautmp(i)
-    !   enddo
-    !   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-    !   call MPI_ALLGATHERv(Velstmp,NCELL,MPI_REAL8,velstmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-    !   call MPI_ALLGATHERv(Veldtmp,NCELL,MPI_REAL8,veldtmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
-    !
-    !   !matrix-vector mutiplation
-    !   st_bemv%md='st'
-    !   st_bemv%v='xx'
-    !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,velstmpG)
-    !   st_bemv%v='xy'
-    !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,velstmpG-vpl)
-    !   st_bemv%v='yy'
-    !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,velstmpG)
-    !   st_bemv%v='xz'
-    !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xz,st_bemv,st_ctl,sum_xzG,velstmpG)
-    !   st_bemv%v='yz'
-    !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yz,st_bemv,st_ctl,sum_yzG,velstmpG)
-    !   st_bemv%v='zz'
-    !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_zz,st_bemv,st_ctl,sum_zzG,velstmpG)
-    !
-    !
-    !   st_bemv%md='dp'
-    !   st_bemv%v='xx'
-    !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx2,st_bemv,st_ctl,sum_xx2G,veldtmpG)
-    !   st_bemv%v='xy'
-    !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy2,st_bemv,st_ctl,sum_xy2G,veldtmpG)
-    !   st_bemv%v='yy'
-    !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy2,st_bemv,st_ctl,sum_yy2G,veldtmpG)
-    !   st_bemv%v='xz'
-    !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xz2,st_bemv,st_ctl,sum_xz2G,veldtmpG)
-    !   st_bemv%v='yz'
-    !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yz2,st_bemv,st_ctl,sum_yz2G,veldtmpG)
-    !   st_bemv%v='zz'
-    !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_zz2,st_bemv,st_ctl,sum_zz2G,veldtmpG)
-    !
-    !   sum_xxG=sum_xxG+sum_xx2G
-    !   sum_xyG=sum_xyG+sum_xy2G
-    !   sum_yyG=sum_yyG+sum_yy2G
-    !   sum_xzG=sum_xzG+sum_xz2G
-    !   sum_yzG=sum_yzG+sum_yz2G
-    !   sum_zzG=sum_zzG+sum_zz2G
-    !
-    !
-    !   call MPI_SCATTERv(sum_xxG,rcounts,displs,MPI_REAL8,sum_xx,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-    !   call MPI_SCATTERv(sum_xyG,rcounts,displs,MPI_REAL8,sum_xy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-    !   call MPI_SCATTERv(sum_yyG,rcounts,displs,MPI_REAL8,sum_yy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-    !   call MPI_SCATTERv(sum_xzG,rcounts,displs,MPI_REAL8,sum_xz,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-    !   call MPI_SCATTERv(sum_yzG,rcounts,displs,MPI_REAL8,sum_yz,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-    !   call MPI_SCATTERv(sum_zzG,rcounts,displs,MPI_REAL8,sum_zz,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-    !
-    !       !stress --> traction
-    !   do i=1,NCELL
-    !     i_=vars(i)
-    !     Arot(1,:)=(/ev11(i_),ev21(i_),ev31(i_)/)
-    !     Arot(2,:)=(/ev12(i_),ev22(i_),ev32(i_)/)
-    !     Arot(3,:)=(/ev13(i_),ev23(i_),ev33(i_)/)
-    !     call TensTrans(sum_xx(i),sum_yy(i),sum_zz(i),sum_xy(i),sum_xz(i),sum_yz(i),Arot,&
-    !             &p(1),p(2),p(3),p(4),p(5),p(6))
-    !     sum_gn(i)=p(3)+sigdot(i_)
-    !     sum_gs(i)=p(5)+taudot(i_)
-    !     sum_gd(i)=p(6)+tauddot(i_)
-    !   end do
-    !
-    !   !no dip slip allowed
-    !   dtauddt=0d0
-    !   !call deriv_d(sum_gs,sum_gn,phitmp,taustmp,sigmatmp,veltmp,dphidt,dtausdt,dsigdt)
-    !   !dsigdt=0d0
-    !   !slip rate is parallel to shear traction
-    !   call deriv_3dn(sum_gs,sum_gd,sum_gn,phitmp,taustmp,taudtmp,tautmp,sigmatmp,veltmp,dphidt,dtausdt,dtauddt,dsigdt)
-    !
-    !   do i = 1, NCELL
-    !     dydx(4*i-3) = dphidt(i)
-    !     dydx(4*i-2) = dtausdt(i)
-    !     dydx(4*i-1) = dtauddt(i)
-    !     dydx(4*i) = dsigdt(i)
-    !   enddo
+      ! case('3dn_tensor')
+      !   do i = 1, NCELL
+      !     i_=vars(i)
+      !     phitmp(i) = y(4*i-3)
+      !     taustmp(i) = y(4*i-2)
+      !     taudtmp(i) = y(4*i-1)
+      !     sigmatmp(i) = y(4*i)
+      !     tautmp(i)=sqrt(taustmp(i)**2+taudtmp(i)**2)
+      !     veltmp(i)=2*vref*dexp(-phitmp(i)/a(i_))*dsinh(tautmp(i)/sigmatmp(i)/a(i_))
+      !     velstmp(i)=veltmp(i)*taustmp(i)/tautmp(i)
+      !     veldtmp(i)=veltmp(i)*taudtmp(i)/tautmp(i)
+      !   enddo
+      !   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      !   call MPI_ALLGATHERv(Velstmp,NCELL,MPI_REAL8,velstmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+      !   call MPI_ALLGATHERv(Veldtmp,NCELL,MPI_REAL8,veldtmpG,rcounts,displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+      !
+      !   !matrix-vector mutiplation
+      !   st_bemv%md='st'
+      !   st_bemv%v='xx'
+      !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,sum_xxG,velstmpG)
+      !   st_bemv%v='xy'
+      !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,sum_xyG,velstmpG-vpl)
+      !   st_bemv%v='yy'
+      !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,sum_yyG,velstmpG)
+      !   st_bemv%v='xz'
+      !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xz,st_bemv,st_ctl,sum_xzG,velstmpG)
+      !   st_bemv%v='yz'
+      !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yz,st_bemv,st_ctl,sum_yzG,velstmpG)
+      !   st_bemv%v='zz'
+      !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_zz,st_bemv,st_ctl,sum_zzG,velstmpG)
+      !
+      !
+      !   st_bemv%md='dp'
+      !   st_bemv%v='xx'
+      !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx2,st_bemv,st_ctl,sum_xx2G,veldtmpG)
+      !   st_bemv%v='xy'
+      !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy2,st_bemv,st_ctl,sum_xy2G,veldtmpG)
+      !   st_bemv%v='yy'
+      !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy2,st_bemv,st_ctl,sum_yy2G,veldtmpG)
+      !   st_bemv%v='xz'
+      !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xz2,st_bemv,st_ctl,sum_xz2G,veldtmpG)
+      !   st_bemv%v='yz'
+      !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yz2,st_bemv,st_ctl,sum_yz2G,veldtmpG)
+      !   st_bemv%v='zz'
+      !   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_zz2,st_bemv,st_ctl,sum_zz2G,veldtmpG)
+      !
+      !   sum_xxG=sum_xxG+sum_xx2G
+      !   sum_xyG=sum_xyG+sum_xy2G
+      !   sum_yyG=sum_yyG+sum_yy2G
+      !   sum_xzG=sum_xzG+sum_xz2G
+      !   sum_yzG=sum_yzG+sum_yz2G
+      !   sum_zzG=sum_zzG+sum_zz2G
+      !
+      !
+      !   call MPI_SCATTERv(sum_xxG,rcounts,displs,MPI_REAL8,sum_xx,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      !   call MPI_SCATTERv(sum_xyG,rcounts,displs,MPI_REAL8,sum_xy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      !   call MPI_SCATTERv(sum_yyG,rcounts,displs,MPI_REAL8,sum_yy,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      !   call MPI_SCATTERv(sum_xzG,rcounts,displs,MPI_REAL8,sum_xz,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      !   call MPI_SCATTERv(sum_yzG,rcounts,displs,MPI_REAL8,sum_yz,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      !   call MPI_SCATTERv(sum_zzG,rcounts,displs,MPI_REAL8,sum_zz,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+      !
+      !       !stress --> traction
+      !   do i=1,NCELL
+      !     i_=vars(i)
+      !     Arot(1,:)=(/ev11(i_),ev21(i_),ev31(i_)/)
+      !     Arot(2,:)=(/ev12(i_),ev22(i_),ev32(i_)/)
+      !     Arot(3,:)=(/ev13(i_),ev23(i_),ev33(i_)/)
+      !     call TensTrans(sum_xx(i),sum_yy(i),sum_zz(i),sum_xy(i),sum_xz(i),sum_yz(i),Arot,&
+      !             &p(1),p(2),p(3),p(4),p(5),p(6))
+      !     sum_gn(i)=p(3)+sigdot(i_)
+      !     sum_gs(i)=p(5)+taudot(i_)
+      !     sum_gd(i)=p(6)+tauddot(i_)
+      !   end do
+      !
+      !   !no dip slip allowed
+      !   dtauddt=0d0
+      !   !call deriv_d(sum_gs,sum_gn,phitmp,taustmp,sigmatmp,veltmp,dphidt,dtausdt,dsigdt)
+      !   !dsigdt=0d0
+      !   !slip rate is parallel to shear traction
+      !   call deriv_3dn(sum_gs,sum_gd,sum_gn,phitmp,taustmp,taudtmp,tautmp,sigmatmp,veltmp,dphidt,dtausdt,dtauddt,dsigdt)
+      !
+      !   do i = 1, NCELL
+      !     dydx(4*i-3) = dphidt(i)
+      !     dydx(4*i-2) = dtausdt(i)
+      !     dydx(4*i-1) = dtauddt(i)
+      !     dydx(4*i) = dsigdt(i)
+      !   enddo
 
     case('3dn','3dh')
       do i = 1, NCELL
@@ -2164,30 +2206,30 @@ end do
       end if
     end do
   end subroutine
-    subroutine deriv_3dn(sum_gs,sum_gd,sum_gn,phitmp,taustmp,taudtmp,tautmp,sigmatmp,veltmp,dphidt,dtausdt,dtauddt,dsigdt)
-      implicit none
-      integer::i
-      real(8)::fss,dvdtau,dvdsig,dvdphi,absV
-      !type(t_deriv),intent(in) ::
-      real(8),intent(in)::sum_gs(:),sum_gd(:),sum_gn(:),phitmp(:),taustmp(:),taudtmp(:),tautmp(:),sigmatmp(:),veltmp(:)
-      real(8),intent(out)::dphidt(:),dtausdt(:),dtauddt(:),dsigdt(:)
-      do i=1,size(phitmp)
-        !write(*,*) 'vel',veltmp(i)
-        dsigdt(i)=sum_gn(i)
-        !fss=mu0+(a(i)-b(i))*dlog(abs(veltmp(i))/vref)
-        !fss=fw(i)+(fss-fw(i))/(1.d0+(veltmp(i)/vw(i))**8)**0.125d0 !flash heating
-        !slip law
-        !dphidt(i)=-abs(veltmp(i))/dc(i)*(abs(tautmp(i))/sigmatmp(i)-fss)
-        !aing law
-        dphidt(i)=b(i_)*vref/dc(i_)*exp((f0(i_)-phitmp(i))/b(i_))-b(i_)*veltmp(i)/dc(i_)
-        dvdtau=2*vref*dexp(-phitmp(i)/a(i_))*dcosh(tautmp(i)/sigmatmp(i)/a(i_))/(a(i_)*sigmatmp(i))
-        dvdsig=-2*vref*dexp(-phitmp(i)/a(i_))*dcosh(tautmp(i)/sigmatmp(i)/a(i_))*tautmp(i)/(a(i_)*sigmatmp(i)**2)
-        dvdphi=-veltmp(i)/a(i_)
-        dtausdt(i)=sum_gs(i)-0.5d0*rigid/vs*(dvdphi*dphidt(i)+dvdsig*dsigdt(i))*(taustmp(i)/tautmp(i))
-        dtausdt(i)=dtausdt(i)/(1d0+0.5d0*rigid/vs*dvdtau)
-        dtauddt(i)=sum_gd(i)-0.5d0*rigid/vs*(dvdphi*dphidt(i)+dvdsig*dsigdt(i))*(taudtmp(i)/tautmp(i))
-        dtauddt(i)=dtauddt(i)/(1d0+0.5d0*rigid/vs*dvdtau)
-      end do
+  subroutine deriv_3dn(sum_gs,sum_gd,sum_gn,phitmp,taustmp,taudtmp,tautmp,sigmatmp,veltmp,dphidt,dtausdt,dtauddt,dsigdt)
+    implicit none
+    integer::i
+    real(8)::fss,dvdtau,dvdsig,dvdphi,absV
+    !type(t_deriv),intent(in) ::
+    real(8),intent(in)::sum_gs(:),sum_gd(:),sum_gn(:),phitmp(:),taustmp(:),taudtmp(:),tautmp(:),sigmatmp(:),veltmp(:)
+    real(8),intent(out)::dphidt(:),dtausdt(:),dtauddt(:),dsigdt(:)
+    do i=1,size(phitmp)
+      !write(*,*) 'vel',veltmp(i)
+      dsigdt(i)=sum_gn(i)
+      !fss=mu0+(a(i)-b(i))*dlog(abs(veltmp(i))/vref)
+      !fss=fw(i)+(fss-fw(i))/(1.d0+(veltmp(i)/vw(i))**8)**0.125d0 !flash heating
+      !slip law
+      !dphidt(i)=-abs(veltmp(i))/dc(i)*(abs(tautmp(i))/sigmatmp(i)-fss)
+      !aing law
+      dphidt(i)=b(i_)*vref/dc(i_)*exp((f0(i_)-phitmp(i))/b(i_))-b(i_)*veltmp(i)/dc(i_)
+      dvdtau=2*vref*dexp(-phitmp(i)/a(i_))*dcosh(tautmp(i)/sigmatmp(i)/a(i_))/(a(i_)*sigmatmp(i))
+      dvdsig=-2*vref*dexp(-phitmp(i)/a(i_))*dcosh(tautmp(i)/sigmatmp(i)/a(i_))*tautmp(i)/(a(i_)*sigmatmp(i)**2)
+      dvdphi=-veltmp(i)/a(i_)
+      dtausdt(i)=sum_gs(i)-0.5d0*rigid/vs*(dvdphi*dphidt(i)+dvdsig*dsigdt(i))*(taustmp(i)/tautmp(i))
+      dtausdt(i)=dtausdt(i)/(1d0+0.5d0*rigid/vs*dvdtau)
+      dtauddt(i)=sum_gd(i)-0.5d0*rigid/vs*(dvdphi*dphidt(i)+dvdsig*dsigdt(i))*(taudtmp(i)/tautmp(i))
+      dtauddt(i)=dtauddt(i)/(1d0+0.5d0*rigid/vs*dvdtau)
+    end do
   end subroutine
 
   !---------------------------------------------------------------------
@@ -2217,17 +2259,17 @@ end do
       errmax=0d0
       select case(problem)
       case('3dn','3dh')
-      do i=1,NCELL
-        if(abs(yerr(4*i-3)/yscal(4*i-3))/eps.gt.errmax) errmax=abs(yerr(4*i-3)/yscal(4*i-3))/eps
-      end do
-    case('3dnf','3dhf','2dn')
-      do i=1,NCELL
-        if(abs(yerr(3*i-1)/yscal(3*i-1))/eps.gt.errmax) errmax=abs(yerr(3*i-1)/yscal(3*i-1))/eps
-      end do
-    case('2dh','2dp','2dn3','3dph','3dp')
-      do i=1,NCELL
-        if(abs(yerr(2*i-1)/yscal(2*i-1))/eps.gt.errmax) errmax=abs(yerr(2*i-1)/yscal(2*i-1))/eps
-      end do
+        do i=1,NCELL
+          if(abs(yerr(4*i-3)/yscal(4*i-3))/eps.gt.errmax) errmax=abs(yerr(4*i-3)/yscal(4*i-3))/eps
+        end do
+      case('3dnf','3dhf','2dn')
+        do i=1,NCELL
+          if(abs(yerr(3*i-1)/yscal(3*i-1))/eps.gt.errmax) errmax=abs(yerr(3*i-1)/yscal(3*i-1))/eps
+        end do
+      case('2dh','2dp','2dn3','3dph','3dp')
+        do i=1,NCELL
+          if(abs(yerr(2*i-1)/yscal(2*i-1))/eps.gt.errmax) errmax=abs(yerr(2*i-1)/yscal(2*i-1))/eps
+        end do
       end select
       !call MPI_BARRIER(MPI_COMM_WORLD,ierr)
       call MPI_ALLREDUCE(errmax,errmax_gb,1,MPI_REAL8,                  &
@@ -2247,8 +2289,8 @@ end do
 
       xnew=x+h
       if(xnew-x<1.d-15) then
-      write(*,*)'dt is too small'
-      stop
+        write(*,*)'dt is too small'
+        stop
       end if
 
     end do
@@ -2351,46 +2393,46 @@ end do
     ! vel(p)=1d0
 
 
-      write(fname,'("stress",i0)') number
-      open(29,file=fname)
+    write(fname,'("stress",i0)') number
+    open(29,file=fname)
 
-  select case(problem)
-  case('2dn')
-    !slip from file
-    ! open(45,file='../fd2d/rupt2.dat')
-    ! do i=1,NCELLg
-    !   read(45,*) a(i),vel(i),b(i)
-    ! end do
+    select case(problem)
+    case('2dn')
+      !slip from file
+      ! open(45,file='../fd2d/rupt2.dat')
+      ! do i=1,NCELLg
+      !   read(45,*) a(i),vel(i),b(i)
+      ! end do
 
-    st_bemv%v='xx'
-    lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,a,vel)
-    st_bemv%v='xy'
-    lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,b,vel)
-    st_bemv%v='yy'
-    lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,dc,vel)
-    if(my_rank.eq.0) then
-    do i=1,NCELLg
-      taudot(i)=0.5d0*(a(i)-dc(i))*dsin(-2*ang(i))+b(i)*dcos(-2*ang(i))
-      sigdot(i)=-(0.5d0*(a(i)+dc(i))-0.5d0*(a(i)-dc(i))*dcos(2*ang(i))-b(i)*dsin(2*ang(i)))
-      write(29,'(4e16.4)') xcol(i),ang(i),taudot(i),sigdot(i)
-    end do
-    end if
-  case('3dn','3dh')
-   st_bemv%md='st'
-    st_bemv%v='s'
-   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_s,st_bemv,st_ctl,a,vel)
-   st_bemv%v='d'
-   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_d,st_bemv,st_ctl,b,vel)
-   st_bemv%v='power'
-   lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,dc,vel)
-   if(my_rank.eq.0) then
-   do i=1,NCELLg
-     rr=(ycol(i)-ycol(p))**2+(zcol(i)-zcol(p))**2
-     write(29,'(6e16.4)') ycol(i),zcol(i),sqrt(rr),35d0+a(i),b(i),dc(i)
-   end do
-   end if
-  end select
-  stop
+      st_bemv%v='xx'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,a,vel)
+      st_bemv%v='xy'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,b,vel)
+      st_bemv%v='yy'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,dc,vel)
+      if(my_rank.eq.0) then
+        do i=1,NCELLg
+          taudot(i)=0.5d0*(a(i)-dc(i))*dsin(-2*ang(i))+b(i)*dcos(-2*ang(i))
+          sigdot(i)=-(0.5d0*(a(i)+dc(i))-0.5d0*(a(i)-dc(i))*dcos(2*ang(i))-b(i)*dsin(2*ang(i)))
+          write(29,'(4e16.4)') xcol(i),ang(i),taudot(i),sigdot(i)
+        end do
+      end if
+    case('3dn','3dh')
+      st_bemv%md='st'
+      st_bemv%v='s'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_s,st_bemv,st_ctl,a,vel)
+      st_bemv%v='d'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_d,st_bemv,st_ctl,b,vel)
+      st_bemv%v='power'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,dc,vel)
+      if(my_rank.eq.0) then
+        do i=1,NCELLg
+          rr=(ycol(i)-ycol(p))**2+(zcol(i)-zcol(p))**2
+          write(29,'(6e16.4)') ycol(i),zcol(i),sqrt(rr),35d0+a(i),b(i),dc(i)
+        end do
+      end if
+    end select
+    stop
   end subroutine
 
   subroutine inverse_problem()
