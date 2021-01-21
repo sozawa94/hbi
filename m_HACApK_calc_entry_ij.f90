@@ -36,6 +36,9 @@ contains
       HACApK_entry_ij=tensor2d_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
       & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang,st_bemv%v)
 
+    case('2dnh')
+      HACApK_entry_ij=matel2dnh_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%ang,st_bemv%v)
+
     case('2dn3')
       HACApK_entry_ij=tensor2d3_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
       & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang)
@@ -63,6 +66,142 @@ contains
     end select
 
   end function HACApK_entry_ij
+  real(8) function load2dnh(xs,ys,edge,dipangle,v)
+    implicit none
+    real(8)::angle,dx
+    real(8),intent(in)::xs,ys,edge,dipangle
+    real(8)::p22,p23,p33,u1,u2
+    character(128),intent(in)::v
+    Call D2dip(xs,ys,edge,1d8,dipangle*pi/180d0,1d0,p22,p23,p33)
+    select case(v)
+    case('xx')
+      load2dnh=p22
+    case('xy')
+      load2dnh=p23
+    case('yy')
+      load2dnh=p33
+    end select
+  end function
+
+  real(8) function matel2dnh_ij(i,j,xcol,ycol,ang,v)
+    implicit none
+    real(8)::angle,dx
+    real(8),intent(in)::xcol(:),ycol(:),ang(:)
+    integer,intent(in)::i,j
+    real(8)::p22,p23,p33,u1,u2
+    character(128)::v
+
+    dx=0.025d0
+    angle=ang(1)
+    Call D2dip(xcol(i),ycol(i),(j-1)*dx,j*dx,angle,1d0,p22,p23,p33)
+    select case(v)
+    case('xx')
+      matel2dnh_ij=p22
+    case('xy')
+      matel2dnh_ij=p23
+    case('yy')
+      matel2dnh_ij=p33
+    end select
+  end function
+
+  Subroutine D2dip(x2,x3,s1,s2,angle,disl,p22,p23,p33)
+
+  Implicit None
+  ! input
+  Real(8),intent(in):: x2,x3,s1,s2,angle,disl ! source
+  ! output
+  Real(8),intent(out):: p22,p23,p33
+
+  Real*8 p22_1,p22_2,p23_1,p23_2,p33_1,p33_2
+  Real*8 u2_1,u2_2,u3_1,u3_2
+
+  Call res(x2,x3,s1,angle,disl,p22_1,p23_1,p33_1)
+  Call res(x2,x3,s2,angle,disl,p22_2,p23_2,p33_2)
+
+  p22=p22_2-p22_1
+  p23=p23_2-p23_1
+  p33=p33_2-p33_1
+
+  End Subroutine D2dip
+
+  Subroutine res(x2,x3,s,angle,disl,p22,p23,p33)
+  Implicit None
+  Real(8),intent(in):: x2,x3,s,angle,disl
+  Real(8),intent(out):: p22,p23,p33
+
+  Real*8 r12,r22,r12i,r22i,r14,r24,r16,r26
+  Real*8 cosd,sind,cos2d,sin2d
+  Real*8 coef
+
+  Real*8 p221,p222,p223,p224,p225
+  Real*8 p231,p232,p233,p234,p235,p236
+  Real*8 p331,p332,p333,p334,p335
+
+  Real*8 coef2
+  Real*8 u21,u22,u23,u24,u25,u26
+
+  cosd=dcos(angle)
+  sind=dsin(angle)
+  cos2d=dcos(2d0*angle)
+  sin2d=dsin(2d0*angle)
+  r12=(x2-s*cosd)**2+(x3-s*sind)**2
+  r22=(x2-s*cosd)**2+(x3+s*sind)**2
+  r12i=1d0/r12
+  r22i=1d0/r22
+  r14=r12**2
+  r24=r22**2
+  r16=r12**3
+  r26=r22**3
+
+  coef=rigid*disl/2d0/pi/(1d0-pois)
+
+
+  p221=(x2*sind-3d0*x3*cosd)*(r12i-r22i)
+  p222=sin2d*(s*(r12i+3d0*r22i))
+  p223=-2d0*(x2*sind-x3*cosd)*                                      &
+ &  (((x3-s*sind)**2)/r14-((x3+s*sind)**2)/r24)
+  p224=-4d0*sind*(s/r24)*                                           &
+ &  (3d0*x2*x3*sind+5d0*x3**2*cosd+2d0*s*sind*(2d0*x3*cosd+x2*sind))
+  p225=16d0*(x2*sind+x3*cosd)*x3*sind*(s*(x3+s*sind)**2/r26)
+
+  p22=coef*(p221+p222+p223+p224+p225)
+
+
+  p231=(x2*cosd-x3*sind)*(r12i-r22i)
+  p232=-cos2d*(s*(r12i-r22i))
+  p233=2d0*(x2*sind-x3*cosd)*(x2-s*cosd)*                           &
+ &   ((x3-s*sind)/r14-(x3+s*sind)/r24)
+  p234=4d0*sind*(x2*sind+2d0*x3*cosd)*(s*(x2-s*cosd)/r24)
+  p235=4d0*x3*sind*sind*(s*(x3+s*sind)/r24)
+  p236=-16d0*x3*sind*(x2*sind+x3*cosd)*                             &
+ &   (s*(x3+s*sind)*(x2-s*cosd)/r26)
+
+  p23=coef*(p231+p232+p233+p234+p235+p236)
+
+
+  p331=(x2*sind+x3*cosd)*(r12i-r22i)
+  p332=-sin2d*(s*(r12i-r22i))
+  p333=2d0*(x2*sind-x3*cosd)*                                       &
+ &   (((x3-s*sind)**2)/r14-((x3+s*sind)**2)/r24)
+  p334=4d0*x3*sind*(s*(x2*sind+3d0*x3*cosd+s*sin2d)/r24)
+  p335=-16d0*x3*sind*(x2*sind+x3*cosd)*(s*(x3+s*sind)**2/r26)
+
+  p33=coef*(p331+p332+p333+p334+p335)
+
+  !Print *,p22,p23,p33
+
+
+  coef2=disl/2d0/pi
+
+  u21=(1d0-2d0*pois)/2d0/(1d0-pois)*sind*log(dsqrt(r12)/dsqrt(r22))
+  u22=cosd*datan((x2-s*cosd)/(x3+s*sind))
+  u23=-cosd*datan((x2-s*cosd)/(x3-s*sind))
+  u24=-1d0/2d0/(1d0-pois)*(x2*sind-x3*cosd)*(x2-s*cosd)*(r12i-r22i)
+  u25=2d0*s*sind*((1d0-2d0*pois)/2d0/(1d0-pois)*x3*sind+s-x2*cosd)/r22
+  u26=2d0/(1d0-pois)
+
+  End Subroutine res
+
 
   real(8) function tensor2d_ij(i,j,xcol,ycol,xel,xer,yel,yer,ang,v)
     implicit none
@@ -632,43 +771,4 @@ real(8) function matelrec_ij(i,j,xcol,ycol,zcol,strike,dip,v,md)
   end select
   return
 end function matelrec_ij
-! subroutine prtoxy ( alatdg, alngdg, alato, alngo, x, y, ind )
-!   real(8),parameter::a=6378.160, e2=6.6946053d-3, e12=6.7397251d-3
-!   real(8),parameter::d=57.29578, rd=1./57.29578
-!   if (ind .eq. 0)  then
-!     rlat = alatdg*rd
-!     slat = sin( rlat )
-!     clat = cos( rlat )
-!     v2   = 1. + e12*clat*clat
-!     al   = alngdg - alngo
-!     ph1  = alatdg + 0.5*v2*al*al*slat*clat*rd
-!     rph1 = ph1*rd
-!     rph2 = (ph1 + alato)/2.*rd
-!     srph1 = sin( rph1 )
-!     srph2 = sin( rph2 )
-!     r  = a*(1. - e2) / sqrt( 1. - e2*srph2*srph2 )**3
-!     an = a / sqrt( 1. - e2*srph1*srph1 )
-!     c1 = d / r
-!     c2 = d / an
-!     y =(ph1-alato)/c1
-!     x  = al*clat/c2*( 1. + al*al*cos(2.*rlat)/(6.*d*d) )
-!   elseif(ind .eq. 1)  then
-!     rlato = alato*rd
-!     slato = sin( rlato )
-!     clato = cos( rlato )
-!     den = sqrt( 1. - e2*slato*slato ) r =a*(1.-e2)/den**3
-!     an = a / den
-!     v2 = 1. + e12*clato*clato
-!     c1 = d / r
-!     c2 = d / an
-!     ph1  = alato + c1*y
-!     rph1 = ph1*rd
-!     tph1 = tan(rph1)
-!     cph1 = cos(rph1)
-!     bl   = c2*x
-!     alatdg = ph1 - 0.5*bl*bl*v2*tph1*rd
-!     alngdg = alngo+bl/cph1*(1.- bl*bl*(1.+2.*tph1*tph1)/(6.*d*d))
-!   endif
-! return
-! end subroutine
-endmodule m_HACApK_calc_entry_ij
+end module

@@ -61,7 +61,7 @@ program main
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta
   real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,muinit,intau
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax
-  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1
+  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle
 
   !temporal variable
 
@@ -236,6 +236,8 @@ program main
       read(pvalue,*) maxsig
     case('minsig')
       read(pvalue,*) minsig
+    case('dipangle')
+      read(pvalue,*) dipangle
     end select
   end do
   close(33)
@@ -288,7 +290,7 @@ program main
     allocate(xel(NCELLg),xer(NCELLg))
     xel=0d0;xer=0d0
     allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg))
-  case('2dn','2dn3')
+  case('2dn','2dnh','2dn3')
     allocate(ang(NCELLg),xel(NCELLg),xer(NCELLg),yel(NCELLg),yer(NCELLg))
     ang=0d0;xel=0d0;xer=0d0;yel=0d0;yer=0d0
     allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg))
@@ -314,7 +316,7 @@ program main
   select case(problem) !for Runge-Kutta
   case('2dp','2dh','2dn3','3dp','3dph')
     allocate(y(2*NCELL),yscal(2*NCELL),dydx(2*NCELL),yg(2*NCELLg))
-  case('2dn','3dnf','3dhf')
+  case('2dn','2dnh','3dnf','3dhf')
     allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL),yg(3*NCELLg))
   case('3dn','3dh')
     allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL),yg(4*NCELLg))
@@ -329,6 +331,8 @@ program main
     call coordinate2dp(NCELLg,ds0,xel,xer,xcol)
   case('2dn','2dn3') !geometry file is necessary
     call coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang,ds)
+  case('2dnh')
+    call coordinate2dnh()
   case('3dp','3dph')
     call coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
   case('3dn','3dh','3dnf','3dhf','fdph_FP11')
@@ -358,7 +362,7 @@ program main
     st_bemv%xcol=xcol;st_bemv%xel=xel;st_bemv%xer=xer
     st_bemv%problem=problem
 
-  case('2dn','2dn3')
+  case('2dn','2dn3','2dnh')
     allocate(st_bemv%xcol(NCELLg),st_bemv%xel(NCELLg),st_bemv%xer(NCELLg))
     allocate(st_bemv%ycol(NCELLg),st_bemv%yel(NCELLg),st_bemv%yer(NCELLg),st_bemv%ang(NCELLg))
     st_bemv%xcol=xcol;st_bemv%xel=xel;st_bemv%xer=xer
@@ -423,7 +427,7 @@ program main
   case('2dp','2dh','2dn3','3dp','3dph')
     lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,eps_h)
 
-  case('2dn')
+  case('2dn','2dnh')
     st_bemv%v='xx'
     lrtrn=HACApK_generate(st_leafmtxp_xx,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='xy'
@@ -524,6 +528,8 @@ program main
     phi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
   case('2dh')
     call initcond2dh(phi,sigma,tau,disp,vel)
+  case('2dnh')
+    call initcond2dnh(phi,sigma,tau,disp,vel)
   case('3dph')
     call initcond3dph(phi,sigma,tau,disp,vel)
   case('2dn')
@@ -581,6 +587,7 @@ program main
     !SEAS BP5
     if(problem.eq.'3dph')then
       locid=(/521,1361,2001,2641,3441,1051,1331,2011,2651,1983/)
+      locid=(/2161,5361,7921,10481,13681,4101,5381,7941,10501,7965/)
       open(101,file="output/fltst_strk-36dp+00")
       open(102,file="output/fltst_strk-16dp+00")
       open(103,file="output/fltst_strk+00dp+00")
@@ -593,6 +600,21 @@ program main
       open(110,file="output/fltst_strk+00dp+22")
       open(120,file="output/global.dat")
       open(130,file="output/rupture.dat")
+    end if
+    if(problem.eq.'2dnh')then
+      locid=(/2161,5361,7921,10481,13681,4101,5381,7941,10501,7965/)
+      open(101,file="output/fltst_dp000")
+      open(102,file="output/fltst_dp025")
+      open(103,file="output/fltst_dp050")
+      open(104,file="output/fltst_dp075")
+      open(105,file="output/fltst_dp100")
+      open(106,file="output/fltst_dp125")
+      open(107,file="output/fltst_dp150")
+      open(108,file="output/fltst_dp175")
+      open(109,file="output/fltst_dp200")
+      open(110,file="output/fltst_dp250")
+      open(111,file="output/fltst_dp300")
+      open(112,file="output/fltst_dp350")
     end if
   end if
 
@@ -635,7 +657,7 @@ program main
     end do
     !call MPI_SCATTERv(yG,2*rcounts,2*displs,MPI_REAL8,y,2*NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
 
-  case('2dn','3dnf','3dhf')
+  case('2dn','2dnh','3dnf','3dhf')
     do i=1,NCELL
       i_=vars(i)
       !write(*,*) my_rank,i_
@@ -704,7 +726,7 @@ program main
         disp(i)=disp(i)+vel(i)*dtdid
         mu(i)=tau(i)/sigma(i)
       end do
-    case('2dn','3dnf','3dhf')
+    case('2dn','2dnh','3dnf','3dhf')
       call MPI_ALLGATHERv(y,3*NCELL,MPI_REAL8,yG,3*rcounts,3*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
       do i = 1, NCELLg
         phi(i) = yG(3*i-2)
@@ -753,6 +775,7 @@ program main
       call output_monitor()
       if(problem.eq.'3dph')  call output_local_BP(locid)
       if(problem.eq.'3dph')  call output_global_BP()
+      if(problem.eq.'2dnh')  call output_local_BP3()
 
       !do i=1,size(vmax)
       !  vmax(i)=max(vmax(i),vel(i))
@@ -918,7 +941,7 @@ Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 select case(problem)
 case('2dp','2dh','2dn3','3dp','3dph')
   lrtrn=HACApK_free_leafmtxp(st_leafmtxps)
-case('2dn')
+case('2dn','2dnh')
   !lrtrn=HACApK_free_leafmtxp(st_leafmtxps)
   !lrtrn=HACApK_free_leafmtxp(st_leafmtxpn)
   lrtrn=HACApK_free_leafmtxp(st_leafmtxp_xx)
@@ -957,7 +980,7 @@ contains
     implicit none
     time2=MPi_Wtime()
     select case(problem)
-    case('2dp','3dp','2dh','2dn','2dn3','3dph','3dnf','3dhf')
+    case('2dp','3dp','2dh','2dn','2dnh','2dn3','3dph','3dnf','3dhf')
       write(52,'(i7,f19.4,6e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxval(sigma),minval(sigma),errmax_gb,time2-time1
       !write(52,'(i7,f19.4,4e16.5,i10,f16.4)')k,x,maxval(log10(abs(vel(10001:)))),sum(abs(disp(10001:))),log10(maxval(vel(1:nmain))),sum(disp(1:nmain)),maxloc(vel),time2-time1
     case('3dn','3dh')
@@ -973,7 +996,7 @@ contains
       end do
       write(50,*)
       write(50,*)
-    case('2dn','2dn3')
+    case('2dn','2dnh','2dn3')
       do i=1,NCELLg
         if(melange)write(50,'(i0,10e15.6,i10)') i,xcol(i),ycol(i),log10(abs(vel(i))),tau(i),sigma(i),mu(i),disp(i),phi(i),x,ieta*tau(i)/vel(i),k
         if(.not.melange) write(50,'(i0,9e15.6,i10)') i,xcol(i),ycol(i),log10(abs(vel(i))),tau(i),sigma(i),mu(i),disp(i),phi(i),x,k
@@ -1012,12 +1035,20 @@ contains
       !write(100+i,'(e22.14,4e15.7)') x,disp(locid(i)),log10(vel(locid(i))),tau(locid(i)),log10(dc(locid(i))/vref*exp((phi(locid(i))-f0(locid(i)))/b(locid(i))))
     end do
   end subroutine
+  subroutine output_local_BP3()
+    implicit none
+    !integer,intent(in)::locid(:)
+    do i=1,1
+      write(100+i,'(e22.14,5e15.7)') x,disp(1),log10(vel(1)),tau(1),sigma(1),log10(dc(1)/vref*exp((phi(1)-f0(1)/b(1))))
+      !write(100+i,'(e22.14,4e15.7)') x,disp(locid(i)),log10(vel(locid(i))),tau(locid(i)),log10(dc(locid(i))/vref*exp((phi(locid(i))-f0(locid(i)))/b(locid(i))))
+    end do
+  end subroutine
   subroutine output_global_BP()
     implicit none
     real(8)::sumv
     sumv=0d0
     do i=1,ncellg
-      if(abs(xcol(i).lt.34d0).and.zcol(i).gt.-20d0)sumv=sumv+vel(i)*1e6
+      if(abs(xcol(i).lt.34d0).and.zcol(i).gt.-20d0)sumv=sumv+vel(i)*(ds0*1d3)**2
     end do
     write(120,'(e22.14,2e15.7)') x,log10(maxval(vel)),sumv*rigid*1e9
   end subroutine
@@ -1055,6 +1086,27 @@ contains
       if((abs(xcol(i)+24d0).lt.6d0).and.(abs(dep-10d0).lt.6d0)) vel(i)=1d-2
       !mu(i)=f0(i)+(a(i)-b(i))*log(vel(i)/vref)
       mu(i)=a(i)*asinh(0.5d0*vel(i)/vref*exp((f0(i)+b(i)*log(vref/velinit))/a(i)))+rigid/(2*Vs)*vel(i)
+      tau(i)=mu(i)*sigma(i)
+      phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(abs(tau(i))/sigma(i)/a(i)))
+      disp(i)=0d0
+      omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref
+      !write(*,*) i,omega
+      !if(my_rank.eq.0)write(*,*)phi(i),sigma(i),vel(i)
+    end do
+  end subroutine
+  subroutine initcond2dnh(phi,sigma,tau,disp,vel)
+    implicit none
+    real(8),intent(out)::phi(:),sigma(:),tau(:),disp(:),vel(:)
+    real(8)::omega,dep,a_max
+    a_max=0.025d0
+    do i=1,NCELLg
+      !sigma(i)=min(17.0*zcol(i)+10d0,240d0)
+      sigma(i)=50d0
+      vel(i)=velinit
+      dep=-zcol(i)
+      if((abs(xcol(i)+24d0).lt.6d0).and.(abs(dep-10d0).lt.6d0)) vel(i)=1d-2
+      !mu(i)=f0(i)+(a(i)-b(i))*log(vel(i)/vref)
+      mu(i)=a_max*asinh(0.5d0*vel(i)/vref*exp((f0(i)+b(i)*log(vref/velinit))/a_max))+rigid/(2*Vs)*vel(i)
       tau(i)=mu(i)*sigma(i)
       phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(abs(tau(i))/sigma(i)/a(i)))
       disp(i)=0d0
@@ -1396,6 +1448,25 @@ contains
 
     return
   end subroutine
+  subroutine coordinate2dnh()
+    implicit none
+    integer::i,j,k
+
+    !flat fault with element size ds
+    do i=1,NCELLg
+      ds(i)=ds0
+      xel(i)=(i-1)*ds0*cos(dipangle*pi/180)
+      xer(i)=i*ds0*cos(dipangle*pi/180)
+      yel(i)=(i-1)*ds0*sin(dipangle*pi/180)
+      yer(i)=i*ds0*sin(dipangle*pi/180)
+      xcol(i)=0.5d0*(xel(i)+xer(i))
+      ycol(i)=0.5d0*(yel(i)+yer(i))
+      ang(i)=datan2(yer(i)-yel(i),xer(i)-xel(i))
+      !write(14,'(3e16.6)') xcol(i),xel(i),xer(i)
+    enddo
+    !close(14)
+    return
+  end subroutine
 
   subroutine coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
     implicit none
@@ -1409,7 +1480,7 @@ contains
       do j=1,jmax
         k=(i-1)*jmax+j
         xcol(k)=(i-imax/2-0.5d0)*ds0
-        zcol(k)=-(j-0.5d0)*ds0-0.01d0
+        zcol(k)=-(j-0.5d0)*ds0-0.001d0
         xs1(k)=xcol(k)+0.5d0*ds0
         xs2(k)=xcol(k)-0.5d0*ds0
         xs3(k)=xcol(k)-0.5d0*ds0
@@ -1504,11 +1575,10 @@ contains
     integer,intent(in)::NCELLg
     real(8),intent(in)::a0,b0,dc0,mu0
     real(8),intent(out)::a(:),b(:),dc(:),f0(:),fw(:),vw(:)
-    real(8)::len,cent,dep,a_max
+    real(8)::len,cent,dep,a_max,xd
     integer::i
 
     !uniform
-    if(my_rank.eq.0) open(91,file='fparams')
     select case(problem)
     case('2dp','2dn','3dp','3dn','3dh','3dnf','3dhf','2dn3')
       do i=1,NCELLg
@@ -1541,7 +1611,6 @@ contains
         if(slowslip.and.(i.gt.nmain)) vc(i)=1d6
         fw(i)=fw0
         vw(i)=vw0
-        if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
         !if(my_rank.eq.0) write(91,*)a(i),xcol(i),zcol(i)
       end do
 
@@ -1562,7 +1631,7 @@ contains
         vc(i)=vc0
         fw(i)=fw0
         vw(i)=vw0
-        if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
+
       end do
     case('3dph')
       a_max=0.04
@@ -1594,8 +1663,37 @@ contains
         !if(my_rank.eq.0) write(91,*)a(i),xcol(i),zcol(i)
       end do
 
-    end select
+    case('2dnh')
+      a_max=0.025
+      do i=1,NCELLg
+        f0(i)=mu0
+        xd=-ycol(i)/sin(dipangle*pi/180)
 
+        !for BP4
+        if(xd.lt.15d0) then
+          a(i)=a0
+        else if(xd.gt.18d0) then
+          a(i)=a_max
+        else
+          a(i)=a0+(xd-15d0)/3d0*(a_max-a0)
+        end if
+        !a(i)=0.02d0
+        b(i)=b0
+        dc(i)=dc0
+        vc(i)=vc0
+        fw(i)=fw0
+        vw(i)=vw0
+        !if(my_rank.eq.0) write(91,*)a(i),b(i),dc(i)
+        !if(my_rank.eq.0) write(91,*)a(i),xcol(i),zcol(i)
+      end do
+    end select
+    if(my_rank.eq.0) then
+      open(91,file='fparams')
+    do i=1,ncellg
+      write(91,*)a(i),b(i),dc(i)
+    end do
+    close(91)
+    end if
   end subroutine
 
   subroutine loading(problem,NCELLg,sr,taudot,tauddot,sigdot)
@@ -1690,6 +1788,27 @@ contains
       close(15)
       !close(15)
       tauddot=0d0
+    case('2dnh')
+      !BP3 in SEAS
+      open(15,file='sr')
+      edge=ds0*NCELLg
+      do i=1,ncellg
+        v='xx'
+        xx1=load2dnh(xcol(i),ycol(i),edge,dipangle,v)
+        v='xy'
+        xy1=load2dnh(xcol(i),ycol(i),edge,dipangle,v)
+        v='yy'
+        yy1=load2dnh(xcol(i),ycol(i),edge,dipangle,v)
+        !tau
+        ret1=0.5d0*(xx1-yy1)*dsin(-2*ang(i))+xy1*dcos(-2*ang(i))
+        taudot(i)=vpl*ret1
+        !sigma
+        ret1=-(0.5d0*(xx1+yy1)-0.5d0*(xx1-yy1)*dcos(2*ang(i))-xy1*dsin(2*ang(i)))
+        sigdot(i)=vpl*ret1
+        write(15,*) taudot(i),sigdot(i)
+      end do
+      close(15)
+     tauddot=0d0
     case('3dn','3dh')
       taudot=sr
       !taudot=0d0
@@ -1823,7 +1942,7 @@ contains
       enddo
       !call MPI_SCATTERv(sum_gsG,NCELL,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
 
-    case('2dn')
+    case('2dn','2dnh')
       do i = 1, NCELL
         i_=vars(i)
         phitmp(i) = y(3*i-2)
@@ -2262,7 +2381,7 @@ contains
         do i=1,NCELL
           if(abs(yerr(4*i-3)/yscal(4*i-3))/eps.gt.errmax) errmax=abs(yerr(4*i-3)/yscal(4*i-3))/eps
         end do
-      case('3dnf','3dhf','2dn')
+      case('3dnf','3dhf','2dn','2dnh')
         do i=1,NCELL
           if(abs(yerr(3*i-1)/yscal(3*i-1))/eps.gt.errmax) errmax=abs(yerr(3*i-1)/yscal(3*i-1))/eps
         end do
@@ -2382,13 +2501,13 @@ contains
     real(8)::rr,lc
     integer::p
 
-    vel=0d0
-    lc=0.3d0
-    do i=1,NCELLg
-      rr=ycol(i)**2+zcol(i)**2
-      if(rr<lc**2) vel(i)=5d0/rigid*sqrt(lc**2-rr)
-    end do
-    ! vel=1d0
+    ! vel=0d0
+    ! lc=0.3d0
+    ! do i=1,NCELLg
+    !   rr=ycol(i)**2+zcol(i)**2
+    !   if(rr<lc**2) vel(i)=5d0/rigid*sqrt(lc**2-rr)
+    ! end do
+    vel=1d0
     ! p=532
     ! vel(p)=1d0
 
@@ -2429,6 +2548,20 @@ contains
         do i=1,NCELLg
           rr=(ycol(i)-ycol(p))**2+(zcol(i)-zcol(p))**2
           write(29,'(6e16.4)') ycol(i),zcol(i),sqrt(rr),35d0+a(i),b(i),dc(i)
+        end do
+      end if
+    case('2dnh')
+      st_bemv%v='xx'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xx,st_bemv,st_ctl,a,vel)
+      st_bemv%v='xy'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_xy,st_bemv,st_ctl,b,vel)
+      st_bemv%v='yy'
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_yy,st_bemv,st_ctl,dc,vel)
+      if(my_rank.eq.0) then
+        do i=1,NCELLg
+          taudot(i)=0.5d0*(a(i)-dc(i))*dsin(-2*ang(i))+b(i)*dcos(-2*ang(i))
+          sigdot(i)=-(0.5d0*(a(i)+dc(i))-0.5d0*(a(i)-dc(i))*dcos(2*ang(i))-b(i)*dsin(2*ang(i)))
+          write(29,'(4e16.4)') xcol(i),ycol(i),taudot(i),sigdot(i)
         end do
       end if
     end select
