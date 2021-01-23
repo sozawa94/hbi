@@ -51,7 +51,8 @@ program main
   real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:)
 
 
-  integer::lp,i,i_,j,k,m,counts,interval,lrtrn,nl,ios,nmain,locid(10)
+  integer::lp,i,i_,j,k,m,counts,interval,lrtrn,nl,ios,nmain
+  integer,allocatable::locid(:)
   integer::hypoloc(1),load,eventcount,thec,inloc,sw
 
   !controls
@@ -586,6 +587,7 @@ program main
 
     !SEAS BP5
     if(problem.eq.'3dph')then
+      allocate(locid(10))
       locid=(/521,1361,2001,2641,3441,1051,1331,2011,2651,1983/)
       locid=(/2161,5361,7921,10481,13681,4101,5381,7941,10501,7965/)
       open(101,file="output/fltst_strk-36dp+00")
@@ -602,7 +604,8 @@ program main
       open(130,file="output/rupture.dat")
     end if
     if(problem.eq.'2dnh')then
-      locid=(/2161,5361,7921,10481,13681,4101,5381,7941,10501,7965/)
+      allocate(locid(12))
+      locid=(/1,101,201,301,401,501,601,701,801,1001,1201,1401/)
       open(101,file="output/fltst_dp000")
       open(102,file="output/fltst_dp025")
       open(103,file="output/fltst_dp050")
@@ -775,7 +778,7 @@ program main
       call output_monitor()
       if(problem.eq.'3dph')  call output_local_BP(locid)
       if(problem.eq.'3dph')  call output_global_BP()
-      if(problem.eq.'2dnh')  call output_local_BP3()
+      if(problem.eq.'2dnh'.and.mod(k,3).eq.0)  call output_local_BP3()
 
       !do i=1,size(vmax)
       !  vmax(i)=max(vmax(i),vel(i))
@@ -1038,9 +1041,9 @@ contains
   subroutine output_local_BP3()
     implicit none
     !integer,intent(in)::locid(:)
-    do i=1,1
-      write(100+i,'(e22.14,5e15.7)') x,disp(1),log10(vel(1)),tau(1),sigma(1),log10(dc(1)/vref*exp((phi(1)-f0(1)/b(1))))
-      !write(100+i,'(e22.14,4e15.7)') x,disp(locid(i)),log10(vel(locid(i))),tau(locid(i)),log10(dc(locid(i))/vref*exp((phi(locid(i))-f0(locid(i)))/b(locid(i))))
+    do i=1,12
+      !write(100+i,'(e22.14,5e15.7)') x,disp(1),log10(vel(1)),tau(1),sigma(1),log10(dc(1)/vref*exp((phi(1)-f0(1))/b(1)))
+      write(100+i,'(e22.14,5e15.7)') x,disp(locid(i)),log10(vel(locid(i))),tau(locid(i)),sigma(locid(i)),log10(dc(locid(i))/vref*exp((phi(locid(i))-f0(locid(i)))/b(locid(i))))
     end do
   end subroutine
   subroutine output_global_BP()
@@ -1667,7 +1670,7 @@ contains
       a_max=0.025
       do i=1,NCELLg
         f0(i)=mu0
-        xd=-ycol(i)/sin(dipangle*pi/180)
+        xd=ycol(i)/sin(dipangle*pi/180)
 
         !for BP4
         if(xd.lt.15d0) then
