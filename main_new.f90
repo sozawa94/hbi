@@ -60,7 +60,7 @@ program main
   logical::backslip,sigmaconst,foward,inverse,geofromfile,melange,creep
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta
-  real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,muinit,intau
+  real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,muinit,intau,trelax
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax
   real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle
 
@@ -73,7 +73,7 @@ program main
   !for time integration
   real(8)::x !time
   real(8),allocatable::y(:),yscal(:),dydx(:),yg(:)
-  real(8)::eps_r,errmax_gb,dtinit,dtnxt,dttry,dtdid,dtmin,tp
+  real(8)::eps_r,errmax_gb,dtinit,dtnxt,dttry,dtdid,dtmin,tp,fwid
 
   integer::r1,r2,r3,NVER,amari,out,kmax,loci,locj,loc,stat,nth
   integer,allocatable::rupsG(:)
@@ -129,6 +129,7 @@ program main
   fw0=0.3d0
   dtinit=1d0
   tp=86400d0
+  trelax=1d15
   !number=0
 
 
@@ -206,6 +207,8 @@ program main
       read(pvalue,*) amp
     case('wid')
       read(pvalue,*) wid
+    case('fwid')
+      read(pvalue,*) fwid
     case('dcscale')
       read (pvalue,*) dcscale
     case('nuclei')
@@ -244,6 +247,9 @@ program main
       read(pvalue,*) minsig
     case('dipangle')
       read(pvalue,*) dipangle
+    case('trelax')
+      read(pvalue,*) trelax
+
     end select
   end do
   close(33)
@@ -298,7 +304,7 @@ program main
     allocate(xel(NCELLg),xer(NCELLg))
     xel=0d0;xer=0d0
     allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg))
-  case('2dn','2dnh','2dn3')
+  case('2dn','2dnh','2dn3','25d')
     allocate(ang(NCELLg),xel(NCELLg),xer(NCELLg),yel(NCELLg),yer(NCELLg))
     ang=0d0;xel=0d0;xer=0d0;yel=0d0;yer=0d0
     allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg))
@@ -337,7 +343,7 @@ program main
   select case(problem)
   case('2dp','2dh')
     call coordinate2dp(NCELLg,ds0,xel,xer,xcol)
-  case('2dn','2dn3') !geometry file is necessary
+  case('2dn','2dn3','25d') !geometry file is necessary
     call coordinate2dn(geofile,NCELLg,xel,xer,yel,yer,xcol,ycol,ang,ds)
   case('2dnh')
     call coordinate2dnh()
@@ -373,12 +379,21 @@ program main
     st_bemv%problem=problem
 
   case('2dn','2dn3','2dnh')
-    allocate(st_bemv%xcol(NCELLg),st_bemv%xel(NCELLg),st_bemv%xer(NCELLg))
+    allocate(st_bemv%xcol(NCELLg),st_bemv%xel(NCELLg),st_bemv%xer(NCELLg),st_bemv%ds(NCELLg))
     allocate(st_bemv%ycol(NCELLg),st_bemv%yel(NCELLg),st_bemv%yer(NCELLg),st_bemv%ang(NCELLg))
     st_bemv%xcol=xcol;st_bemv%xel=xel;st_bemv%xer=xer
     st_bemv%ycol=ycol;st_bemv%yel=yel;st_bemv%yer=yer
-    st_bemv%ang=ang
+    st_bemv%ang=ang; st_bemv%ds=ds
     st_bemv%problem=problem
+
+  case('25d')
+    allocate(st_bemv%xcol(NCELLg),st_bemv%xel(NCELLg),st_bemv%xer(NCELLg),st_bemv%ds(NCELLg))
+    allocate(st_bemv%ycol(NCELLg),st_bemv%yel(NCELLg),st_bemv%yer(NCELLg),st_bemv%ang(NCELLg))
+    st_bemv%xcol=xcol;st_bemv%xel=xel;st_bemv%xer=xer
+    st_bemv%ycol=ycol;st_bemv%yel=yel;st_bemv%yer=yer
+    st_bemv%ang=ang; st_bemv%ds=ds
+    st_bemv%problem=problem
+    st_bemv%w=fwid
 
   case('3dp','3dph')
     allocate(st_bemv%xcol(NCELLg),st_bemv%zcol(NCELLg))
@@ -437,7 +452,7 @@ program main
   case('2dp','2dh','2dn3','3dp','3dph')
     lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,eps_h)
 
-  case('2dn','2dnh')
+  case('2dn','2dnh','25d')
     st_bemv%v='xx'
     lrtrn=HACApK_generate(st_leafmtxp_xx,st_bemv,st_ctl,coord,eps_h)
     st_bemv%v='xy'
@@ -542,7 +557,7 @@ program main
     call initcond2dnh(phi,sigma,tau,disp,vel)
   case('3dph')
     call initcond3dph(phi,sigma,tau,disp,vel)
-  case('2dn')
+  case('2dn','25d')
     call initcond2d(psi,muinit,phi,sigma,tau,disp,vel)
     !const stress
     sigma=sigma0
@@ -671,7 +686,7 @@ program main
     end do
     !call MPI_SCATTERv(yG,2*rcounts,2*displs,MPI_REAL8,y,2*NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
 
-  case('2dn','2dnh','3dnf','3dhf')
+  case('2dn','2dnh','3dnf','3dhf','25d')
     do i=1,NCELL
       i_=vars(i)
       !write(*,*) my_rank,i_
@@ -740,7 +755,7 @@ program main
         disp(i)=disp(i)+vel(i)*dtdid
         mu(i)=tau(i)/sigma(i)
       end do
-    case('2dn','2dnh','3dnf','3dhf')
+    case('2dn','2dnh','3dnf','3dhf','25d')
       call MPI_ALLGATHERv(y,3*NCELL,MPI_REAL8,yG,3*rcounts,3*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
       do i = 1, NCELLg
         phi(i) = yG(3*i-2)
@@ -823,6 +838,7 @@ program main
       if(outfield) then
         write(*,*) 'time step=' ,k
         call output_field()
+        write(47) vel
         !call output_field_fd2d()
 
       end if
@@ -959,7 +975,7 @@ Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 select case(problem)
 case('2dp','2dh','2dn3','3dp','3dph')
   lrtrn=HACApK_free_leafmtxp(st_leafmtxps)
-case('2dn','2dnh')
+case('2dn','2dnh','25d')
   !lrtrn=HACApK_free_leafmtxp(st_leafmtxps)
   !lrtrn=HACApK_free_leafmtxp(st_leafmtxpn)
   lrtrn=HACApK_free_leafmtxp(st_leafmtxp_xx)
@@ -1014,7 +1030,7 @@ contains
       end do
       write(50,*)
       write(50,*)
-    case('2dn','2dnh','2dn3')
+    case('2dn','2dnh','2dn3','25d')
       do i=1,NCELLg
         if(melange)write(50,'(i0,10e15.6,i10)') i,xcol(i),ycol(i),log10(abs(vel(i))),tau(i),sigma(i),mu(i),disp(i),phi(i),x,ieta*tau(i)/vel(i),k
         if(.not.melange) write(50,'(i0,9e15.6,i10)') i,xcol(i),ycol(i),log10(abs(vel(i))),tau(i),sigma(i),mu(i),disp(i),phi(i),x,k
@@ -1404,6 +1420,11 @@ contains
         yer(i)=amp*tanh((xer(i)-0d0)/5.0)
         !yel(i)=2.5*tanh((xel(i)-25d0)/5.0)-2.5*tanh((xel(i)+25d0)/5.0)
         !yer(i)=2.5*tanh((xer(i)-25d0)/5.0)-2.5*tanh((xer(i)+25d0)/5.0)
+      case('sbend')
+        xel(i)=ds0*(i-1-NCELLg/2)
+        xer(i)=ds0*(i-NCELLg/2)
+        yel(i)=amp*log(1.0+exp(xel(i)/wid))
+        yer(i)=amp*log(1.0+exp(xer(i)/wid))
       end select
 
       !yel(i)=2.5*tanh((xel(i)-25d0)/5.0)-2.5*tanh((xel(i)+25d0)/5.0)
@@ -1492,23 +1513,26 @@ contains
     real(8),intent(in)::ds0
     real(8),intent(out)::xcol(:),zcol(:)
     real(8),intent(out)::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
+    real(8)::dx,dz
     integer::i,j,k
 
+    dx=ds0
+    dz=10d0
     do i=1,imax
       do j=1,jmax
         k=(i-1)*jmax+j
-        xcol(k)=(i-imax/2-0.5d0)*ds0
-        zcol(k)=-(j-0.5d0)*ds0-1d-9
+        xcol(k)=(i-imax/2-0.5d0)*dx
+        zcol(k)=-(j-0.5d0)*dz-1d-9
         !xcol(k)=(i-imax/2-0.5d0)*ds0
         !zcol(k)=(j-jmax/2-0.5d0)*ds0
-        xs1(k)=xcol(k)+0.5d0*ds0
-        xs2(k)=xcol(k)-0.5d0*ds0
-        xs3(k)=xcol(k)-0.5d0*ds0
-        xs4(k)=xcol(k)+0.5d0*ds0
-        zs1(k)=zcol(k)+0.5d0*ds0
-        zs2(k)=zcol(k)+0.5d0*ds0
-        zs3(k)=zcol(k)-0.5d0*ds0
-        zs4(k)=zcol(k)-0.5d0*ds0
+        xs1(k)=xcol(k)+0.5d0*dx
+        xs2(k)=xcol(k)-0.5d0*dx
+        xs3(k)=xcol(k)-0.5d0*dx
+        xs4(k)=xcol(k)+0.5d0*dx
+        zs1(k)=zcol(k)+0.5d0*dz
+        zs2(k)=zcol(k)+0.5d0*dz
+        zs3(k)=zcol(k)-0.5d0*dz
+        zs4(k)=zcol(k)-0.5d0*dz
       end do
     end do
     return
@@ -1702,7 +1726,7 @@ write(*,*) imax,jmax
 
     !uniform
     select case(problem)
-    case('2dp','2dn','3dp','3dn','3dh','3dnf','3dhf','2dn3')
+    case('2dp','2dn','3dp','3dn','3dh','3dnf','3dhf','2dn3','25d')
       do i=1,NCELLg
         a(i)=a0
         !if(abs(xcol(i)-50d0).gt.30d0) a(i)=0.024d0 !for cycle
@@ -1866,7 +1890,7 @@ write(*,*) imax,jmax
       end select
       close(15)
 
-    case('2dn')
+    case('2dn','25d')
       open(15,file='sr')
       !write(*,*) load
       do i=1,NCELLg
@@ -1875,6 +1899,8 @@ write(*,*) imax,jmax
           lang=ang(i)+(45d0-psi)/180d0*pi
           taudot(i)=sr*cos(2*lang)
           sigdot(i)=sr*sin(2*lang)
+          taudot(i)=sr
+          sigdot(i)=0d0
           write(15,*) taudot(i),sigdot(i)
         case(1)
           !edge=ds*NCELLg/2
@@ -2070,7 +2096,7 @@ write(*,*) imax,jmax
       enddo
       !call MPI_SCATTERv(sum_gsG,NCELL,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
 
-    case('2dn','2dnh')
+    case('2dn','2dnh','25d')
       do i = 1, NCELL
         i_=vars(i)
         phitmp(i) = y(3*i-2)
@@ -2113,7 +2139,7 @@ write(*,*) imax,jmax
       do i=1,NCELL
         i_=vars(i)
         sum_gs(i)=sum_gs(i)+taudot(i_)
-        sum_gn(i)=sum_gn(i)+sigdot(i_)
+        sum_gn(i)=sum_gn(i)+sigdot(i_)-(sigmatmp(i)-sigma0)/trelax
       end do
       if(sigmaconst) sum_gn=0d0
 
@@ -2509,7 +2535,7 @@ write(*,*) imax,jmax
         do i=1,NCELL
           if(abs(yerr(4*i-3)/yscal(4*i-3))/eps.gt.errmax) errmax=abs(yerr(4*i-3)/yscal(4*i-3))/eps
         end do
-      case('3dnf','3dhf','2dn','2dnh')
+      case('3dnf','3dhf','2dn','2dnh','25d')
         do i=1,NCELL
           if(abs(yerr(3*i-1)/yscal(3*i-1))/eps.gt.errmax) errmax=abs(yerr(3*i-1)/yscal(3*i-1))/eps
         end do
@@ -2644,7 +2670,7 @@ write(*,*) imax,jmax
     open(29,file=fname)
 
     select case(problem)
-    case('2dn')
+    case('2dn','25d')
       !slip from file
       ! open(45,file='../fd2d/rupt2.dat')
       ! do i=1,NCELLg
@@ -2664,8 +2690,9 @@ write(*,*) imax,jmax
           write(29,'(4e16.4)') xcol(i),ang(i),taudot(i),sigdot(i)
         end do
       end if
-    case('3dph')
+    case('3dp','3dph')
       lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,a,vel)
+
       if(my_rank.eq.0) then
         do i=1,NCELLg
           write(29,'(3e16.4)') xcol(i),zcol(i),a(i)

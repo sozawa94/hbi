@@ -11,7 +11,8 @@ module m_HACApK_calc_entry_ij
     real(8),pointer::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
     real(8),pointer::ys1(:),ys2(:),ys3(:),ys4(:)
     real(8),pointer::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:)
-    real(8),pointer::strike(:),dip(:)
+    real(8),pointer::strike(:),dip(:),ds(:)
+    real(8)::w
     !real(8),pointer::ds
     character(128)::v,md
   end type st_HACApK_calc_entry
@@ -63,6 +64,9 @@ contains
     case('3dh','3dhf') !half space
       HACApK_entry_ij=matel3dh_ij(i,j,st_bemv)
       !HACApK_entry_ij=matelh1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%strike,st_bemv%dip,st_bemv%v,st_bemv%md)
+    case('25d')
+      !HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
+      HACApK_entry_ij=matelrec_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%ds,st_bemv%ang,st_bemv%w,st_bemv%v)
     end select
 
   end function HACApK_entry_ij
@@ -728,31 +732,37 @@ contains
     end select
     return
   end function matelh1_ij
-real(8) function matelrec_ij(i,j,xcol,ycol,zcol,strike,dip,v,md)
+real(8) function matelrec_ij(i,j,xcol,ycol,ds,strike,w,v)
   implicit none
   integer,intent(in)::i,j
-  real(8),intent(in)::xcol(:),ycol(:),zcol(:),strike(:),dip(:)
-  character(128),intent(in)::v,md
+  real(8),intent(in)::xcol(:),ycol(:),ds(:),strike(:),w
+  character(128),intent(in)::v
   integer::iret
-  real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha,ds
-
+  real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha
+  real(8)::exx,eyy,ezz,exy,eyz,ezx
   !rotation so that strike is parallel to y axis
   alpha=2d0/3d0 !poisson solid
-  ds=0.025
+
   dx=cos(strike(j))*(xcol(i)-xcol(j))+sin(strike(j))*(ycol(i)-ycol(j))
   dy=-sin(strike(j))*(xcol(i)-xcol(j))+cos(strike(j))*(ycol(i)-ycol(j))
-  select case(md)
-  case('st')
-    call dc3d(alpha,dx,dy,zcol(i),zcol(j),dip(j),-0.5d0*ds,0.5d0*ds,-0.5d0*ds,0.5d0*ds,1d-8,0d0,0d0, ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,iret)
-  case('dp')
-    call dc3d(alpha,dx,dy,zcol(i),zcol(j),dip(j),-0.5d0*ds,0.5d0*ds,-0.5d0*ds,0.5d0*ds,0d0,1d-8,0d0, ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,iret)
-  end select
-  sxx=rigid*(uxx+uyy+uzz)+2*rigid*uxx
-  syy=rigid*(uxx+uyy+uzz)+2*rigid*uyy
-  szz=rigid*(uxx+uyy+uzz)+2*rigid*uzz
-  sxy=2*rigid*uxy
-  sxz=2*rigid*uxz
-  syz=2*rigid*uyz
+  !select case(md)
+  !case('st')
+    call dc3d(alpha,dx,dy,-400d0,400d0,90.d0,-0.5d0*ds(j),0.5d0*ds(j),-0.5d0*w,0.5d0*w,1d0,0d0,0d0, ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,iret)
+  ! case('dp')
+  !   call dc3d(alpha,dx,dy,zcol(i),zcol(j),dip(j),-0.5d0*ds,0.5d0*ds,-0.5d0*ds,0.5d0*ds,0d0,1d-8,0d0, ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,iret)
+  !end select
+  exx=-uxx
+  eyy=-uyy
+  ezz=-uzz
+  exy=-0.5d0*(uxy+uyx)
+  eyz=-0.5d0*(uyz+uzy)
+  ezx=-0.5d0*(uzx+uxz)
+  sxx=rigid*(exx+eyy+ezz)+2*rigid*exx
+  syy=rigid*(exx+eyy+ezz)+2*rigid*eyy
+  szz=rigid*(exx+eyy+ezz)+2*rigid*ezz
+  sxy=2*rigid*exy
+  sxz=2*rigid*ezx
+  syz=2*rigid*eyz
 
   !rerotation
   select case(v)
@@ -760,14 +770,14 @@ real(8) function matelrec_ij(i,j,xcol,ycol,zcol,strike,dip,v,md)
     matelrec_ij=cos(strike(j))*(sxx*cos(strike(j))-sxy*sin(strike(j)))-sin(strike(j))*(sxy*cos(strike(j))-syy*sin(strike(j)))
   case('yy')
     matelrec_ij=sin(strike(j))*(sxy*cos(strike(j))+sxx*sin(strike(j)))+cos(strike(j))*(syy*cos(strike(j))+sxy*sin(strike(j)))
-  case('zz')
-    matelrec_ij=szz
+  !case('zz')
+  !  matelrec_ij=szz
   case('xy')
     matelrec_ij=sin(strike(j))*(sxx*cos(strike(j))-sxy*sin(strike(j)))+cos(strike(j))*(sxy*cos(strike(j))-syy*sin(strike(j)))
-  case('xz')
-    matelrec_ij=sxz*cos(strike(j))-syz*sin(strike(j))
-  case('yz')
-    matelrec_ij=syz*cos(strike(j))+sxz*sin(strike(j))
+  !case('xz')
+  !  matelrec_ij=sxz*cos(strike(j))-syz*sin(strike(j))
+  !case('yz')
+  !  matelrec_ij=syz*cos(strike(j))+sxz*sin(strike(j))
   end select
   return
 end function matelrec_ij
