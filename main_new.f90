@@ -330,7 +330,7 @@ program main
   select case(problem) !for Runge-Kutta
   case('2dp','2dh','2dn3','3dp','3dph')
     allocate(y(2*NCELL),yscal(2*NCELL),dydx(2*NCELL),yg(2*NCELLg))
-  case('2dn','2dnh','3dnf','3dhf')
+  case('2dn','2dnh','3dnf','3dhf','25d')
     allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL),yg(3*NCELLg))
   case('3dn','3dh')
     allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL),yg(4*NCELLg))
@@ -723,7 +723,9 @@ program main
     call rkqs(y,dydx,x,dttry,eps_r,yscal,dtdid,dtnxt,errmax_gb)
 
     !limitsigma
-    if(limitsigma.and.(problem.eq.'2dn')) then
+    select case(problem)
+    case('2dn','3dnf','3dn','25d')
+    if(limitsigma) then
       do i=1,NCELL
         if(y(3*i).lt.minsig) then
           normal=y(3*i)
@@ -737,6 +739,7 @@ program main
         end if
       end do
     end if
+  end select
 
     Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
@@ -875,7 +878,7 @@ program main
       if(maxval(abs(vel)).lt.5d-3) then
         slipping=.false.
         select case(problem)
-        case('2dn','2dp','2dh','2dn3')
+        case('2dn','2dp','2dh','2dn3','25d')
           moment=sum((disp-idisp)*ds)
         case('3dp','3dn','3dh','3dnf','3dhf','3dph')
           moment=sum(disp-idisp)
@@ -1014,7 +1017,7 @@ contains
     implicit none
     time2=MPi_Wtime()
     select case(problem)
-    case('2dp','3dp','2dh','2dn','2dnh','2dn3','3dph','3dnf','3dhf')
+    case('2dp','3dp','2dh','2dn','2dnh','2dn3','3dph','3dnf','3dhf','25d')
       write(52,'(i7,f19.4,6e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxval(sigma),minval(sigma),errmax_gb,time2-time1
       !write(52,'(i7,f19.4,4e16.5,i10,f16.4)')k,x,maxval(log10(abs(vel(10001:)))),sum(abs(disp(10001:))),log10(maxval(vel(1:nmain))),sum(disp(1:nmain)),maxloc(vel),time2-time1
     case('3dn','3dh')
@@ -2139,7 +2142,8 @@ write(*,*) imax,jmax
       do i=1,NCELL
         i_=vars(i)
         sum_gs(i)=sum_gs(i)+taudot(i_)
-        sum_gn(i)=sum_gn(i)+sigdot(i_)-(sigmatmp(i)-sigma0)/trelax
+        sum_gn(i)=sum_gn(i)+sigdot(i_)
+        !sum_gn(i)=sum_gn(i)+sigdot(i_)-(sigmatmp(i)-sigma0)/trelax
       end do
       if(sigmaconst) sum_gn=0d0
 
