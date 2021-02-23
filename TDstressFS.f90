@@ -39,6 +39,7 @@ contains
     ! [StsFSC,StrFSC] = TDstress_HarFunc(X,Y,Z,P1,P2,P3,Ss,Ds,Ts,mu,lambda);
     call TDstress_HarFunc(X,Y,Z,P1,P2,P3,Ss,Ds,Ts,mu,lambda,&
     &Sxx_h,Syy_h,Szz_h,Sxy_h,Sxz_h,Syz_h)
+    !Sxx_h=0d0;Syy_h=0d0;szz_h=0d0;Sxy_h=0d0;Sxz_h=0d0;Syz_h=0d0
     !write(*,*)'Sxx_h,Syy_h,Szz_h,Sxy_h,Sxz_h,Syz_h'
     !write(*,*)Sxx_h,Syy_h,Szz_h,Sxy_h,Sxz_h,Syz_h
     ! % Calculate image dislocation contribution to strains and stresses
@@ -481,7 +482,7 @@ contains
     REAL*8, DIMENSION(3), INTENT(IN) :: SideVec, TriVertex
     REAL*8, INTENT(OUT) :: exx,eyy,ezz,exy,exz,eyz
     REAL*8 :: exx_,eyy_,ezz_,exy_,exz_,eyz_
-    real(8),parameter::pi=3.14159265358979d0
+    real(8),parameter::pi=4*atan(1.d0)
 
     REAL*8 :: by1, bz1, v0, w0, y1, z1
     REAL*8, DIMENSION(2) :: r1, r2, r3
@@ -548,7 +549,7 @@ contains
   eZ = (/ 0.0D0, 0.0D0, 1.0D0 /)
   beta = acos(-SideVec(3)/sqrt(dot_product(SideVec,SideVec)))!;
   !
-  if ((abs(beta)<1d-8).or.(abs(pi-beta)<1d-8)) then
+  if ((abs(beta)<1d-15).or.(abs(pi-beta)<1d-15)) then
   !     Stress = zeros(length(X),6);
   Sxx=0d0;Syy=0d0;Szz=0d0;Sxy=0d0;Sxz=0d0;Syz=0d0
   !     Strain = zeros(length(X),6);
@@ -672,7 +673,7 @@ contains
     !test point at (x, y, z), and each of these is a simple REAL*8 scalar number
 
     IMPLICIT NONE
-    REAL*8, PARAMETER :: pi = 3.14159265358979D0
+    REAL*8, PARAMETER :: pi = 4*atan(1.d0)
     REAL*8, INTENT(IN) :: x, y, z, alpha, bx, by, bz, nu
     REAL*8, INTENT(OUT) :: Exx,Eyy,Ezz,Exy,Exz,Eyz
     REAL*8 :: cosA, eta, r, sinA, ux, uy, uz, vx, vy, vz, wx, wy, wz, zz, zeta
@@ -746,7 +747,7 @@ contains
     real(8),intent(out)::v11,v22,v33,v12,v13,v23
     real(8)::sinB,cosB,cotB,y3b,z1b,z3b,rb2,rb,W1,W2,W3,W4,W5,W6,W7,W8,W9,N1
     real(8)::rFib_ry2,rFib_ry1,rFib_ry3
-    REAL*8, PARAMETER :: pi = 3.14159265358979D0
+    REAL*8, PARAMETER :: pi = 4*atan(1.d0)
   ! % AngDisStrainFSC calculates the harmonic function contribution to the
   ! % strains associated with an angular dislocation in an elastic half-space.
   !
