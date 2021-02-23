@@ -89,20 +89,32 @@ contains
  integer*4 :: isct(*),irct(*)
  integer*4 :: ISTATUS(MPI_STATUS_SIZE)
  integer*4,pointer :: lpmd(:),lnp(:),lsp(:),lthr(:)
+ real*8,pointer :: time(:)
 ! integer*4,dimension(:),allocatable :: ISTATUS
  1000 format(5(a,i10)/)
  2000 format(5(a,f10.4)/)
 
  lpmd => st_ctl%lpmd(:); lnp(0:) => st_ctl%lnp; lsp(0:) => st_ctl%lsp;lthr(0:) => st_ctl%lthr
+ time => st_ctl%time(:)
 ! allocate(ISTATUS(MPI_STATUS_SIZE))
  mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); icomm=lpmd(1)
  ndnr_s=lpmd(6); ndnr_e=lpmd(7); ndnr=lpmd(5)
+ 
+!$omp master
+ call MPI_Barrier( icomm, ierr )
+ st_time=MPI_Wtime()
+!$omp end master
+ 
  zau(:nd)=0.0d0
 !$omp barrier
  call HACApK_adot_body_lfmtx_hyp(zau,st_leafmtxp,st_ctl,zu,nd)
 !$omp barrier
 !$omp master
+ call MPI_Barrier( icomm, ierr )
+ en_time=MPI_Wtime()
+ time(1)=time(1)+en_time-st_time
  if(nrank>1)then
+   st_time=MPI_Wtime()
    wws(1:lnp(mpinr))=zau(lsp(mpinr):lsp(mpinr)+lnp(mpinr)-1)
    ncdp=mod(mpinr+1,nrank)
    ncsp=mod(mpinr+nrank-1,nrank)
@@ -117,9 +129,683 @@ contains
      isct(:2)=irct(:2)
    enddo
  endif
+ call MPI_Barrier( icomm, ierr )
+ en_time=MPI_Wtime()
+ time(2)=time(2)+en_time-st_time
 !$omp end master
 ! stop
  end subroutine HACApK_adot_lfmtx_hyp
+
+!***HACApK_adot_blr_hyp
+ subroutine HACApK_adot_blr_hyp(zau,st_leafmtxp,st_ctl,zu,wws,wwr,nd)
+ include 'mpif.h'
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8 :: zau(:),zu(:),wws(:),wwr(:)
+ integer*4,pointer :: lpmd(:)
+ real*8,pointer :: time(:)
+ real*8, allocatable :: zw(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+ lpmd => st_ctl%lpmd(:); time => st_ctl%time(:)
+ mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); icomm=lpmd(1); icommt=lpmd(31); icomml=lpmd(35); nrank_l=lpmd(36); mpinrt=lpmd(33)
+ nlf=st_leafmtxp%nlf; nlfl=st_leafmtxp%nlfl; nlft=st_leafmtxp%nlft; nlfalt=st_leafmtxp%nlfalt
+ ndlfs=st_leafmtxp%ndlfs
+
+ allocate(zw(nd)); zw=0.0d0
+ call HACApK_adot_blrmtx_hyp4(zau,st_leafmtxp,st_ctl,zu,wws,wwr,nd)
+       do irl=1,nlfalt; ibll=mod(irl-1,nrank_l)
+         if(ibll/=mpinrt) cycle
+         irlstrtl=st_leafmtxp%lbstrtl(irl) ; irlnd=st_leafmtxp%lbndl(irl)
+         zw(irlstrtl:irlstrtl+irlnd-1)=zau(irlstrtl:irlstrtl+irlnd-1)
+       enddo
+
+!  write(mpilog,*) zw(1:600)
+!  write(mpilog,*) ' ',zw(1:5)
+!  write(mpilog,*) ' ',zw(308:312)
+!  write(mpilog,*) ' ',zw(313:318)
+!  write(mpilog,*) ' ',zw(596:600)
+ call MPI_Allreduce(zw, zau, nd, MPI_REAL8, MPI_SUM, icommt, ierr)
+
+! stop
+
+ end subroutine HACApK_adot_blr_hyp
+
+!***HACApK_adot_blrmtx_hyp4
+ subroutine HACApK_adot_blrmtx_hyp4(zau,st_leafmtxp,st_ctl,zu,wws,wwr,nd)
+ include 'mpif.h'
+ integer ISTATUS(MPI_STATUS_SIZE)
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8 :: zau(:),zu(:),wws(:),wwr(:)
+ integer*4,pointer :: lpmd(:),lbl2t(:)
+ integer*4,allocatable :: ireqs(:),ireqr(:)
+ real*8,pointer :: time(:)
+ real*8, allocatable :: zw(:),zw2(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+! print*,'HACApK_adot_blrmtx_hyp4 is called'
+
+ lpmd => st_ctl%lpmd(:); time => st_ctl%time(:); lbl2t(0:) => st_leafmtxp%lbl2t(:)
+ mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); nrank_l=lpmd(36); mpinrl=lpmd(37); mpinrt=lpmd(33)
+ icomm=lpmd(1); icommt=lpmd(31); icomml=lpmd(35); 
+ nlf=st_leafmtxp%nlf; nlfl=st_leafmtxp%nlfl; nlft=st_leafmtxp%nlft; nlfalt=st_leafmtxp%nlfalt
+ ndlfs=st_leafmtxp%ndlfs
+ allocate(ireqs(0:nrank_l-1),ireqr(0:nrank_l-1))
+
+!$omp master
+ call MPI_Barrier( icomm, ierr )
+ st_time=MPI_Wtime()
+!$omp end master
+
+ zau(:nd)=0.0d0
+!$omp barrier
+ call HACApK_adot_body_lfmtx_hyp(zau,st_leafmtxp,st_ctl,zu,nd)
+!$omp barrier
+!$omp master
+ call MPI_Barrier( icomm, ierr )
+ en_time=MPI_Wtime()
+ time(1)=time(1)+en_time-st_time
+ if(nrank>1)then
+    st_time=MPI_Wtime()
+       ilp=1
+       do irl=1,nlfl
+         ibl=st_leafmtxp%lnlfl2g(1,irl); ibll=(ibl-1)/nlfalt+1
+         irlstrtl=st_leafmtxp%lbstrtl(ibll) ; irlnd=st_leafmtxp%lbndl(ibll)
+         wws(ilp:ilp+irlnd-1)=zau(irlstrtl:irlstrtl+irlnd-1)
+         ilp=ilp+irlnd
+       enddo
+!!!     call MPI_Allreduce(wws, wwr, ndlfs, MPI_REAL8, MPI_SUM, icommt, ierr)
+     call MPI_reduce(wws, wwr, ndlfs, MPI_REAL8, MPI_SUM, mpinrl, icommt, ierr)
+     en_time=MPI_Wtime()
+     time(2)=time(2)+en_time-st_time
+
+     allocate(zw(nd)); 
+     
+     is=1
+     do irl=0,nrank_l-1
+       itag=1; irlnd=st_leafmtxp%lbndlfs(irl)
+       if(mpinrl==irl .and. mpinrl==mpinrt) then
+         zw(is:is+irlnd-1)=wwr(1:irlnd)
+       else
+!         print*,'mpinrl=',mpinrl,' ;irl=',irl,' ;is=',is, ' ;irlnd=',irlnd
+         if(lbl2t(irl)==1) call MPI_IRECV(zw(is), irlnd, MPI_REAL8, irl, itag, icomml, ireqr(irl),ierr)
+       endif
+       is=is+irlnd
+     enddo
+     if(lbl2t(mpinrl)==1)then
+       do irl=0,nrank_l-1
+         if(mpinrl==irl) cycle
+         call MPI_ISEND(wwr, ndlfs, MPI_REAL8, irl, itag, icomml, ireqs(irl),ierr)
+       enddo
+     endif
+     
+       ilp=1
+       do irl=1,nlfl
+         ibl=st_leafmtxp%lnlfl2g(1,irl); ibll=(ibl-1)/nlfalt+1
+         irlstrtl=st_leafmtxp%lbstrtl(ibll) ; irlnd=st_leafmtxp%lbndl(ibll)
+         zau(irlstrtl:irlstrtl+irlnd-1)=wwr(ilp:ilp+irlnd-1)
+         ilp=ilp+irlnd
+       enddo
+     
+     do irl=0,nrank_l-1
+       if(mpinrl==irl) cycle
+       if(lbl2t(irl)==0) cycle
+       call MPI_WAIT(ireqr(irl),ISTATUS,ierr)
+     enddo
+       
+     is=1
+     do icl=1,nrank_l; irl=icl-1
+       do ibl=0,nlfl
+         ibpl=ibl*nrank_l+icl; if(ibpl>nlfalt) exit
+         ips=st_leafmtxp%lbstrtl(ibpl)
+         ipe=st_leafmtxp%lbstrtl(ibpl+1)-1
+         ie=is+ipe-ips
+         if(mpinrl/=irl .and. lbl2t(irl)==1) zau(ips:ipe)=zw(is:ie)
+         is=ie+1
+       enddo
+     enddo
+
+     en2_time=MPI_Wtime()
+     time(3)=time(3)+en2_time-en_time
+ endif
+!$omp end master
+! print*,'HACApK_adot_blrmtx_hyp4 end'
+! stop
+ end subroutine
+
+!***HACApK_adot_blrmtx_hyp31
+ subroutine HACApK_adot_blrmtx_hyp31(zau,st_leafmtxp,st_ctl,zu,wws,wwr,nd)
+ include 'mpif.h'
+ integer ISTATUS(MPI_STATUS_SIZE)
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8 :: zau(:),zu(:),wws(:),wwr(:)
+ integer*4,pointer :: lpmd(:),lbl2t(:)
+ integer*4,allocatable :: ireqs(:),ireqr(:)
+ real*8,pointer :: time(:)
+ real*8, allocatable :: zw(:),zw2(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+! print*,'HACApK_adot_blrmtx_hyp31 is called'
+
+ lpmd => st_ctl%lpmd(:); time => st_ctl%time(:); lbl2t(0:) => st_leafmtxp%lbl2t(:)
+ mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); nrank_l=lpmd(36); mpinrl=lpmd(37)
+ icomm=lpmd(1); icommt=lpmd(31); icomml=lpmd(35); 
+ nlf=st_leafmtxp%nlf; nlfl=st_leafmtxp%nlfl; nlft=st_leafmtxp%nlft; nlfalt=st_leafmtxp%nlfalt
+ ndlfs=st_leafmtxp%ndlfs
+ allocate(ireqs(0:nrank_l-1),ireqr(0:nrank_l-1))
+
+!$omp master
+ call MPI_Barrier( icomm, ierr )
+ st_time=MPI_Wtime()
+!$omp end master
+
+ zau(:nd)=0.0d0
+!$omp barrier
+ call HACApK_adot_body_lfmtx_hyp(zau,st_leafmtxp,st_ctl,zu,nd)
+!$omp barrier
+!$omp master
+ call MPI_Barrier( icomm, ierr )
+ en_time=MPI_Wtime()
+ time(1)=time(1)+en_time-st_time
+ if(nrank>1)then
+    st_time=MPI_Wtime()
+   if(st_ctl%param(41)==1)then
+     call MPI_Allreduce(zau, wwr, nd, MPI_REAL8, MPI_SUM, icommt, ierr)
+     en_time=MPI_Wtime()
+     time(2)=time(2)+en_time-st_time
+     zau(1:nd)=wwr(1:nd)
+     en2_time=MPI_Wtime()
+     time(3)=time(3)+en2_time-en_time
+   else
+       ilp=1
+       do irl=1,nlfl
+         ibl=st_leafmtxp%lnlfl2g(1,irl); ibll=(ibl-1)/nlfalt+1
+         irlstrtl=st_leafmtxp%lbstrtl(ibll) ; irlnd=st_leafmtxp%lbndl(ibll)
+         wws(ilp:ilp+irlnd-1)=zau(irlstrtl:irlstrtl+irlnd-1)
+         ilp=ilp+irlnd
+       enddo
+     call MPI_Allreduce(wws, wwr, ndlfs, MPI_REAL8, MPI_SUM, icommt, ierr)
+     en_time=MPI_Wtime()
+     time(2)=time(2)+en_time-st_time
+
+     allocate(zw(nd)); 
+     is=1
+     do irl=0,nrank_l-1
+       itag=1; irlnd=st_leafmtxp%lbndlfs(irl)
+       if(mpinrl==irl) then
+         zw(is:is+irlnd-1)=wwr(1:irlnd)
+       else
+!         print*,'mpinrl=',mpinrl,' ;irl=',irl,' ;is=',is, ' ;irlnd=',irlnd
+         if(lbl2t(irl)==1) call MPI_IRECV(zw(is), irlnd, MPI_REAL8, irl, itag, icomml, ireqr(irl),ierr)
+       endif
+       is=is+irlnd
+     enddo
+     if(lbl2t(mpinrl)==1)then
+       do irl=0,nrank_l-1
+         if(mpinrl==irl) cycle
+         call MPI_ISEND(wwr, ndlfs, MPI_REAL8, irl, itag, icomml, ireqs(irl),ierr)
+       enddo
+     endif
+     
+       ilp=1
+       do irl=1,nlfl
+         ibl=st_leafmtxp%lnlfl2g(1,irl); ibll=(ibl-1)/nlfalt+1
+         irlstrtl=st_leafmtxp%lbstrtl(ibll) ; irlnd=st_leafmtxp%lbndl(ibll)
+         zau(irlstrtl:irlstrtl+irlnd-1)=wwr(ilp:ilp+irlnd-1)
+         ilp=ilp+irlnd
+       enddo
+     
+     do irl=0,nrank_l-1
+       if(mpinrl==irl) cycle
+       if(lbl2t(irl)==0) cycle
+       call MPI_WAIT(ireqr(irl),ISTATUS,ierr)
+     enddo
+       
+     is=1
+     do icl=1,nrank_l; irl=icl-1
+       do ibl=0,nlfl
+         ibpl=ibl*nrank_l+icl; if(ibpl>nlfalt) exit
+         ips=st_leafmtxp%lbstrtl(ibpl)
+         ipe=st_leafmtxp%lbstrtl(ibpl+1)-1
+         ie=is+ipe-ips
+         if(mpinrl/=irl .and. lbl2t(irl)==1) zau(ips:ipe)=zw(is:ie)
+         is=ie+1
+       enddo
+     enddo
+
+     en2_time=MPI_Wtime()
+     time(3)=time(3)+en2_time-en_time
+  endif
+ endif
+!$omp end master
+! stop
+ end subroutine
+
+!***HACApK_adot_blrmtx_hyp3
+ subroutine HACApK_adot_blrmtx_hyp3(zau,st_leafmtxp,st_ctl,zu,wws,wwr,nd)
+ include 'mpif.h'
+ integer ISTATUS(MPI_STATUS_SIZE)
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8 :: zau(:),zu(:),wws(:),wwr(:)
+ integer*4,pointer :: lpmd(:),lbl2t(:)
+ integer*4,allocatable :: ireqs(:),ireqr(:)
+ real*8,pointer :: time(:)
+ real*8, allocatable :: zw(:),zw2(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+ print*,'HACApK_adot_blrmtx_hyp3 is called'
+
+ lpmd => st_ctl%lpmd(:); time => st_ctl%time(:); lbl2t(0:) => st_leafmtxp%lbl2t(:)
+ mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); nrank_l=lpmd(36); mpinrl=lpmd(37)
+ icomm=lpmd(1); icommt=lpmd(31); icomml=lpmd(35); 
+ nlf=st_leafmtxp%nlf; nlfl=st_leafmtxp%nlfl; nlft=st_leafmtxp%nlft; nlfalt=st_leafmtxp%nlfalt
+ ndlfs=st_leafmtxp%ndlfs
+ allocate(ireqs(0:nrank_l-1),ireqr(0:nrank_l-1))
+
+!$omp master
+ call MPI_Barrier( icomm, ierr )
+ st_time=MPI_Wtime()
+!$omp end master
+
+ zau(:nd)=0.0d0
+!$omp barrier
+ call HACApK_adot_body_lfmtx_hyp(zau,st_leafmtxp,st_ctl,zu,nd)
+!$omp barrier
+!$omp master
+ call MPI_Barrier( icomm, ierr )
+ en_time=MPI_Wtime()
+ time(1)=time(1)+en_time-st_time
+ if(nrank>1)then
+    st_time=MPI_Wtime()
+   if(st_ctl%param(41)==1)then
+     call MPI_Allreduce(zau, wwr, nd, MPI_REAL8, MPI_SUM, icommt, ierr)
+     en_time=MPI_Wtime()
+     time(2)=time(2)+en_time-st_time
+     zau(1:nd)=wwr(1:nd)
+     en2_time=MPI_Wtime()
+     time(3)=time(3)+en2_time-en_time
+   else
+     ilp=1
+     do ilf=1,nlfl
+       ip=(ilf-1)*nlft+1
+       ndl   =st_leafmtxp%st_lf(ip)%ndl   ; ndt   =st_leafmtxp%st_lf(ip)%ndt
+       nstrtl=st_leafmtxp%st_lf(ip)%nstrtl; nstrtt=st_leafmtxp%st_lf(ip)%nstrtt
+       wws(ilp:ilp+ndl-1)=zau(nstrtl:nstrtl+ndl-1)
+       ilp=ilp+ndl
+     enddo
+     call MPI_Allreduce(wws, wwr, ndlfs, MPI_REAL8, MPI_SUM, icommt, ierr)
+     en_time=MPI_Wtime()
+     time(2)=time(2)+en_time-st_time
+
+     allocate(zw(nd)); 
+     is=1
+     do irl=0,nrank_l-1
+       itag=1; irlnd=st_leafmtxp%lbndlfs(irl)
+       if(mpinrl==irl) then
+         zw(is:is+irlnd-1)=wwr(1:irlnd)
+       else
+!         print*,'mpinrl=',mpinrl,' ;irl=',irl,' ;is=',is, ' ;irlnd=',irlnd
+         if(lbl2t(irl)==1) call MPI_IRECV(zw(is), irlnd, MPI_REAL8, irl, itag, icomml, ireqr(irl),ierr)
+       endif
+       is=is+irlnd
+     enddo
+     if(lbl2t(mpinrl)==1)then
+       do irl=0,nrank_l-1
+         if(mpinrl==irl) cycle
+         call MPI_ISEND(wwr, ndlfs, MPI_REAL8, irl, itag, icomml, ireqs(irl),ierr)
+       enddo
+     endif
+     nlfla=nlfalt/nrank_l
+     is=1; icl=mpinrl+1
+       do ibl=0,nlfla
+         ibpl=ibl*nrank_l+icl; if(ibpl>nlfalt) exit
+         ips=st_leafmtxp%lbstrtl(ibpl)
+         ipe=st_leafmtxp%lbstrtl(ibpl+1)-1
+         ie=is+ipe-ips
+         zau(ips:ipe)=wwr(is:ie)
+         is=ie+1
+       enddo
+     do irl=0,nrank_l-1
+       if(mpinrl==irl) cycle
+       if(lbl2t(irl)==0) cycle
+       call MPI_WAIT(ireqr(irl),ISTATUS,ierr)
+     enddo
+       
+     nlfla=nlfalt/nrank_l
+     is=1
+     do icl=1,nrank_l; irl=icl-1
+       do ibl=0,nlfla
+         ibpl=ibl*nrank_l+icl; if(ibpl>nlfalt) exit
+         ips=st_leafmtxp%lbstrtl(ibpl)
+         ipe=st_leafmtxp%lbstrtl(ibpl+1)-1
+         ie=is+ipe-ips
+         if(mpinrl/=irl .and. lbl2t(irl)==1) zau(ips:ipe)=zw(is:ie)
+         is=ie+1
+       enddo
+     enddo
+
+     en2_time=MPI_Wtime()
+     time(3)=time(3)+en2_time-en_time
+  endif
+ endif
+!$omp end master
+! stop
+ end subroutine
+
+!***HACApK_adot_blrmtx_hyp21
+ subroutine HACApK_adot_blrmtx_hyp21(zau,st_leafmtxp,st_ctl,zu,wws,wwr,nd)
+ include 'mpif.h'
+ integer ISTATUS(MPI_STATUS_SIZE)
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8 :: zau(:),zu(:),wws(:),wwr(:)
+ integer*4,pointer :: lpmd(:)
+ integer*4,allocatable :: ireqs(:),ireqr(:)
+ real*8,pointer :: time(:)
+ real*8, allocatable :: zw(:),zw2(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+ lpmd => st_ctl%lpmd(:); time => st_ctl%time(:)
+ mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); nrank_l=lpmd(36); mpinrl=lpmd(37)
+ icomm=lpmd(1); icommt=lpmd(31); icomml=lpmd(35); 
+ nlf=st_leafmtxp%nlf; nlfl=st_leafmtxp%nlfl; nlft=st_leafmtxp%nlft; nlfalt=st_leafmtxp%nlfalt
+ ndlfs=st_leafmtxp%ndlfs
+ allocate(ireqs(0:nrank_l-1),ireqr(0:nrank_l-1))
+
+!$omp master
+ call MPI_Barrier( icomm, ierr )
+ st_time=MPI_Wtime()
+!$omp end master
+
+ zau(:nd)=0.0d0
+!$omp barrier
+ call HACApK_adot_body_lfmtx_hyp(zau,st_leafmtxp,st_ctl,zu,nd)
+!$omp barrier
+!$omp master
+ call MPI_Barrier( icomm, ierr )
+ en_time=MPI_Wtime()
+ time(1)=time(1)+en_time-st_time
+ if(nrank>1)then
+    st_time=MPI_Wtime()
+   if(st_ctl%param(41)==1)then
+     call MPI_Allreduce(zau, wwr, nd, MPI_REAL8, MPI_SUM, icommt, ierr)
+     en_time=MPI_Wtime()
+     time(2)=time(2)+en_time-st_time
+     zau(1:nd)=wwr(1:nd)
+     en2_time=MPI_Wtime()
+     time(3)=time(3)+en2_time-en_time
+   else
+       ilp=1
+       do irl=1,nlfl
+         ibl=st_leafmtxp%lnlfl2g(1,irl); ibll=(ibl-1)/nlfalt+1
+         irlstrtl=st_leafmtxp%lbstrtl(ibll) ; irlnd=st_leafmtxp%lbndl(ibll)
+         wws(ilp:ilp+irlnd-1)=zau(irlstrtl:irlstrtl+irlnd-1)
+         ilp=ilp+irlnd
+       enddo
+     call MPI_Allreduce(wws, wwr, ndlfs, MPI_REAL8, MPI_SUM, icommt, ierr)
+     en_time=MPI_Wtime()
+     time(2)=time(2)+en_time-st_time
+
+     allocate(zw(nd)); 
+     is=1
+     do irl=0,nrank_l-1
+       itag=1; irlnd=st_leafmtxp%lbndlfs(irl)
+       if(mpinrl==irl) then
+         zw(is:is+irlnd-1)=wwr(1:irlnd)
+       else
+!         print*,'mpinrl=',mpinrl,' ;irl=',irl,' ;is=',is, ' ;irlnd=',irlnd
+         call MPI_IRECV(zw(is), irlnd, MPI_REAL8, irl, itag, icomml, ireqr(irl),ierr)
+       endif
+       is=is+irlnd
+     enddo
+     do irl=0,nrank_l-1
+       if(mpinrl==irl) cycle
+       call MPI_ISEND(wwr, ndlfs, MPI_REAL8, irl, itag, icomml, ireqs(irl),ierr)
+     enddo
+     
+     !! my color
+       ilp=1
+       do irl=1,nlfl
+         ibl=st_leafmtxp%lnlfl2g(1,irl); ibll=(ibl-1)/nlfalt+1
+         irlstrtl=st_leafmtxp%lbstrtl(ibll) ; irlnd=st_leafmtxp%lbndl(ibll)
+         zau(irlstrtl:irlstrtl+irlnd-1)=wwr(ilp:ilp+irlnd-1)
+         ilp=ilp+irlnd
+       enddo
+       
+     do irl=0,nrank_l-1
+       if(mpinrl==irl) cycle
+       call MPI_WAIT(ireqr(irl),ISTATUS,ierr)
+     enddo
+       
+     is=1
+     do icl=1,nrank_l
+       do ibl=0,nlfl
+         ibpl=ibl*nrank_l+icl; if(ibpl>nlfalt) exit
+         ips=st_leafmtxp%lbstrtl(ibpl)
+         ipe=st_leafmtxp%lbstrtl(ibpl+1)-1
+         ie=is+ipe-ips
+         if(mpinrl/=icl-1) zau(ips:ipe)=zw(is:ie)
+         is=ie+1
+       enddo
+     enddo
+
+     en2_time=MPI_Wtime()
+     time(3)=time(3)+en2_time-en_time
+  endif
+ endif
+!$omp end master
+! stop
+ end subroutine
+
+!***HACApK_adot_blrmtx_hyp2
+ subroutine HACApK_adot_blrmtx_hyp2(zau,st_leafmtxp,st_ctl,zu,wws,wwr,nd)
+ include 'mpif.h'
+ integer ISTATUS(MPI_STATUS_SIZE)
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8 :: zau(:),zu(:),wws(:),wwr(:)
+ integer*4,pointer :: lpmd(:)
+ integer*4,allocatable :: ireqs(:),ireqr(:)
+ real*8,pointer :: time(:)
+ real*8, allocatable :: zw(:),zw2(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+ lpmd => st_ctl%lpmd(:); time => st_ctl%time(:)
+ mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); nrank_l=lpmd(36); mpinrl=lpmd(37)
+ icomm=lpmd(1); icommt=lpmd(31); icomml=lpmd(35); 
+ nlf=st_leafmtxp%nlf; nlfl=st_leafmtxp%nlfl; nlft=st_leafmtxp%nlft; nlfalt=st_leafmtxp%nlfalt
+ ndlfs=st_leafmtxp%ndlfs
+ allocate(ireqs(0:nrank_l-1),ireqr(0:nrank_l-1))
+
+!$omp master
+ call MPI_Barrier( icomm, ierr )
+ st_time=MPI_Wtime()
+!$omp end master
+
+ zau(:nd)=0.0d0
+!$omp barrier
+ call HACApK_adot_body_lfmtx_hyp(zau,st_leafmtxp,st_ctl,zu,nd)
+!$omp barrier
+!$omp master
+ call MPI_Barrier( icomm, ierr )
+ en_time=MPI_Wtime()
+ time(1)=time(1)+en_time-st_time
+ if(nrank>1)then
+    st_time=MPI_Wtime()
+   if(st_ctl%param(41)==1)then
+     call MPI_Allreduce(zau, wwr, nd, MPI_REAL8, MPI_SUM, icommt, ierr)
+     en_time=MPI_Wtime()
+     time(2)=time(2)+en_time-st_time
+     zau(1:nd)=wwr(1:nd)
+     en2_time=MPI_Wtime()
+     time(3)=time(3)+en2_time-en_time
+   else
+     ilp=1
+     do ilf=1,nlfl
+       ip=(ilf-1)*nlft+1
+       ndl   =st_leafmtxp%st_lf(ip)%ndl   ; ndt   =st_leafmtxp%st_lf(ip)%ndt
+       nstrtl=st_leafmtxp%st_lf(ip)%nstrtl; nstrtt=st_leafmtxp%st_lf(ip)%nstrtt
+       wws(ilp:ilp+ndl-1)=zau(nstrtl:nstrtl+ndl-1)
+       ilp=ilp+ndl
+     enddo
+     call MPI_Allreduce(wws, wwr, ndlfs, MPI_REAL8, MPI_SUM, icommt, ierr)
+     en_time=MPI_Wtime()
+     time(2)=time(2)+en_time-st_time
+
+     allocate(zw(nd)); 
+     is=1
+     do irl=0,nrank_l-1
+       itag=1; irlnd=st_leafmtxp%lbndlfs(irl)
+       if(mpinrl==irl) then
+         zw(is:is+irlnd-1)=wwr(1:irlnd)
+       else
+!         print*,'mpinrl=',mpinrl,' ;irl=',irl,' ;is=',is, ' ;irlnd=',irlnd
+         call MPI_IRECV(zw(is), irlnd, MPI_REAL8, irl, itag, icomml, ireqr(irl),ierr)
+       endif
+       is=is+irlnd
+     enddo
+     do irl=0,nrank_l-1
+       if(mpinrl==irl) cycle
+       call MPI_ISEND(wwr, ndlfs, MPI_REAL8, irl, itag, icomml, ireqs(irl),ierr)
+     enddo
+     nlfla=nlfalt/nrank_l
+     is=1; icl=mpinrl+1
+       do ibl=0,nlfla
+         ibpl=ibl*nrank_l+icl; if(ibpl>nlfalt) exit
+         ips=st_leafmtxp%lbstrtl(ibpl)
+         ipe=st_leafmtxp%lbstrtl(ibpl+1)-1
+         ie=is+ipe-ips
+         zau(ips:ipe)=wwr(is:ie)
+         is=ie+1
+       enddo
+     do irl=0,nrank_l-1
+       if(mpinrl==irl) cycle
+!       call MPI_WAIT(ireqs(irl),ISTATUS,ierr)
+       call MPI_WAIT(ireqr(irl),ISTATUS,ierr)
+     enddo
+     
+!     write(mpilog,*) 'zw='
+!     write(mpilog,*) zw
+!     write(mpilog,*) 'wwr='
+!     write(mpilog,*) wwr(1:ndlfs)
+     
+     nlfla=nlfalt/nrank_l
+     is=1
+     do icl=1,nrank_l
+       do ibl=0,nlfla
+         ibpl=ibl*nrank_l+icl; if(ibpl>nlfalt) exit
+         ips=st_leafmtxp%lbstrtl(ibpl)
+         ipe=st_leafmtxp%lbstrtl(ibpl+1)-1
+         ie=is+ipe-ips
+         if(mpinrl/=icl-1) zau(ips:ipe)=zw(is:ie)
+! if(mpinr==0) write(*,1000) 'ibpl=',ibpl,' ;ips=',ips,' ;ipe=',ipe,' ;is=',is,' ;ie=',ie
+         is=ie+1
+       enddo
+     enddo
+
+  if(.false.)then
+     allocate(zw2(nd))
+     zw(:nd)=0.0d0
+     ilp=1
+     do ilf=1,nlfl
+       ip=(ilf-1)*nlft+1
+       ndl   =st_leafmtxp%st_lf(ip)%ndl   ; ndt   =st_leafmtxp%st_lf(ip)%ndt
+       nstrtl=st_leafmtxp%st_lf(ip)%nstrtl; nstrtt=st_leafmtxp%st_lf(ip)%nstrtt
+       zw(nstrtl:nstrtl+ndl-1)=wwr(ilp:ilp+ndl-1)
+       ilp=ilp+ndl
+     enddo
+     call MPI_Allreduce(zw, zw2, nd, MPI_REAL8, MPI_SUM, icomml, ierr)
+
+     zzz=sum(abs(zw2(:nd)-zau(:nd))); 
+     print*,'zzz=',zzz
+     stop
+  endif
+     en2_time=MPI_Wtime()
+     time(3)=time(3)+en2_time-en_time
+  endif
+ endif
+!$omp end master
+! stop
+ end subroutine
+
+!***HACApK_adot_blrmtx_hyp
+ subroutine HACApK_adot_blrmtx_hyp(zau,st_leafmtxp,st_ctl,zu,wws,wwr,nd)
+ include 'mpif.h'
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8 :: zau(:),zu(:),wws(:),wwr(:)
+ integer*4,pointer :: lpmd(:)
+ real*8,pointer :: time(:)
+ real*8, allocatable :: zw(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+ lpmd => st_ctl%lpmd(:); time => st_ctl%time(:)
+ mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); icomm=lpmd(1); icommt=lpmd(31); icomml=lpmd(35); 
+ nlf=st_leafmtxp%nlf; nlfl=st_leafmtxp%nlfl; nlft=st_leafmtxp%nlft
+ ndlfs=st_leafmtxp%ndlfs
+
+!$omp master
+ call MPI_Barrier( icomm, ierr )
+ st_time=MPI_Wtime()
+!$omp end master
+
+ zau(:nd)=0.0d0
+!$omp barrier
+ call HACApK_adot_body_lfmtx_hyp(zau,st_leafmtxp,st_ctl,zu,nd)
+!$omp barrier
+!$omp master
+ call MPI_Barrier( icomm, ierr )
+ en_time=MPI_Wtime()
+ time(1)=time(1)+en_time-st_time
+ if(nrank>1)then
+    st_time=MPI_Wtime()
+   if(st_ctl%param(41)==1)then
+     call MPI_Allreduce(zau, wwr, nd, MPI_REAL8, MPI_SUM, icommt, ierr)
+     en_time=MPI_Wtime()
+     time(2)=time(2)+en_time-st_time
+     zau(1:nd)=wwr(1:nd)
+     en2_time=MPI_Wtime()
+     time(3)=time(3)+en2_time-en_time
+   else
+     ilp=1
+     do ilf=1,nlfl
+       ip=(ilf-1)*nlft+1
+       ndl   =st_leafmtxp%st_lf(ip)%ndl   ; ndt   =st_leafmtxp%st_lf(ip)%ndt
+       nstrtl=st_leafmtxp%st_lf(ip)%nstrtl; nstrtt=st_leafmtxp%st_lf(ip)%nstrtt
+       wws(ilp:ilp+ndl-1)=zau(nstrtl:nstrtl+ndl-1)
+       ilp=ilp+ndl
+     enddo
+     call MPI_Allreduce(wws, wwr, ndlfs, MPI_REAL8, MPI_SUM, icommt, ierr)
+     en_time=MPI_Wtime()
+     time(2)=time(2)+en_time-st_time
+
+     allocate(zw(nd)); zw(:nd)=0.0d0
+     ilp=1
+     do ilf=1,nlfl
+       ip=(ilf-1)*nlft+1
+       ndl   =st_leafmtxp%st_lf(ip)%ndl   ; ndt   =st_leafmtxp%st_lf(ip)%ndt
+       nstrtl=st_leafmtxp%st_lf(ip)%nstrtl; nstrtt=st_leafmtxp%st_lf(ip)%nstrtt
+       zw(nstrtl:nstrtl+ndl-1)=wwr(ilp:ilp+ndl-1)
+       ilp=ilp+ndl
+     enddo
+     call MPI_Allreduce(zw, zau, nd, MPI_REAL8, MPI_SUM, icomml, ierr)
+     en2_time=MPI_Wtime()
+     time(3)=time(3)+en2_time-en_time
+  endif
+ endif
+!$omp end master
+! stop
+ end subroutine
 
 !***HACApK_adot_body_lfmtx
  RECURSIVE subroutine HACApK_adot_body_lfmtx(zau,st_leafmtxp,st_ctl,zu,nd)
@@ -177,8 +863,14 @@ contains
  ith = omp_get_thread_num()
  ith1 = ith+1
  nths=ltmp(ith); nthe=ltmp(ith1)-1
- allocate(zaut(nd)); zaut(:)=0.0d0
- allocate(zbut(ktmax)) 
+ allocate(zbut(ktmax),zaut(nd),stat=ierr)
+ if(ierr.ne.0) then
+!$omp critical
+   write(*,*) 'sub HACApK_adot_body_lfmtx_hyp; zbut,zaut Memory allocation failed !'
+!$omp end critical
+   stop
+ endif
+ zaut(:)=0.0d0
  ls=nd; le=1
  do ip=nths,nthe
    ndl   =st_leafmtxp%st_lf(ip)%ndl   ; ndt   =st_leafmtxp%st_lf(ip)%ndt   ; ns=ndl*ndt
@@ -211,7 +903,7 @@ contains
 !$omp atomic
    zau(il)=zau(il)+zaut(il)
  enddo
- end subroutine HACApK_adot_body_lfmtx_hyp
+ end subroutine
  
 !***HACApK_adotsub_lfmtx_p
  subroutine HACApK_adotsub_lfmtx_p(zr,st_leafmtxp,st_ctl,zu,nd)
@@ -247,6 +939,39 @@ contains
  zr(1:nd)=zr(1:nd)-zau(1:nd)
 !$omp end workshare
  end subroutine HACApK_adotsub_lfmtx_hyp
+ 
+!***HACApK_adotsub_blrmtx_hyp
+ subroutine HACApK_adotsub_blrmtx_hyp(zr,zau,st_leafmtxp,st_ctl,zu,wws,wwr,nd)
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8 :: zr(:),zau(:),zu(:),wws(:),wwr(:)
+ integer*4,pointer :: lpmd(:),lnp(:),lsp(:),lthr(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+ call HACApK_adot_blrmtx_hyp(zau,st_leafmtxp,st_ctl,zu,wws,wwr,nd)
+!$omp barrier
+!$omp workshare
+ zr(1:nd)=zr(1:nd)-zau(1:nd)
+!$omp end workshare
+ end subroutine HACApK_adotsub_blrmtx_hyp
+ 
+!***HACApK_adotsub_blr_hyp
+ subroutine HACApK_adotsub_blr_hyp(zr,zau,st_leafmtxp,st_ctl,zu,wws,wwr,nd)
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8 :: zr(:),zau(:),zu(:),wws(:),wwr(:)
+ integer*4,pointer :: lpmd(:),lnp(:),lsp(:),lthr(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+ call HACApK_adot_blrmtx_hyp21(zau,st_leafmtxp,st_ctl,zu,wws,wwr,nd)
+!!! call HACApK_adot_blr_hyp(zau,st_leafmtxp,st_ctl,zu,wws,wwr,nd)
+!$omp barrier
+!$omp workshare
+ zr(1:nd)=zr(1:nd)-zau(1:nd)
+!$omp end workshare
+ end subroutine HACApK_adotsub_blr_hyp
  
 !***HACApK_bicgstab_lfmtx
  subroutine HACApK_bicgstab_lfmtx(st_leafmtxp,st_ctl,u,b,param,nd,nstp,lrtrn)
@@ -347,6 +1072,7 @@ end subroutine HACApK_bicgstab_lfmtx
    zkp(:nd)=zp(:nd)
 !$omp end workshare
    call HACApK_adot_lfmtx_hyp(zakp,st_leafmtxp,st_ctl,zkp,wws,wwr,isct,irct,nd)
+!!!   call HACApK_adot_blrmtx_hyp(zakp,st_leafmtxp,st_ctl,zkp,wws,wwr,isct,irct,nd)
 !$omp barrier
 !$omp single
    znom=HACApK_dotp_d(nd,zshdw,zr); zden=HACApK_dotp_d(nd,zshdw,zakp);
@@ -378,6 +1104,174 @@ end subroutine HACApK_bicgstab_lfmtx
  enddo
 !$omp end parallel
 end subroutine HACApK_bicgstab_lfmtx_hyp
+
+!***HACApK_bicgstab_blrmtx_hyp
+ subroutine HACApK_bicgstab_blrmtx_hyp(st_leafmtxp,st_ctl,u,b,param,nd,nstp,lrtrn)
+ include 'mpif.h'
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8 :: u(nd),b(nd)
+ real*8 :: param(*)
+ real*8,dimension(:),allocatable :: zr,zshdw,zp,zt,zkp,zakp,zkt,zakt
+ real*8,dimension(:),allocatable :: wws,wwr
+ integer*4,pointer :: lpmd(:),lnp(:),lsp(:),lthr(:)
+ integer*4 :: isct(2),irct(2)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+ lpmd => st_ctl%lpmd(:); lnp(0:) => st_ctl%lnp; lsp(0:) => st_ctl%lsp;lthr(0:) => st_ctl%lthr
+ mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); icomm=lpmd(1)
+   call MPI_Barrier( icomm, ierr )
+   st_measure_time=MPI_Wtime()
+ if(st_ctl%param(1)>0 .and. mpinr==0) print*,'HACApK_bicgstab_blrmtx_hyp start'
+ mstep=param(83)
+ eps=param(91)
+ ndlfs=st_leafmtxp%ndlfs
+ allocate(wws(ndlfs),wwr(ndlfs))
+ allocate(zr(nd),zshdw(nd),zp(nd),zt(nd),zkp(nd),zakp(nd),zkt(nd),zakt(nd))
+ alpha = 0.0;  beta = 0.0;  zeta = 0.0;
+ zz=HACApK_dotp_d(nd, b, b); bnorm=dsqrt(zz);
+!$omp parallel
+!$omp workshare
+ zp(1:nd)=0.0d0; zakp(1:nd)=0.0d0
+ zr(:nd)=b(:nd)
+!$omp end workshare
+ call HACApK_adotsub_blrmtx_hyp(zr,zshdw,st_leafmtxp,st_ctl,u,wws,wwr,nd)
+!$omp barrier
+!$omp workshare
+ zshdw(:nd)=zr(:nd)
+!$omp end workshare
+!$omp single
+ zrnorm=HACApK_dotp_d(nd,zr,zr); zrnorm=dsqrt(zrnorm)
+ if(mpinr==0) print*,'Original relative residual norm =',zrnorm/bnorm
+!$omp end single
+ do in=1,mstep
+   if(zrnorm/bnorm<eps) exit
+!$omp workshare
+   zp(:nd) =zr(:nd)+beta*(zp(:nd)-zeta*zakp(:nd))
+   zkp(:nd)=zp(:nd)
+!$omp end workshare
+   call HACApK_adot_blrmtx_hyp21(zakp,st_leafmtxp,st_ctl,zkp,wws,wwr,nd)
+!!!   call HACApK_adot_blrmtx_hyp2(zakp,st_leafmtxp,st_ctl,zkp,wws,wwr,nd)
+!!!   call HACApK_adot_blrmtx_hyp(zakp,st_leafmtxp,st_ctl,zkp,wws,wwr,nd)
+!$omp barrier
+!$omp single
+   znom=HACApK_dotp_d(nd,zshdw,zr); zden=HACApK_dotp_d(nd,zshdw,zakp);
+   alpha=znom/zden; znomold=znom;
+!$omp end single
+!$omp workshare
+   zt(:nd)=zr(:nd)-alpha*zakp(:nd)
+   zkt(:nd)=zt(:nd)
+!$omp end workshare
+   call HACApK_adot_blrmtx_hyp21(zakt,st_leafmtxp,st_ctl,zkt,wws,wwr,nd)
+!!!   call HACApK_adot_blrmtx_hyp2(zakt,st_leafmtxp,st_ctl,zkt,wws,wwr,nd)
+!!!   call HACApK_adot_blrmtx_hyp(zakt,st_leafmtxp,st_ctl,zkt,wws,wwr,nd)
+!$omp barrier
+!$omp single
+   znom=HACApK_dotp_d(nd,zakt,zt); zden=HACApK_dotp_d(nd,zakt,zakt);
+   zeta=znom/zden;
+!$omp end single
+!$omp workshare
+   u(:nd)=u(:nd)+alpha*zkp(:nd)+zeta*zkt(:nd)
+   zr(:nd)=zt(:nd)-zeta*zakt(:nd)
+!$omp end workshare
+!$omp single
+   beta=alpha/zeta*HACApK_dotp_d(nd,zshdw,zr)/znomold;
+   zrnorm=HACApK_dotp_d(nd,zr,zr); zrnorm=dsqrt(zrnorm)
+   nstp=in
+   call MPI_Barrier( icomm, ierr )
+   en_measure_time=MPI_Wtime()
+   time = en_measure_time - st_measure_time
+   if(st_ctl%param(1)>0 .and. mpinr==0) print*,in,time,log10(zrnorm/bnorm)
+!$omp end single
+ enddo
+!$omp end parallel
+end subroutine HACApK_bicgstab_blrmtx_hyp
+
+!***HACApK_bicgstab_blrleaf_hyp
+ subroutine HACApK_bicgstab_blrleaf_hyp(st_leafmtxp,st_ctl,u,b,param,nd,nstp,lrtrn)
+ include 'mpif.h'
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8 :: u(nd),b(nd)
+ real*8 :: param(*)
+ real*8,dimension(:),allocatable :: zr,zshdw,zp,zt,zkp,zakp,zkt,zakt
+ real*8,dimension(:),allocatable :: wws,wwr
+ integer*4,pointer :: lpmd(:),lnp(:),lsp(:),lthr(:)
+ integer*4 :: isct(2),irct(2)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+ lpmd => st_ctl%lpmd(:); lnp(0:) => st_ctl%lnp; lsp(0:) => st_ctl%lsp;lthr(0:) => st_ctl%lthr
+ mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); icomm=lpmd(1)
+   call MPI_Barrier( icomm, ierr )
+   st_measure_time=MPI_Wtime()
+ if(st_ctl%param(1)>0 .and. mpinr==0) print*,'HACApK_bicgstab_blrmtx_hyp start'
+ mstep=param(83)
+ eps=param(91)
+ ndlfs=st_leafmtxp%ndlfs
+ allocate(wws(ndlfs),wwr(ndlfs))
+ allocate(zr(nd),zshdw(nd),zp(nd),zt(nd),zkp(nd),zakp(nd),zkt(nd),zakt(nd))
+ alpha = 0.0;  beta = 0.0;  zeta = 0.0;
+ zz=HACApK_dotp_d(nd, b, b); bnorm=dsqrt(zz);
+!$omp parallel
+!$omp workshare
+ zp(1:nd)=0.0d0; zakp(1:nd)=0.0d0
+ zr(:nd)=b(:nd)
+!$omp end workshare
+ call HACApK_adotsub_blr_hyp(zr,zshdw,st_leafmtxp,st_ctl,u,wws,wwr,nd)
+!!! call HACApK_adotsub_blrmtx_hyp(zr,zshdw,st_leafmtxp,st_ctl,u,wws,wwr,nd)
+!$omp barrier
+!$omp workshare
+ zshdw(:nd)=zr(:nd)
+!$omp end workshare
+!$omp single
+ zrnorm=HACApK_dotp_d(nd,zr,zr); zrnorm=dsqrt(zrnorm)
+ if(mpinr==0) print*,'Original relative residual norm =',zrnorm/bnorm
+!$omp end single
+ do in=1,mstep
+   if(zrnorm/bnorm<eps) exit
+!$omp workshare
+   zp(:nd) =zr(:nd)+beta*(zp(:nd)-zeta*zakp(:nd))
+   zkp(:nd)=zp(:nd)
+!$omp end workshare
+   call HACApK_adot_blr_hyp(zakp,st_leafmtxp,st_ctl,zkp,wws,wwr,nd)
+!!!   call HACApK_adot_blrmtx_hyp21(zakp,st_leafmtxp,st_ctl,zkp,wws,wwr,nd)
+!!!   call HACApK_adot_blrmtx_hyp2(zakp,st_leafmtxp,st_ctl,zkp,wws,wwr,nd)
+!!!   call HACApK_adot_blrmtx_hyp(zakp,st_leafmtxp,st_ctl,zkp,wws,wwr,nd)
+!$omp barrier
+!$omp single
+   znom=HACApK_dotp_d(nd,zshdw,zr); zden=HACApK_dotp_d(nd,zshdw,zakp);
+   alpha=znom/zden; znomold=znom;
+!$omp end single
+!$omp workshare
+   zt(:nd)=zr(:nd)-alpha*zakp(:nd)
+   zkt(:nd)=zt(:nd)
+!$omp end workshare
+   call HACApK_adot_blr_hyp(zakt,st_leafmtxp,st_ctl,zkt,wws,wwr,nd)
+!!!   call HACApK_adot_blrmtx_hyp3(zakt,st_leafmtxp,st_ctl,zkt,wws,wwr,nd)
+!!!   call HACApK_adot_blrmtx_hyp21(zakt,st_leafmtxp,st_ctl,zkt,wws,wwr,nd)
+!!!   call HACApK_adot_blrmtx_hyp2(zakt,st_leafmtxp,st_ctl,zkt,wws,wwr,nd)
+!!!   call HACApK_adot_blrmtx_hyp(zakt,st_leafmtxp,st_ctl,zkt,wws,wwr,nd)
+!$omp barrier
+!$omp single
+   znom=HACApK_dotp_d(nd,zakt,zt); zden=HACApK_dotp_d(nd,zakt,zakt);
+   zeta=znom/zden;
+!$omp end single
+!$omp workshare
+   u(:nd)=u(:nd)+alpha*zkp(:nd)+zeta*zkt(:nd)
+   zr(:nd)=zt(:nd)-zeta*zakt(:nd)
+!$omp end workshare
+!$omp single
+   beta=alpha/zeta*HACApK_dotp_d(nd,zshdw,zr)/znomold;
+   zrnorm=HACApK_dotp_d(nd,zr,zr); zrnorm=dsqrt(zrnorm)
+   nstp=in
+   call MPI_Barrier( icomm, ierr )
+   en_measure_time=MPI_Wtime()
+   time = en_measure_time - st_measure_time
+   if(st_ctl%param(1)>0 .and. mpinr==0) print*,in,time,log10(zrnorm/bnorm)
+!$omp end single
+ enddo
+!$omp end parallel
+end subroutine HACApK_bicgstab_blrleaf_hyp
 
 !***HACApK_gcrm_lfmtx
  subroutine HACApK_gcrm_lfmtx(st_leafmtxp,st_ctl,st_bemv,u,b,param,nd,nstp,lrtrn)
@@ -448,7 +1342,7 @@ end subroutine HACApK_bicgstab_lfmtx_hyp
 end subroutine
 
 !***HACApK_measurez_time_ax_lfmtx
- subroutine HACApK_measurez_time_ax_lfmtx(st_leafmtxp,st_ctl,nd,nstp,lrtrn)
+ subroutine HACApK_measurez_time_ax_lfmtx(st_leafmtxp,st_ctl,nd,lrtrn)
  include 'mpif.h'
  type(st_HACApK_leafmtxp) :: st_leafmtxp
  type(st_HACApK_lcontrol) :: st_ctl
@@ -463,14 +1357,244 @@ end subroutine
  mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); icomm=lpmd(1)
  mstep=param(99)
  allocate(u(nd),b(nd),wws(maxval(lnp(0:nrank-1))),wwr(maxval(lnp(0:nrank-1))))
+ st_ctl%time(:)=0.0d0; ztime_ax=1.0d10; ztime_body=1.0d10
+ nit=param(98)
+ do it=1,nit
+   call MPI_Barrier( icomm, ierr )
+   st_measure_time_ax=MPI_Wtime()
 !$omp parallel private(il)
  do il=1,mstep
+!$omp workshare
    u(:)=1.0; b(:)=1.0
+!$omp end workshare
    call HACApK_adot_lfmtx_hyp(u,st_leafmtxp,st_ctl,b,wws,wwr,isct,irct,nd)
  enddo
 !$omp end parallel
+   call MPI_Barrier( icomm, ierr )
+   en_measure_time_ax=MPI_Wtime()
+   ztime=en_measure_time_ax - st_measure_time_ax
+   ztime_ax=min(ztime,ztime_ax)
+   ztime_body=min(st_ctl%time(1),ztime_body)
+ enddo
+   if(st_ctl%param(1)>0 .and. mpinr==0) then
+     write(6,2000) 'lfmtx; time_AX_once  =',ztime_ax/mstep
+     write(6,2000) 'lfmtx;         body  =',ztime_body/mstep
+     write(6,2000) 'lfmtx; mpi0_t_reduce  =',st_ctl%time(2)/(mstep*nit)
+   endif
  deallocate(wws,wwr)
 end subroutine HACApK_measurez_time_ax_lfmtx
+
+!***HACApK_measurez_time_ax_blrmtx_
+ subroutine HACApK_measurez_time_ax_blrmtx_(st_leafmtxp,st_ctl,nd,lrtrn)
+ include 'mpif.h'
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8,dimension(:),allocatable :: wws,wwr,u,b
+ real*8,pointer :: param(:)
+ integer*4,pointer :: lpmd(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+ lpmd => st_ctl%lpmd(:); param=>st_ctl%param(:)
+ mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); icomm=lpmd(1)
+ mstep=param(99)
+ ndlfs=st_leafmtxp%ndlfs
+ allocate(u(nd),b(nd),wws(ndlfs),wwr(ndlfs))
+ st_ctl%time(:)=0.0d0
+ call MPI_Barrier( icomm, ierr )
+ st_measure_time_ax=MPI_Wtime()
+!$omp parallel private(il)
+ do il=1,mstep
+   u(:)=1.0; b(:)=1.0
+   call HACApK_adot_blrmtx_hyp(u,st_leafmtxp,st_ctl,b,wws,wwr,nd)
+ enddo
+!$omp end parallel
+ call MPI_Barrier( icomm, ierr )
+ en_measure_time_ax=MPI_Wtime()
+   if(st_ctl%param(1)>0 .and. mpinr==0) then
+     write(6,2000) 'blrmtx; time_AX_once  =',(en_measure_time_ax - st_measure_time_ax)/mstep
+     write(6,2000) 'blrmtx;         body  =',st_ctl%time(1)/mstep
+     write(6,2000) 'blrmtx;     t_reduce  =',st_ctl%time(2)/mstep
+     write(6,2000) 'blrmtx;     l_reduce  =',st_ctl%time(3)/mstep
+   endif
+ deallocate(wws,wwr)
+end subroutine
+
+!***HACApK_measurez_time_ax_blrmtx
+ subroutine HACApK_measurez_time_ax_blrmtx(st_leafmtxp,st_ctl,nd,lrtrn)
+ include 'mpif.h'
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8,dimension(:),allocatable :: wws,wwr,u,b
+ real*8,pointer :: param(:)
+ integer*4,pointer :: lpmd(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+ lpmd => st_ctl%lpmd(:); param=>st_ctl%param(:)
+ mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); icomm=lpmd(1)
+ mstep=param(99)
+ ndlfs=st_leafmtxp%ndlfs
+ allocate(u(nd),b(nd),wws(ndlfs),wwr(ndlfs))
+ st_ctl%time(:)=0.0d0; ztime_ax=1.0d10; ztime_body=1.0d10
+ nit=param(98)
+ do it=1,nit
+   call MPI_Barrier( icomm, ierr )
+   st_measure_time_ax=MPI_Wtime()
+!$omp parallel private(il)
+   do il=1,mstep
+!$omp workshare
+     u(:)=1.0; b(:)=1.0
+!$omp end workshare
+     call HACApK_adot_blrmtx_hyp(u,st_leafmtxp,st_ctl,b,wws,wwr,nd)
+   enddo
+!$omp end parallel
+   call MPI_Barrier( icomm, ierr )
+   en_measure_time_ax=MPI_Wtime()
+   ztime=en_measure_time_ax - st_measure_time_ax
+   ztime_ax=min(ztime,ztime_ax)
+   ztime_body=min(st_ctl%time(1),ztime_body)
+ enddo
+   if(st_ctl%param(1)>0 .and. mpinr==0) then
+     write(6,2000) 'blrmtx; time_AX_once  =',ztime_ax/mstep
+     write(6,2000) 'blrmtx;         body  =',ztime_body/mstep
+     write(6,2000) 'blrmtx; mpi0_t_reduce  =',st_ctl%time(2)/(mstep*nit)
+     write(6,2000) 'blrmtx; mpi0_l_reduce  =',st_ctl%time(3)/(mstep*nit)
+   endif
+ deallocate(wws,wwr)
+end subroutine
+
+!***HACApK_measurez_time_ax_blrmtx2
+ subroutine HACApK_measurez_time_ax_blrmtx2(st_leafmtxp,st_ctl,nd,lrtrn)
+ include 'mpif.h'
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8,dimension(:),allocatable :: wws,wwr,u,b
+ real*8,pointer :: param(:)
+ integer*4,pointer :: lpmd(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+ lpmd => st_ctl%lpmd(:); param=>st_ctl%param(:)
+ mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); icomm=lpmd(1)
+ mstep=param(99)
+ ndlfs=st_leafmtxp%ndlfs
+ allocate(u(nd),b(nd),wws(ndlfs),wwr(ndlfs))
+ st_ctl%time(:)=0.0d0; ztime_ax=1.0d10; ztime_body=1.0d10
+ nit=param(98)
+ do it=1,nit
+   call MPI_Barrier( icomm, ierr )
+   st_measure_time_ax=MPI_Wtime()
+!$omp parallel private(il)
+   do il=1,mstep
+!$omp workshare
+     u(:)=1.0; b(:)=1.0
+!$omp end workshare
+     call HACApK_adot_blrmtx_hyp21(u,st_leafmtxp,st_ctl,b,wws,wwr,nd)
+   enddo
+!$omp end parallel
+   call MPI_Barrier( icomm, ierr )
+   en_measure_time_ax=MPI_Wtime()
+   ztime=en_measure_time_ax - st_measure_time_ax
+   ztime_ax=min(ztime,ztime_ax)
+   ztime_body=min(st_ctl%time(1),ztime_body)
+ enddo
+   if(st_ctl%param(1)>0 .and. mpinr==0) then
+     write(6,2000) 'blrmtx2; time_AX_once  =',ztime_ax/mstep
+     write(6,2000) 'blrmtx2;         body  =',ztime_body/mstep
+     write(6,2000) 'blrmtx2; mpi0_t_reduce  =',st_ctl%time(2)/(mstep*nit)
+     write(6,2000) 'blrmtx2; mpi0_l_reduce  =',st_ctl%time(3)/(mstep*nit)
+   endif
+ deallocate(wws,wwr)
+end subroutine HACApK_measurez_time_ax_blrmtx2
+
+!***HACApK_measurez_time_ax_blrmtx3
+ subroutine HACApK_measurez_time_ax_blrmtx3(st_leafmtxp,st_ctl,nd,lrtrn)
+ include 'mpif.h'
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8,dimension(:),allocatable :: wws,wwr,u,b
+ real*8,pointer :: param(:)
+ integer*4,pointer :: lpmd(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+ lpmd => st_ctl%lpmd(:); param=>st_ctl%param(:)
+ mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); icomm=lpmd(1)
+ mstep=param(99)
+ ndlfs=st_leafmtxp%ndlfs
+ allocate(u(nd),b(nd),wws(ndlfs),wwr(ndlfs))
+ st_ctl%time(:)=0.0d0; ztime_ax=1.0d10; ztime_body=1.0d10
+ nit=param(98)
+ do it=1,nit
+   call MPI_Barrier( icomm, ierr )
+   st_measure_time_ax=MPI_Wtime()
+!$omp parallel private(il)
+   do il=1,mstep
+!$omp workshare
+     u(:)=1.0; b(:)=1.0
+!$omp end workshare
+     call HACApK_adot_blrmtx_hyp31(u,st_leafmtxp,st_ctl,b,wws,wwr,nd)
+   enddo
+!$omp end parallel
+   call MPI_Barrier( icomm, ierr )
+   en_measure_time_ax=MPI_Wtime()
+   ztime=en_measure_time_ax - st_measure_time_ax
+   ztime_ax=min(ztime,ztime_ax)
+   ztime_body=min(st_ctl%time(1),ztime_body)
+ enddo
+   if(st_ctl%param(1)>0 .and. mpinr==0) then
+     write(6,2000) 'blrmtx3; time_AX_once  =',ztime_ax/mstep
+     write(6,2000) 'blrmtx3;         body  =',ztime_body/mstep
+     write(6,2000) 'blrmtx3; mpi0_t_reduce  =',st_ctl%time(2)/(mstep*nit)
+     write(6,2000) 'blrmtx3; mpi0_l_reduce  =',st_ctl%time(3)/(mstep*nit)
+   endif
+ deallocate(wws,wwr)
+end subroutine HACApK_measurez_time_ax_blrmtx3
+
+!***HACApK_measurez_time_ax_blrmtx4
+ subroutine HACApK_measurez_time_ax_blrmtx4(st_leafmtxp,st_ctl,nd,lrtrn)
+ include 'mpif.h'
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8,dimension(:),allocatable :: wws,wwr,u,b
+ real*8,pointer :: param(:)
+ integer*4,pointer :: lpmd(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+ lpmd => st_ctl%lpmd(:); param=>st_ctl%param(:)
+ mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); icomm=lpmd(1)
+ mstep=param(99)
+ ndlfs=st_leafmtxp%ndlfs
+ allocate(u(nd),b(nd),wws(ndlfs),wwr(ndlfs))
+ st_ctl%time(:)=0.0d0; ztime_ax=1.0d10; ztime_body=1.0d10
+ nit=param(98)
+ do it=1,nit
+   call MPI_Barrier( icomm, ierr )
+   st_measure_time_ax=MPI_Wtime()
+!$omp parallel private(il)
+   do il=1,mstep
+!$omp workshare
+     u(:)=1.0; b(:)=1.0
+!$omp end workshare
+     call HACApK_adot_blrmtx_hyp4(u,st_leafmtxp,st_ctl,b,wws,wwr,nd)
+   enddo
+!$omp end parallel
+   call MPI_Barrier( icomm, ierr )
+   en_measure_time_ax=MPI_Wtime()
+   ztime=en_measure_time_ax - st_measure_time_ax
+   ztime_ax=min(ztime,ztime_ax)
+   ztime_body=min(st_ctl%time(1),ztime_body)
+ enddo
+   if(st_ctl%param(1)>0 .and. mpinr==0) then
+     write(6,2000) 'blrmtx4; time_AX_once  =',ztime_ax/mstep
+     write(6,2000) 'blrmtx4;         body  =',ztime_body/mstep
+     write(6,2000) 'blrmtx4; mpi0_t_reduce  =',st_ctl%time(2)/(mstep*nit)
+     write(6,2000) 'blrmtx4; mpi0_l_reduce  =',st_ctl%time(3)/(mstep*nit)
+   endif
+ deallocate(wws,wwr)
+end subroutine HACApK_measurez_time_ax_blrmtx4
 
 !***HACApK_adot_pmt_lfmtx_p
  integer function HACApK_adot_pmt_lfmtx_p(st_leafmtxp,st_bemv,st_ctl,aww,ww)
