@@ -880,13 +880,17 @@ program main
         select case(problem)
         case('2dn','2dp','2dh','2dn3','25d')
           moment=sum((disp-idisp)*ds)
+          counts2=0
+          do i=1,ncellg
+            if((disp(i)-idisp(i)).gt.0.001) counts2=counts2+1
+          end do
         case('3dp','3dn','3dh','3dnf','3dhf','3dph')
           moment=sum(disp-idisp)
         end select
         !eventcount=eventcount+1
         !end of an event
         if(my_rank.eq.0) then
-          write(44,'(i0,f19.4,i7,3e15.6)') eventcount,onset_time,hypoloc,moment,maxval(sigma),minval(sigma)
+          write(44,'(i0,f19.4,2i7,3e15.6)') eventcount,onset_time,hypoloc,counts2,moment,maxval(sigma),minval(sigma)
           if(slipevery) then
             call output_field()
             !do i=1,NCELLg
