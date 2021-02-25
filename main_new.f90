@@ -538,8 +538,6 @@ program main
   if(foward) call foward_check()
   if(inverse) call inverse_problem()
 
-
-
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
 
@@ -1407,7 +1405,7 @@ contains
     real(8),allocatable::data(:),yr(:)
 
     !ds0=0.05d0
-    geom='dbend'
+    geom='sbend'
     do i=1,Ncellg
       select case(geom)
         !flat fault approx
@@ -1428,10 +1426,10 @@ contains
         !yel(i)=2.5*tanh((xel(i)-25d0)/5.0)-2.5*tanh((xel(i)+25d0)/5.0)
         !yer(i)=2.5*tanh((xer(i)-25d0)/5.0)-2.5*tanh((xer(i)+25d0)/5.0)
       case('sbend')
-        xel(i)=ds0*(i-1-NCELLg/2)
-        xer(i)=ds0*(i-NCELLg/2)
-        yel(i)=amp*log(1.0+exp(xel(i)/wid))
-        yer(i)=amp*log(1.0+exp(xer(i)/wid))
+        xel(i)=ds0/sqrt(1+amp**2)*(i-1-NCELLg/2)
+        xer(i)=ds0/sqrt(1+amp**2)*(i-NCELLg/2)
+        yel(i)=amp*wid*sqrt(1.0+(xel(i)/wid)**2)
+        yer(i)=amp*wid*sqrt(1.0+(xer(i)/wid)**2)
       end select
 
       !yel(i)=2.5*tanh((xel(i)-25d0)/5.0)-2.5*tanh((xel(i)+25d0)/5.0)
@@ -2745,6 +2743,7 @@ write(*,*) imax,jmax
         end do
       end if
     end select
+    Call MPI_FINALIZE(ierr)
     stop
   end subroutine
 
