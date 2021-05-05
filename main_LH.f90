@@ -73,6 +73,10 @@ program main
       read (pvalue,*) problem
     case('NCELLg')
       read (pvalue,*) ncellg
+    case('imax')
+      read (pvalue,*) imax
+    case('jmax')
+      read (pvalue,*) jmax
     case('NSTEP1')
       read (pvalue,*) nstep1
     case('filenumber')
@@ -140,21 +144,22 @@ program main
   !allocation
   allocate(a(NCELLg),b(NCELLg),dc(NCELLg),vc(NCELLg),fw(NCELLg),vw(NCELLg),taudot(NCELLg),tauddot(NCELLg),sigdot(NCELLg))
   allocate(ruptG(NCELLg),rupsG(NCELLg))
+  allocate(xcol(ncellg),ycol(ncellg),zcol(ncellg))
 
   select case(problem)
   case('2dp')
-    allocate(xcol(NCELLg),xel(NCELLg),xer(NCELLg))
+    allocate(xel(NCELLg),xer(NCELLg))
     xcol=0d0;xel=0d0;xer=0d0
     !allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
     allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg))
   case('2dn')
-    allocate(xcol(NCELLg),ycol(NCELLg),ang(NCELLg))
+    allocate(ang(NCELLg))
     allocate(xel(NCELLg),xer(NCELLg),yel(NCELLg),yer(NCELLg))
     xcol=0d0;ycol=0d0;ang=0d0;xel=0d0;xer=0d0;yel=0d0;yer=0d0
     !allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
     allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg))
   case('3dp')
-    allocate(xcol(NCELLg),zcol(NCELLg))
+    !allocate(xcol(NCELLg),zcol(NCELLg))
     allocate(xs1(NCELLg),xs2(NCELLg),xs3(NCELLg),xs4(NCELLg))
     allocate(zs1(NCELLg),zs2(NCELLg),zs3(NCELLg),zs4(NCELLg))
     xcol=0d0; zcol=0d0
@@ -163,7 +168,7 @@ program main
     !allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
     allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg))
   case('3dn','3dh')
-    allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg))
+    !allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg))
     allocate(xs1(NCELLg),xs2(NCELLg),xs3(NCELLg))
     allocate(ys1(NCELLg),ys2(NCELLg),ys3(NCELLg))
     allocate(zs1(NCELLg),zs2(NCELLg),zs3(NCELLg))
@@ -271,11 +276,11 @@ program main
   !generate kernel (H-matrix aprrox)
   if(my_rank.eq.0) write(*,*) 'Generating kernel'
   select case(problem)
-  case('2dp')
+  case('2dp','3dp')
     do i=1,NCELLg
       coord(i,1)=xcol(i)
       coord(i,2)=0.d0
-      coord(i,3)=0.d0
+      coord(i,3)=zcol(i)
     end do
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,1d-5)
@@ -286,7 +291,7 @@ program main
 
     NCELL=st_vel%ndc
     allocate(y(2*NCELL),yscal(2*NCELL),dydx(2*NCELL),yg(2*NCELLg),vars(NCELL))
-    write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
+    !write(*,*) 'my_rank',my_rank,st_vel%nlfc,st_vel%lbstrtc
     i=0
     do k=1,st_vel%nlfc
       do j=1,st_vel%lbndc(k)
@@ -330,15 +335,6 @@ program main
         !if(my_rank.eq.0) write(*,*) my_rank,i,vars(i)
       end do
     end do
-
-  case('3dp')
-    do i=1,NCELLg
-      coord(i,1)=xcol(i)
-      coord(i,2)=0.d0
-      coord(i,3)=zcol(i)
-    end do
-    call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-    lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,1d-5)
 
   case('3dn','3dh')
     do i=1,NCELLg
@@ -586,10 +582,10 @@ program main
      time3=MPI_Wtime()
      call derivs(x, y, dydx)!,,st_leafmtxps,st_leafmtxpn,st_bemv,st_ctl)
      time4=MPI_Wtime()
-     if(my_rank.eq.0) write(*,*) 'time for deriv',time4-time3
-     do i = 1, size(yscal)
-       yscal(i)=abs(y(i))+abs(dttry*dydx(i))+tiny
-     end do
+     !if(my_rank.eq.0) write(*,*) 'time for deriv',time4-time3
+     !do i = 1, size(yscal)
+     !  yscal(i)=abs(y(i))+abs(dttry*dydx(i))+tiny
+     !end do
 
     !parallel computing for Runge-Kutta
     call rkqs(y,dydx,x,dttry,eps,yscal,dtdid,dtnxt)
@@ -601,21 +597,21 @@ program main
       outfield=.false.
       if(mod(k,interval).eq.0) outfield=.true.
       vel=0d0
-      !do i = 1, NCELL
-        !i_=vars(i)
+      do i = 1, NCELL
+        i_=vars(i)
         !write(*,*) my_rank,i
-        !phi(i_) = y(2*i-1)
-        !tau(i_) = y(2*i)
+        phi(i_) = y(2*i-1)
+        tau(i_) = y(2*i)
         !write(*,*) my_rank,i,phi(i)
         !disp(i) = disp(i)+exp(y(2*i-1))*dtdid
-        !vel(i_)= 2*vref*exp(-phi(i_)/a(i_))*sinh(tau(i_)/sigma(i_)/a(i_))
+        vel(i_)= 2*vref*exp(-phi(i_)/a(i_))*sinh(tau(i_)/sigma(i_)/a(i_))
         !write(*,*)vel(i),dtdid
-        !disp(i_)=disp(i_)+vel(i_)*dtdid
-        !mu(i_)=tau(i_)/sigma(i_)
-        !if(outfield.and.(my_rank.lt.npd)) write(nout,'(i0,8e15.6,i10)') i_,xcol(i_),log10(abs(vel(i_))),tau(i_),sigma(i_),mu(i_),disp(i_),phi(i_),x,k
-      !end do
-      !if(outfield.and.(my_rank.lt.npd)) write(nout,*)
-      !mvel=maxval(abs(vel))
+        disp(i_)=disp(i_)+vel(i_)*dtdid
+        mu(i_)=tau(i_)/sigma(i_)
+        if(outfield.and.(my_rank.lt.npd)) write(nout,'(i0,8e15.6,i10)') i_,xcol(i_),log10(abs(vel(i_))),tau(i_),sigma(i_),mu(i_),disp(i_),phi(i_),x,k
+      end do
+      if(outfield.and.(my_rank.lt.npd)) write(nout,*)
+      mvel=maxval(abs(vel))
 
     case('2dn')
       outfield=.false.
@@ -687,10 +683,10 @@ program main
       write(*,*) 'time step=' ,k
     end if
     time2= MPI_Wtime()
-    !mvel=maxval(abs(vel))
-    mvelG=1d-6
-    !call MPI_ALLREDUCE(mvel,mvelG,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
-    write(52,'(i7,f18.5,e16.5,f16.4)')k,x,log10(mvelG),time2-time1
+    mvel=maxval(abs(vel))
+    !mvelG=1d-6
+    call MPI_ALLREDUCE(mvel,mvelG,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
+    if(mod(k,1).eq.0.and.my_rank.eq.0) write(52,'(i7,f18.5,e16.5,f16.4)')k,x,log10(mvelG),time2-time1
 
     if(mvelG.gt.velmax) then
       if(my_rank .eq. 0) write(*,*) 'slip rate above threshold'
@@ -1131,7 +1127,7 @@ rough=.true.
     real(8) :: sum_xx2(NCELL),sum_xy2(NCELL),sum_yy2(NCELL),sum_xz2(NCELL),sum_yz2(NCELL),sum_zz2(NCELL)
     real(8)::veltmpG(NCELLg),sum_gsg(NCELLg),sum_gng(NCELLg),efftmpG(NCELLg)
     real(8):: c1, c2, c3, arg,c,g,tauss,Arot(3,3),p(6),timeb,timea
-    integer :: i, j, nc,ierr,lrtrn,i_
+    integer :: i, j, k,nc,ierr,lrtrn,i_
 
     !if(my_rank.eq.0) then
     select case(problem)
@@ -1153,8 +1149,7 @@ rough=.true.
         timea=MPI_Wtime()
         call HACApK_adot_lattice_hyp(st_sum,st_LHp,st_ctl,wws,st_vel)
         timeb=MPI_Wtime()
-        if(my_rank.eq.0) write(*,*) 'time for HACAPK_adot_lattice_hyp',timeb-timea
-        
+        !if(my_rank.eq.0) write(*,*) 'time for HACAPK_adot_lattice_hyp',timeb-timea
         sum_gs(:)=st_sum%vs(st_ctl%lod(:))
         !lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
         !call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
@@ -1163,7 +1158,7 @@ rough=.true.
           sum_gn(i)=0.d0
           sum_gs(i)=sum_gs(i)+taudot(i_)
         end do
-       
+
         !if(my_rank.eq.0) write(*,*) 'time ',timea-timeb
       case(1)
         st_vel%vs=veltmp-vpl
@@ -1179,9 +1174,9 @@ rough=.true.
       do i = 1, NCELL
         dydx(2*i-1) = dphidt(i)
         dydx(2*i) = dtaudt(i)
-      enddo 
+      enddo
       timea=MPI_Wtime()
-      if(my_rank.eq.0) write(*,*) 'time for friction evaluation',timea-timeb
+      !if(my_rank.eq.0) write(*,*) 'time for friction evaluation',timea-timeb
       !call MPI_SCATTERv(sum_gsG,NCELL,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
 
     case('2dn')
@@ -1613,17 +1608,18 @@ rough=.true.
     h=htry
     do while(.true.)
       !time(1)=MPI_Wtime()
-      call rkck(y,dydx,x,h,ytemp,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+      call rkck(y,x,dydx,h,ytemp,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
       !time(2)=MPI_Wtime()
       !if(my_rank.eq.0) write(*,*) 'time for rkck',time(2)-time(1)
       errmax=0d0
+      !yscal=ytemp
       select case(problem)
       case('3dn','3dh')
       do i=1,NCELL
         if(abs(yerr(4*i-3)/yscal(4*i-3))/eps.gt.errmax) errmax=abs(yerr(4*i-3)/yscal(4*i-3))/eps
       end do
       case('2dp','3dp','2dn')
-      errmax=maxval(abs(yerr(:)/yscal(:)))/eps
+      errmax=maxval(abs(yerr(:)/ytemp(:)))/eps
       !write(*,*) my_rank,errmax
       end select
       !call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -1650,7 +1646,7 @@ rough=.true.
   end subroutine
 
   !---------------------------------------------------------------------
-  subroutine rkck(y,dydx,x,h,yout,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+  subroutine rkck(y,x,dydx,h,yout,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
     !---------------------------------------------------------------------
     use m_HACApK_solve
     use m_HACApK_base
@@ -1658,13 +1654,12 @@ rough=.true.
     implicit none
     include 'mpif.h'
     !integer,intent(in)::NCELL,NCELLg,rcounts(:),displs(:)
-    real(8),intent(in)::y(:),dydx(:),x,h
+    real(8),intent(in)::y(:),x,h,dydx(:)
     real(8),intent(out)::yout(:),yerr(:)
     !type(st_HACApK_lcontrol),intent(in) :: st_ctl
     !type(st_HACApK_leafmtxp),intent(in) :: st_leafmtxp
     !type(st_HACApK_calc_entry) :: st_bemv
     integer ::i
-    integer,parameter::nmax=100000
     real(8) :: ak2(3*NCELL),ak3(3*NCELL),ak4(3*NCELL),ak5(3*NCELL),ak6(3*NCELL),ytemp(3*NCELL)
     real(8) :: A2,A3,A4,A5,A6,B21,B31,B32,B41,B42,B43,B51
     real(8) :: B52,B53,B54,B61,B62,B63,B64,B65,C1,C3,C4,C6,DC1,DC3,DC4,DC5,DC6
@@ -1677,6 +1672,7 @@ rough=.true.
     parameter (DC4=C4-13525./55296.,DC5=-277./14336.,DC6=C6-.25)
 
     !     -- 1st step --
+    !call derivs(x,y,dydx)
     !$omp parallel do
     do i=1,size(y)
       ytemp(i)=y(i)+B21*h*dydx(i)
