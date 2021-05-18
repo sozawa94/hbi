@@ -57,6 +57,7 @@ contains
     Sxy=Sxy_m+Sxy_h+Sxy_i
     Sxz=Sxz_m+Sxz_h+Sxz_i
     Syz=Syz_m+Syz_h+Syz_i
+    !Sxy=Sxy_h
     ! Stress = StsMS+StsIS+StsFSC;
     ! Strain = StrMS+StrIS+StrFSC;
 
@@ -128,6 +129,11 @@ contains
     bx = Ts ! Tensile-slip
     by = Ss ! Strike-slip
     bz = Ds ! Dip-slip
+
+    ! bx = Ss ! Tensile-slip
+    ! by = Ts ! Strike-slip
+    ! bz = Ds ! Dip-slip
+
     !!write(*,*) 'bx,by,bz',bx,by,bz
 
 
@@ -279,11 +285,11 @@ contains
     Sxz = 2*mu*exz
     Syz = 2*mu*eyz
     !!write(*,*)'Sxx,Syy,Szz,Sxy,Sxz,Syz in TDCS'
-    !!write(*,*)Sxx,Syy,Szz,Sxy,Sxz,Syz
+    !write(*,*)Sxx,Syy,Szz,Sxy,Sxz,Syz
 
 
     ! Transform the strain tensor components from TDCS into EFCS
-
+    !write(*,*)At
     call TensTrans(exx,eyy,ezz,exy,exz,eyz,At,&
     & Exx_,Eyy_,Ezz_,Exy_,Exz_,Eyz_)
 
@@ -294,6 +300,7 @@ contains
     Sxy = 2*mu*Exy_
     Sxz = 2*mu*Exz_
     Syz = 2*mu*Eyz_
+
     !!!write(*,*)Sxx,Syy,Szz,Sxy,Sxz,Syz
 
     !!!write(*,*)Sxy
@@ -369,15 +376,15 @@ contains
   call AngSetupFSC_S(X,Y,Z,bXt,bYt,bZt,P1,P2,mu,lambda,&
   &Sxx1,Syy1,Szz1,Sxy1,Sxz1,Syz1)
   !write(*,*)Sxx1,Syy1,Szz1,Sxy1,Sxz1,Syz1
-  !write(*,*)
+  ! write(*,*)
   call AngSetupFSC_S(X,Y,Z,bXt,bYt,bZt,P2,P3,mu,lambda,&
   &Sxx2,Syy2,Szz2,Sxy2,Sxz2,Syz2)
   !write(*,*)Sxx2,Syy2,Szz2,Sxy2,Sxz2,Syz2
-  !write(*,*)
+  ! write(*,*)
   call AngSetupFSC_S(X,Y,Z,bXt,bYt,bZt,P3,P1,mu,lambda,&
   &Sxx3,Syy3,Szz3,Sxy3,Sxz3,Syz3)
   !write(*,*)Sxx3,Syy3,Szz3,Sxy3,Sxz3,Syz3
-  !write(*,*)
+  ! write(*,*)
   !
   ! % Calculate total harmonic function contribution to strains and stresses
   ! Stress = Stress1+Stress2+Stress3;
@@ -546,18 +553,24 @@ contains
   !
   ! % Calculate TD side vector and the angle of the angular dislocation pair
   SideVec = PB-PA
+  !write(*,*)'SideVec',SideVec
   eZ = (/ 0.0D0, 0.0D0, 1.0D0 /)
   beta = acos(-SideVec(3)/sqrt(dot_product(SideVec,SideVec)))!;
+  !write(*,*)beta
   !
-  if ((abs(beta)<1d-15).or.(abs(pi-beta)<1d-15)) then
+  if ((abs(beta)<1d-4).or.(abs(pi-beta)<1d-4)) then
   !     Stress = zeros(length(X),6);
   Sxx=0d0;Syy=0d0;Szz=0d0;Sxy=0d0;Sxz=0d0;Syz=0d0
   !     Strain = zeros(length(X),6);
   else
        ey1 = (/SideVec(1),SideVec(2),0d0/)
+
        ey1 = ey1/sqrt(dot_product(ey1,ey1))
+       !write(*,*) 'ey1',ey1
        ey3 = -eZ
+       !write(*,*) 'ey3',ey3
        call Dcross(ey3,ey1,ey2)
+       !write(*,*) 'ey2',ey2
        !ey2 = cross(ey3,ey1);
        !A = [ey1,ey2,ey3]!; % Transformation matrix
        A(1,1:3)=ey1(1:3)
@@ -643,12 +656,19 @@ contains
        v12 = v12B-v12A
        v13 = v13B-v13A
        v23 = v23B-v23A
-       !write(*,*)v11,v22,v33,v12,v13,v23
+       !rite(*,*)v11,v22,v33,v12,v13,v23
   !
   !     % Transform total Free Surface Correction to strains from ADCS to EFCS
   !     [Exx,Eyy,Ezz,Exy,Exz,Eyz] = TensTrans(v11,v22,v33,v12,v13,v23,A');
+  !debug
+  ! A(1:3,1)=ey1(1:3)
+  ! A(1:3,2)=ey2(1:3)
+  ! A(1:3,3)=ey3(1:3)
+  !debug end
+
   call TensTrans(v11,v22,v33,v12,v13,v23,A,&
     & Exx,Eyy,Ezz,Exy,Exz,Eyz)
+    !write(*,*)Exx,Eyy,Ezz,Exy,Exz,Eyz
   !
   !     % Calculate total Free Surface Correction to stresses in EFCS
        Sxx = 2*mu*Exx+lambda*(Exx+Eyy+Ezz)

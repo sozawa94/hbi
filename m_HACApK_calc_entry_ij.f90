@@ -35,7 +35,7 @@ contains
 
     case('2dn')
       HACApK_entry_ij=tensor2d_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
-      & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang,st_bemv%v)
+      & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang,st_bemv%v,st_bemv%md)
 
     case('2dnh')
       HACApK_entry_ij=matel2dnh_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%ang,st_bemv%v)
@@ -207,21 +207,26 @@ contains
   End Subroutine res
 
 
-  real(8) function tensor2d_ij(i,j,xcol,ycol,xel,xer,yel,yer,ang,v)
+  real(8) function tensor2d_ij(i,j,xcol,ycol,xel,xer,yel,yer,ang,v,md)
     implicit none
     integer,intent(in)::i,j
     real(8),intent(in)::xcol(:),ycol(:),xel(:),xer(:),yel(:),yer(:),ang(:)
-    character(128),intent(in)::v
+    character(128),intent(in)::v,md
     real(8)::xp,xm,yp,ym,kern11,kern12,kern22,sin2,cos2,ds
 
     xp=cos(ang(j))*(xcol(i)-xel(j))+sin(ang(j))*(ycol(i)-yel(j))
     xm=cos(ang(j))*(xcol(i)-xer(j))+sin(ang(j))*(ycol(i)-yer(j))
     yp=-sin(ang(j))*(xcol(i)-xel(j))+cos(ang(j))*(ycol(i)-yel(j))
     ym=-sin(ang(j))*(xcol(i)-xer(j))+cos(ang(j))*(ycol(i)-yer(j))
+
     kern11=-0.5d0*rigid/vs*(inte11s(xp,yp)-inte11s(xm,ym))
     kern12=-0.5d0*rigid/vs*(inte12s(xp,yp)-inte12s(xm,ym))
     kern22=-0.5d0*rigid/vs*(inte22s(xp,yp)-inte22s(xm,ym))
-
+    if(md.eq.'open')then
+      kern11=-0.5d0*rigid/vs*(inte11o(xp,yp)-inte11o(xm,ym))
+      kern12=-0.5d0*rigid/vs*(inte12o(xp,yp)-inte12o(xm,ym))
+      kern22=-0.5d0*rigid/vs*(inte22o(xp,yp)-inte22o(xm,ym))
+    end if
     ! xp=dcos(ang(j))*(xcol(i)-xcol(j))+dsin(ang(j))*(ycol(i)-ycol(j))
     ! yp=-dsin(ang(j))*(xcol(i)-xcol(j))+dcos(ang(j))*(ycol(i)-ycol(j))
     ! ds=dsqrt((xer(j)-xel(j))**2+(yer(j)-yel(j))**2)
@@ -572,6 +577,33 @@ contains
     return
   end function
 
+  function inte12o(x1,x2)
+    implicit none
+    real(8)::x1,x2,t,ss,sp,inte,pa,inte12o,r
+    r=sqrt(x1**2+x2**2)
+    pa=vs/vp
+    inte12o=2*vs/pi*(1-pa**2)*x2*(x1**2-x2**2)/r**4
+    return
+  end function
+
+  function inte11o(x1,x2)
+    implicit none
+    real(8)::x1,x2,t,ss,sp,inte,pa,inte11o,r
+    r=sqrt(x1**2+x2**2)
+    pa=vs/vp
+    inte11o=2*vs/pi*(1-pa**2)*x1*(x1**2-x2**2)/r**4
+    return
+  end function
+
+  function inte22o(x1,x2)
+    implicit none
+    real(8)::x1,x2,t,ss,sp,inte,pa,inte22o,r
+    r=sqrt(x1**2+x2**2)
+    pa=vs/vp
+    inte22o=2*vs/pi*(1-pa**2)*x1*(3*x1**2+x2**2)/r**4
+    return
+  end function
+
   function inte31s(x1,x2)
     implicit none
     real(8)::x1,x2,t,ss,sp,pa,r,inte31s
@@ -695,6 +727,8 @@ contains
       matel3dh_ij=p(6)
     case('n')
       matel3dh_ij=p(3)
+    case('c')
+      matel3dh_ij=p(5)-0.6*p(3)
     end select
   end function matel3dh_ij
   real(8) function matelh1_ij(i,j,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,v,md)
@@ -747,23 +781,24 @@ contains
     dy=-sin(strike(j))*(xcol(i)-xcol(j))+cos(strike(j))*(ycol(i)-ycol(j))
     !select case(md)
     !case('st')
-    call dc3d(alpha,dx,dy,ds(j),w,&
-    & ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz)
+    !call dc3d(alpha,dx,dy,ds(j),w,&
+    !& ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz)
+    call dc3d(alpha,dx,dy,ds(j),w,sxx,sxy,syy)
     ! case('dp')
     !   call dc3d(alpha,dx,dy,zcol(i),zcol(j),dip(j),-0.5d0*ds,0.5d0*ds,-0.5d0*ds,0.5d0*ds,0d0,1d-8,0d0, ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,iret)
     !end select
-    exx=-uxx
-    eyy=-uyy
-    ezz=-uzz
-    exy=-0.5d0*(uxy+uyx)
-    eyz=-0.5d0*(uyz+uzy)
-    ezx=-0.5d0*(uzx+uxz)
-    sxx=rigid*(exx+eyy+ezz)+2*rigid*exx
-    syy=rigid*(exx+eyy+ezz)+2*rigid*eyy
-    szz=rigid*(exx+eyy+ezz)+2*rigid*ezz
-    sxy=2*rigid*exy
-    sxz=2*rigid*ezx
-    syz=2*rigid*eyz
+    ! exx=-uxx
+    ! eyy=-uyy
+    ! ezz=-uzz
+    ! exy=-0.5d0*(uxy+uyx)
+    ! !eyz=-0.5d0*(uyz+uzy)
+    ! !ezx=-0.5d0*(uzx+uxz)
+    ! sxx=rigid*(exx+eyy+ezz)+2*rigid*exx
+    ! syy=rigid*(exx+eyy+ezz)+2*rigid*eyy
+    ! !szz=rigid*(exx+eyy+ezz)+2*rigid*ezz
+    ! sxy=2*rigid*exy
+    !sxz=2*rigid*ezx
+    !syz=2*rigid*eyz
 
     !rerotation
     select case(v)
@@ -776,37 +811,38 @@ contains
     end select
     return
   end function matelrec_ij
-  subroutine  dc3d(alpha,x,y,dl,dw,&
-    &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz)
+  subroutine  dc3d(alpha,x,y,dl,dw,sxx,sxy,syy)
     implicit none
     real(8),intent(in)::alpha,x,y,dl,dw
-    real(8),intent(out)::ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz
+    real(8),intent(out)::sxx,sxy,syy
+    real(8)::ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz
     integer::i,j,k
     real(8)::  xi(2),et(2),d,p,q
-    real(8)::  u(12),du(12),dua(12)
+    real(8)::  u(12),du(12),dua(12),exx,exy,eyy,ezz
 
     xi(1)=x+0.5d0*dl
     xi(2)=x-0.5d0*dl
     q=y
     et(1)=p+0.5*dw
     et(2)=p-0.5*dw
+    p=0.d0
 
     u=0d0
     do k=1,2
       do j=1,2
         call ua(alpha,xi(j),et(k),q,dua)
-        du(1)  =-dua(1)
-        du(2)=dua(3)
-        du(3)=-dua(2)
-        du(4)  =-dua(4)
-        du(5)=dua(6)
-        du(6)=-dua(5)
-        du(7)  =-dua(7)
-        du(8)=dua(9)
-        du(9)=-dua(8)
-        du(10)  =dua(10)
-        du(11)=dua(12)
-        du(12)=dua(11)
+        !du(1)  =-dua(1)
+        !du(2)=dua(3)
+        !du(3)=-dua(2)
+        du(4)  =-dua(4) !ux,x
+        du(5)=dua(6) !uy,x
+        !du(6)=-dua(5)
+        du(7)  =-dua(7)!ux,y
+        du(8)=dua(9)!uy,y
+        !du(9)=-dua(8)
+        !du(10)  =dua(10)
+        !du(11)=dua(12)
+        du(12)=dua(11)!uz,z
         do i=1,12
           if(j+k.ne.3) u(i)=u(i)+du(i)
           if(j+k.eq.3) u(i)=u(i)-du(i)
@@ -828,6 +864,17 @@ contains
     uxz=u(10)
     uyz=u(11)
     uzz=u(12)
+
+    exx=-uxx
+    eyy=-uyy
+    ezz=-uzz
+    exy=-0.5d0*(uxy+uyx)
+    !eyz=-0.5d0*(uyz+uzy)
+    !ezx=-0.5d0*(uzx+uxz)
+    sxx=rigid*(exx+eyy+ezz)+2*rigid*exx
+    syy=rigid*(exx+eyy+ezz)+2*rigid*eyy
+    !szz=rigid*(exx+eyy+ezz)+2*rigid*ezz
+    sxy=2*rigid*exy
     return
 
   end subroutine dc3d
@@ -842,28 +889,25 @@ contains
     yp=q
     r2=xi**2+et**2+q**2
     r =dsqrt(r2)
-
     rxi=r+xi
     x11=1d0/(r*rxi)
-
     ret=r+et
-    ale=dlog(ret)
     y11=1d0/(r*ret)
     y32=(r+ret)*y11*y11/r
     !----
 
-    du( 1)= datan2(xi*et,q*r)/2d0 +alpha/2*xi*q*y11
-    du( 2)= alpha/2*q/r
-    du( 3)= (1d0-alpha)/2d0*dlog(r+et)-alpha/2*q*q*y11
-    du( 4)=-(1d0-alpha)/2d0*q*y11-alpha/2*xi**2*q*y32
-    du( 5)=-alpha/2*xi*q/r**3
-    du( 6)= (1d0-alpha)/2d0*xi*y11+alpha/2*xi*q**2*y32
-    du( 7)= (1d0-alpha)/2d0*xi*y11+alpha/2*xi*(et/r**3+xi**2*y32) +et/2d0*x11
-    du( 8)= alpha/2*(1d0/r-q*q/r**3)
-    du( 9)= (1d0-alpha)/2d0*(q*y11) -alpha/2*q*(et/r**3+xi**2*y32)
-    du(10)= alpha/2*xi*(yp/r**3)+yp/2d0*x11
-    du(11)= alpha/2*(et*q/r**3)
-    du(12)=-(1d0-alpha)/2d0*(1d0/r-q*y11) -alpha/2*q*(yp/r**3+xi**2*y32)
+    !du( 1)= datan2(xi*et,q*r)/2d0 +alpha/2*xi*q*y11
+    !du( 2)= alpha/2*q/r
+    !du( 3)= (1d0-alpha)/2d0*dlog(r+et)-alpha/2*q*q*y11
+    du( 4)=-(1d0-alpha)/2d0*q*y11-alpha/2*xi**2*q*y32 !-ux,x
+    !du( 5)=-alpha/2*xi*q/r**3
+    du( 6)= (1d0-alpha)/2d0*xi*y11+alpha/2*xi*q**2*y32 !uy,x
+    du( 7)= (1d0-alpha)/2d0*xi*y11+alpha/2*xi*(et/r**3+xi**2*y32) +et/2d0*x11 !-ux,y
+    !du( 8)= alpha/2*(1d0/r-q*q/r**3)
+    du( 9)= (1d0-alpha)/2d0*(q*y11) -alpha/2*q*(et/r**3+xi**2*y32) !uy,y
+    !du(10)= alpha/2*xi*(yp/r**3)+yp/2d0*x11
+    du(11)= alpha/2*(et*q/r**3) !uz,z
+    !du(12)=-(1d0-alpha)/2d0*(1d0/r-q*y11) -alpha/2*q*(yp/r**3+xi**2*y32)
     !write(*,*)'du',du
     du=du/(pi*2)
 
