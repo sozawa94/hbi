@@ -83,7 +83,7 @@ program main
   call MPI_INIT(ierr)
   call MPI_COMM_SIZE(MPI_COMM_WORLD,np,ierr )
   call MPI_COMM_RANK(MPI_COMM_WORLD,my_rank,ierr )
-  
+
   if(my_rank.eq.0) then
     write(*,*) '# of MPI cores', np
   end if
@@ -560,7 +560,7 @@ program main
 
 
   !setting initial condition
-  
+
   !uniform
   sigma=sigma0
   tau=sigma*muinit
@@ -572,7 +572,7 @@ program main
     taus=tau
     taud=0d0
   end select
-  
+
   !non-uniform initial stress from subroutine initcond()
   if(nonuniformstress) then
   select case(problem)
@@ -594,7 +594,7 @@ program main
     call initcond3dh(phi,sigma,taus,taud)
   end select
   end if
-  
+
   if(aftershock.or.nuclei) call add_nuclei(tau,intau,inloc)
   !call MPI_BARRIER(MPI_COMM_WORLD,ierr)
   !for FDMAP-BIEM simulation
@@ -612,10 +612,15 @@ program main
     open(46,file=fname,form='unformatted',access='stream')
     write(fname,'("output/vel",i0,".dat")') number
     open(47,file=fname,form='unformatted',access='stream')
+    write(fname,'("output/tau",i0,".dat")') number
+    open(48,file=fname,form='unformatted',access='stream')
+    write(fname,'("output/sigma",i0,".dat")') number
+    open(49,file=fname,form='unformatted',access='stream')
+
     write(fname,'("output/event",i0,".dat")') number
     open(44,file=fname)
     write(fname,'("output/local",i0,".dat")') number
-    open(42,file=fname)
+    open(51,file=fname)
 
     open(19,file='job.log',position='append')
     call date_and_time(sys_time(1), sys_time(2), sys_time(3), date_time)
@@ -642,6 +647,10 @@ program main
   !output intiial condition
   if(my_rank.eq.0) then
     !call output_field_fd2d()
+    write(46) disp
+    write(47) vel
+    write(48) tau
+    write(49) sigma
     call output_field()
     call output_monitor()
     if(SEAS) then
@@ -797,6 +806,7 @@ program main
     !output
     if(my_rank.eq.0) then
       call output_monitor()
+      if(mod(k,10).eq.0) call output_local(NCELLg/2)
       if(SEAS)  call output_local_BP(locid)
       if(SEAS)  call output_global_BP()
       if(SEAS.and.problem.eq.'2dnh'.and.mod(k,3).eq.0)  call output_local_BP3()
@@ -840,7 +850,7 @@ program main
         write(*,*) 'time step=' ,k,x/365/24/60/60
         call output_field()
         if(SEAS) call output_field_BP3()
-        write(47) vel
+        !write(47) vel
         !call output_field_fd2d()
 
       end if
@@ -861,6 +871,8 @@ program main
         if(slipevery.and.(my_rank.eq.0)) then
           write(46) disp
           write(47) vel
+          write(48) tau!-taudot*x
+          write(49) sigma!-sigdot*x
           call output_field()
         end if
         !if(my_rank.eq.0) then
@@ -879,25 +891,23 @@ program main
         select case(problem)
         case('2dn','2dp','2dh','2dn3','25d')
           moment=sum((disp-idisp)*ds)
+        case('3dp','3dn','3dh','3dnf','3dhf','3dph')
+          moment=sum(disp-idisp)
+        end select
           counts2=0
           do i=1,ncellg
             if((disp(i)-idisp(i)).gt.0.001) counts2=counts2+1
           end do
-        case('3dp','3dn','3dh','3dnf','3dhf','3dph')
-          moment=sum(disp-idisp)
-        end select
         !eventcount=eventcount+1
         !end of an event
         if(my_rank.eq.0) then
           write(44,'(i0,f19.4,2i7,3e15.6)') eventcount,onset_time,hypoloc,counts2,moment,maxval(sigma),minval(sigma)
           if(slipevery) then
             call output_field()
-            !do i=1,NCELLg
-            !  write(46,*) i,disp(i),mu(i)
-            !end do
-            !write(46,*)
             write(46) disp
             write(47) vel
+            write(48) tau!-taudot*x
+            write(49) sigma!-sigdot*x
           end if
         end if
       end if
@@ -1035,7 +1045,7 @@ contains
     select case(problem)
     case('3dp','3dph')
       do i=1,NCELLg
-        write(50,'(7e15.6,i10)') xcol(i),zcol(i),log10(vel(i)),mu(i),disp(i),phi(i),k
+        write(50,'(8e15.6,i10)') xcol(i),zcol(i),log10(vel(i)),mu(i),disp(i),phi(i),x,k
       end do
       write(50,*)
       write(50,*)
@@ -1046,7 +1056,7 @@ contains
       write(50,*)
     case('3dnf','3dhf')
       do i=1,NCELLg
-        write(50,'(9e14.5,i10)') xcol(i),ycol(i),zcol(i),log10(vel(i)),tau(i),phi(i),mu(i),sigma(i),disp(i),k
+        write(50,'(10e14.5,i10)') xcol(i),ycol(i),zcol(i),log10(vel(i)),tau(i),sigma(i),mu(i),disp(i),phi(i),x,k
       end do
       write(50,*)
       write(50,*)
@@ -1063,6 +1073,10 @@ contains
       write(50,'(9e15.6)') x,xcol(i),ycol(i),vel(i),tau(i),disp(i),sigma(i),mu(i),phi(i)
     end do
     write(50,*)
+  end subroutine
+  subroutine output_local(i)
+    integer,intent(in)::i
+    write(51,'(9e15.6)') x,xcol(i),ycol(i),vel(i),tau(i),disp(i),sigma(i),mu(i),phi(i)
   end subroutine
   subroutine output_local_BP(locid)
     implicit none
@@ -1989,7 +2003,7 @@ write(*,*) imax,jmax
     real(8)::factor,edge,ret1,ret2,xx1,xx2,xy1,xy2,yy1,yy2,lang
     integer::i
     character(128)::v
-
+    open(15,file='sr')
     select case(problem)
     case('2dp','3dp','2dh','3dhf','3dph')
       taudot=sr
@@ -2005,7 +2019,7 @@ write(*,*) imax,jmax
 
     case('2dn3')
       factor=1.0 !unbalanced loading
-      open(15,file='sr')
+
       sigdot=0d0
       tauddot=0d0
       !write(*,*) load
@@ -2031,7 +2045,7 @@ write(*,*) imax,jmax
           sigdot(i)=sr*sin(2*lang)
           taudot(i)=sr
           sigdot(i)=0d0
-          write(15,*) taudot(i),sigdot(i)
+
         case(1)
           !edge=ds*NCELLg/2
 
@@ -2048,14 +2062,14 @@ write(*,*) imax,jmax
           !factor=2.0 unbalanced loading
 
           v='xx'
-          xx1=tensor2d_load(xcol(i),ycol(i),-500d0*cos(ang(1))+xel(1),xel(1),-500d0*sin(ang(1))+yel(1),yel(1),ang(1),v)
-          xx2=tensor2d_load(xcol(i),ycol(i),xer(nmain),xer(nmain)+500*cos(ang(nmain)),yer(nmain),yer(nmain)+500*sin(ang(nmain)),ang(nmain),v)
+          xx1=tensor2d_load(xcol(i),ycol(i),-5000d0*cos(ang(1))+xel(1),xel(1),-5000d0*sin(ang(1))+yel(1),yel(1),ang(1),v)
+          xx2=tensor2d_load(xcol(i),ycol(i),xer(nmain),xer(nmain)+500d00*cos(ang(nmain)),yer(nmain),yer(nmain)+5000*sin(ang(nmain)),ang(nmain),v)
           v='xy'
-          xy1=tensor2d_load(xcol(i),ycol(i),-500d0*cos(ang(1))+xel(1),xel(1),-500d0*sin(ang(1))+yel(1),yel(1),ang(1),v)
-          xy2=tensor2d_load(xcol(i),ycol(i),xer(nmain),xer(nmain)+500*cos(ang(nmain)),yer(nmain),yer(nmain)+500*sin(ang(nmain)),ang(nmain),v)
+          xy1=tensor2d_load(xcol(i),ycol(i),-5000d0*cos(ang(1))+xel(1),xel(1),-5000d0*sin(ang(1))+yel(1),yel(1),ang(1),v)
+          xy2=tensor2d_load(xcol(i),ycol(i),xer(nmain),xer(nmain)+500*cos(ang(nmain)),yer(nmain),yer(nmain)+5000*sin(ang(nmain)),ang(nmain),v)
           v='yy'
-          yy1=tensor2d_load(xcol(i),ycol(i),-500d0*cos(ang(1))+xel(1),xel(1),-500d0*sin(ang(1))+yel(1),yel(1),ang(1),v)
-          yy2=tensor2d_load(xcol(i),ycol(i),xer(nmain),xer(nmain)+500*cos(ang(nmain)),yer(nmain),yer(nmain)+500*sin(ang(nmain)),ang(nmain),v)
+          yy1=tensor2d_load(xcol(i),ycol(i),-5000d0*cos(ang(1))+xel(1),xel(1),-5000d0*sin(ang(1))+yel(1),yel(1),ang(1),v)
+          yy2=tensor2d_load(xcol(i),ycol(i),xer(nmain),xer(nmain)+5000*cos(ang(nmain)),yer(nmain),yer(nmain)+5000*sin(ang(nmain)),ang(nmain),v)
 
           !tau
           ret1=0.5d0*(xx1-yy1)*dsin(-2*ang(i))+xy1*dcos(-2*ang(i))
@@ -2066,6 +2080,7 @@ write(*,*) imax,jmax
           ret2=-(0.5d0*(xx2+yy2)-0.5d0*(xx2-yy2)*dcos(2*ang(i))-xy2*dsin(2*ang(i)))
           sigdot(i)=vpl*(ret1+ret2)
         end select
+        write(15,*) taudot(i),sigdot(i)
       end do
       tauddot=0d0
     case('2dnh')
@@ -2104,6 +2119,7 @@ write(*,*) imax,jmax
       !    sigdotG(i)=0d0
       !  end do
     end select
+    close(15)
   end subroutine
   subroutine varscalc(NCELL,displs,vars)
     implicit none
@@ -2177,7 +2193,7 @@ write(*,*) imax,jmax
     !real(8) :: sum_xx2G(NCELLg),sum_xy2G(NCELLg),sum_yy2G(NCELLg),sum_xz2G(NCELLg),sum_yz2G(NCELLg),sum_zz2G(NCELLg)
     real(8) :: veltmpG(NCELLg),sum_gsg(NCELLg),sum_gng(NCELLg),sum_gdg(NCELLg)!,efftmpG(NCELLg)
     real(8) :: sum_gs2G(NCELLg),sum_gd2G(NCELLg),sum_gn2G(NCELLg)
-    real(8) :: time3,time4,c1, c2, c3, arg,c,g,tauss,Arot(3,3),p(6),fac,sxx0,sxy0,syy0
+    real(8) :: time3,time4,c1, c2, c3, arg,arg2,c,g,tauss,Arot(3,3),p(6),fac,sxx0,sxy0,syy0
     integer :: i, j, nc,ierr,lrtrn,i_
 
     !if(my_rank.eq.0) then
@@ -2275,7 +2291,7 @@ write(*,*) imax,jmax
         !sum_gn(i)=0.5d0*(sum_xx(i)+sum_yy(i))-0.5d0*(sum_xx(i)-sum_yy(i))*dcos(2*ang(i))-sum_xy(i)*dsin(2*ang(i))
         sum_gn(i)=-(0.5d0*(sum_xx(i)+sum_yy(i))-0.5d0*(sum_xx(i)-sum_yy(i))*dcos(2*ang(i_))-sum_xy(i)*dsin(2*ang(i_)))
       end do
-      
+
       !stress relaxation
       syy0=sigma0
       sxy0=syy0*muinit
@@ -2284,8 +2300,8 @@ write(*,*) imax,jmax
         i_=vars(i)
         arg=sin(ang(i_))**2*sxx0+cos(ang(i_))**2*syy0+sxy0*sin(2*ang(i_))
         sum_gn(i)=sum_gn(i)+sigdot(i_)-(sigmatmp(i)-arg)/trelax
-        arg=sxy0*cos(2*ang(i_))+0.5d0*(sxx0-syy0)*sin(2*ang(i_))
-        sum_gs(i)=sum_gs(i)+taudot(i_)-(tautmp(i)-arg)/trelax
+        arg2=sxy0*cos(2*ang(i_))+0.5d0*(sxx0-syy0)*sin(2*ang(i_))
+        sum_gs(i)=sum_gs(i)+taudot(i_)-(tautmp(i)-arg2)/trelax
       end do
       if(sigmaconst) sum_gn=0d0
 
