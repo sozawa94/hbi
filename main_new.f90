@@ -51,7 +51,7 @@ program main
   real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:)
 
 
-  integer::lp,i,i_,j,k,m,counts,interval,lrtrn,nl,ios,nmain
+  integer::lp,i,i_,j,k,m,counts,interval,lrtrn,nl,ios,nmain,rk
   integer,allocatable::locid(:)
   integer::hypoloc(1),load,eventcount,thec,inloc,sw
 
@@ -120,6 +120,8 @@ program main
   slipevery=.false.
   foward=.false.
   inverse=.false.
+  slipfinal=.false.
+  nonuniformstress=.false.
   maxsig=300d0
   minsig=20d0
   amp=0d0
@@ -463,7 +465,7 @@ program main
     coord(i,3)=zcol(i)
   end do
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-
+  !st_ctl%param(21)=1
   select case(problem)
   case('2dp','2dh','2dn3','3dp','3dph')
     lrtrn=HACApK_generate(st_leafmtxps,st_bemv,st_ctl,coord,eps_h)
@@ -609,13 +611,13 @@ program main
     !write(fname,'("output/rupt",i0,".dat")') number
     !open(48,file=fname)
     write(fname,'("output/slip",i0,".dat")') number
-    open(46,file=fname,form='unformatted',access='stream')
+    open(46,file=fname,form='unformatted',access='stream',status='replace')
     write(fname,'("output/vel",i0,".dat")') number
-    open(47,file=fname,form='unformatted',access='stream')
+    open(47,file=fname,form='unformatted',access='stream',status='replace')
     write(fname,'("output/tau",i0,".dat")') number
-    open(48,file=fname,form='unformatted',access='stream')
+    open(48,file=fname,form='unformatted',access='stream',status='replace')
     write(fname,'("output/sigma",i0,".dat")') number
-    open(49,file=fname,form='unformatted',access='stream')
+    open(49,file=fname,form='unformatted',access='stream',status='replace')
 
     write(fname,'("output/event",i0,".dat")') number
     open(44,file=fname)
@@ -636,6 +638,7 @@ program main
 
   x=0.d0 !x is time
   k=0
+  rk=0
   rupt=1d9
   rupsG=0
   dtnxt = dtinit
@@ -721,13 +724,13 @@ program main
   do k=1,NSTEP1
     dttry = dtnxt
 
-    call derivs(x, y, dydx)!,,st_leafmtxps,st_leafmtxpn,st_bemv,st_ctl)
-    do i = 1, size(yscal)
-      yscal(i)=abs(y(i))+abs(dttry*dydx(i))!+tiny
-    end do
+    !call derivs(x, y, dydx)!,,st_leafmtxps,st_leafmtxpn,st_bemv,st_ctl)
+    !do i = 1, size(yscal)
+    !  yscal(i)=abs(y(i))+abs(dttry*dydx(i))!+tiny
+    !end do
 
     !parallel computing for Runge-Kutta
-    call rkqs(y,dydx,x,dttry,eps_r,yscal,dtdid,dtnxt,errmax_gb)
+    call rkqs(y,dydx,x,dttry,eps_r,dtdid,dtnxt,errmax_gb)
 
     !limitsigm
     if(limitsigma) then
@@ -974,7 +977,7 @@ program main
 
   time2= MPI_Wtime()
   200  if(my_rank.eq.0) then
-  write(*,*) 'time(s)', time2-time1
+  write(*,*) 'time(s)', time2-time1!,rk
   open(19,file='job.log',position='append')
   write(19,'(a20,i0,f16.2)') 'Finished job number=',number,time2-time1
   !open(19,file='job.log',position='append')
@@ -1034,7 +1037,7 @@ contains
     time2=MPi_Wtime()
     select case(problem)
     case('2dp','3dp','2dh','2dn','2dnh','2dn3','3dph','3dnf','3dhf','25d')
-      write(52,'(i7,f19.4,7e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxval(sigma),minval(sigma),sum(sigma)/ncellg,errmax_gb,time2-time1
+      write(52,'(i7,f19.4,8e16.5,f16.4)')k,x,maxval(log10(abs(vel))),sum(disp)/NCELLg,sum(mu)/NCELLg,maxval(sigma),minval(sigma),sum(sigma)/ncellg,errmax_gb,dtdid,time2-time1
       !write(52,'(i7,f19.4,4e16.5,i10,f16.4)')k,x,maxval(log10(abs(vel(10001:)))),sum(abs(disp(10001:))),log10(maxval(vel(1:nmain))),sum(disp(1:nmain)),maxloc(vel),time2-time1
     case('3dn','3dh')
       write(52,'(i7,f19.4,6e16.5,f16.4)')k,x,maxval(log10(vel)),sum(disps)/NCELLg,sum(dispd)/NCELLg,sum(mu)/NCELLg,sum(sigma)/ncellg,errmax_gb,time2-time1
@@ -2667,7 +2670,7 @@ write(*,*) imax,jmax
   end subroutine
 
   !---------------------------------------------------------------------
-  subroutine rkqs(y,dydx,x,htry,eps,yscal,hdid,hnext,errmax_gb)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+  subroutine rkqs(y,dydx,x,htry,eps,hdid,hnext,errmax_gb)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
     !---------------------------------------------------------------------
     use m_HACApK_solve
     use m_HACApK_base
@@ -2675,39 +2678,61 @@ write(*,*) imax,jmax
     implicit none
     include 'mpif.h'
     !integer::NCELL,NCELLg,rcounts(:),displs(:)
-    real(8),intent(in)::yscal(:),htry,eps
+    real(8),intent(in)::htry,eps
     real(8),intent(inout)::y(:),x,dydx(:)
     real(8),intent(out)::hdid,hnext,errmax_gb !hdid: resulatant dt hnext: htry for the next
     !type(st_HACApK_lcontrol),intent(in) :: st_ctl
     !type(st_HACApK_leafmtxp),intent(in) :: st_leafmtxp
     !type(st_HACApK_calc_entry) :: st_bemv
-    integer :: i,ierr
+    integer :: i,ierr,loc
     real(8) :: errmax,h,xnew,htemp,dtmin
-    real(8),dimension(size(y))::yerr,ytemp
+    real(8),dimension(size(y))::yerr,ytemp,yscal
     real(8),parameter::SAFETY=0.9,PGROW=-0.2,PSHRNK=-0.25,ERRCON=1.89d-4
 
     h=htry
     !dtmin=0.5d0*minval(ds)/vs
+    !call derivs(x,y,dydx)
     do while(.true.)
-      call rkck(y,dydx,x,h,ytemp,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+      !1000 rk=rk+1
+      !do i = 1, size(yscal)
+      ! yscal(i)=abs(y(i))+abs(htry*dydx(i))!+tiny
+      !end do
+      call rkck(y,x,h,ytemp,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+      !if(maxval(abs(ytemp)).gt.1000d0) then
+      !  h=0.5*h
+      !  go to 1000
+      !end if
+
       errmax=0d0
+
+
       select case(problem)
       case('3dn','3dh')
         do i=1,NCELL
-          if(abs(yerr(4*i-3)/yscal(4*i-3))/eps.gt.errmax) errmax=abs(yerr(4*i-3)/yscal(4*i-3))/eps
+          ! if(abs(yerr(4*i-3)/yscal(4*i-3))/eps.gt.errmax) errmax=abs(yerr(4*i-3)/yscal(4*i-3))/eps
+          errmax=errmax+yerr(4*i-3)**2
         end do
       case('3dnf','3dhf','2dn','2dnh','25d')
         do i=1,NCELL
-          if(abs(yerr(3*i-2)/yscal(3*i-2))/eps.gt.errmax) errmax=abs(yerr(3*i-2)/yscal(3*i-2))/eps
+          ! if(abs(yerr(3*i-2)/yscal(3*i-2))/eps.gt.errmax) errmax=abs(yerr(3*i-2)/yscal(3*i-2))/eps
+          errmax=errmax+yerr(3*i-2)**2
         end do
       case('2dh','2dp','2dn3','3dph','3dp')
         do i=1,NCELL
-          if(abs(yerr(2*i-1)/yscal(2*i-1))/eps.gt.errmax) errmax=abs(yerr(2*i-1)/yscal(2*i-1))/eps
+          !if(abs(yerr(2*i-1)/yscal(2*i-1))/eps.gt.errmax) then
+          !  errmax=abs(yerr(2*i-1)/yscal(2*i-1))/eps
+          !  loc=i
+          !end if
+          !if(abs(yerr(2*i-1))/eps.gt.errmax) errmax=abs(yerr(2*i-1))/eps
+          errmax=errmax+yerr(2*i-1)**2
         end do
       end select
       !call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-      call MPI_ALLREDUCE(errmax,errmax_gb,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
-
+      !call MPI_ALLREDUCE(errmax,errmax_gb,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
+      call MPI_ALLREDUCE(errmax,errmax_gb,1,MPI_REAL8,MPI_SUM,MPI_COMM_WORLD,ierr)
+      errmax_gb=sqrt(errmax_gb/NCELLg)/eps
+      !write(*,*) h,errmax_gb,loc
+      !if(h.lt.0.25d0*ds0/vs)exit
       if((errmax_gb.lt.1.d0).and.(errmax_gb.gt.1d-15)) then
         exit
       end if
@@ -2716,8 +2741,13 @@ write(*,*) imax,jmax
       !   h=dtmin
       !   exit
       ! end if
-      !htemp=SAFETY*h*(errmax_gb**PSHRNK)
-      h=0.33d0*h
+       if(errmax_gb.gt.1d-15) then
+         h=max(0.5d0*h,SAFETY*h*(errmax_gb**PSHRNK))
+       else
+         h=0.5*h
+       end if
+      !end if
+      !h=0.7d0*h
       !h=sign(max(abs(htemp),0.1*abs(h)),h)
 
       xnew=x+h
@@ -2728,16 +2758,26 @@ write(*,*) imax,jmax
 
     end do
 
-    hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW),1d9)
+    hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW))
+    !if(hnext/h.gt.2d0) hnext=2*h
+    !hnext=max(0.249d0*ds0/vs,SAFETY*h*(errmax_gb**PGROW))
+
+    !hnext=min(,1d9)
 
     hdid=h
     x=x+h
     y(:)=ytemp(:)
+    ! if(k.eq.1000)then
+    !   open(87,file='err')
+    !   do i=1,ncellg
+    !     write(87,*)ytemp(2*i-1),yerr(2*i-1)
+    !   end do
+    ! end if
     return
   end subroutine
 
   !---------------------------------------------------------------------
-  subroutine rkck(y,dydx,x,h,yout,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+  subroutine rkck(y,x,h,yout,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
     !---------------------------------------------------------------------
     use m_HACApK_solve
     use m_HACApK_base
@@ -2745,13 +2785,13 @@ write(*,*) imax,jmax
     implicit none
     include 'mpif.h'
     !integer,intent(in)::NCELL,NCELLg,rcounts(:),displs(:)
-    real(8),intent(in)::y(:),dydx(:),x,h
+    real(8),intent(in)::y(:),x,h
     real(8),intent(out)::yout(:),yerr(:)
     !type(st_HACApK_lcontrol),intent(in) :: st_ctl
     !type(st_HACApK_leafmtxp),intent(in) :: st_leafmtxp
     !type(st_HACApK_calc_entry) :: st_bemv
     integer ::i
-    real(8) :: ak2(4*NCELL),ak3(4*NCELL),ak4(4*NCELL),ak5(4*NCELL),ak6(4*NCELL),ytemp(4*NCELL)
+    real(8) :: ak1(4*NCELL),ak2(4*NCELL),ak3(4*NCELL),ak4(4*NCELL),ak5(4*NCELL),ak6(4*NCELL),ytemp(4*NCELL)
     real(8) :: A2,A3,A4,A5,A6,B21,B31,B32,B41,B42,B43,B51
     real(8) :: B52,B53,B54,B61,B62,B63,B64,B65,C1,C3,C4,C6,DC1,DC3,DC4,DC5,DC6
     PARAMETER (A2=.2d0,A3=.3d0,A4=.6d0,A5=1.d0,A6=.875d0,B21=.2d0,B31=3./40.)
@@ -2763,49 +2803,51 @@ write(*,*) imax,jmax
     parameter (DC4=C4-13525./55296.,DC5=-277./14336.,DC6=C6-.25)
 
     !     -- 1st step --
+    call derivs(x, y, ak1)!,,st_leafmtxp,st_bemv,st_ctl)
     !$omp parallel do
     do i=1,size(y)
-      ytemp(i)=y(i)+B21*h*dydx(i)
+      ytemp(i)=y(i)+B21*h*ak1(i)
     end do
 
     !    -- 2nd step --
     call derivs(x+a2*h, ytemp, ak2)!,,st_leafmtxp,st_bemv,st_ctl)
     !$omp parallel do
     do i=1,size(y)
-      ytemp(i)=y(i)+h*(B31*dydx(i)+B32*ak2(i))
+      ytemp(i)=y(i)+h*(B31*ak1(i)+B32*ak2(i))
     end do
 
     !     -- 3rd step --
     call derivs(x+a3*h, ytemp, ak3)!,,st_leafmtxp,st_bemv,st_ctl)
     !$omp parallel do
     do i=1,size(y)
-      ytemp(i)=y(i)+h*(B41*dydx(i)+B42*ak2(i)+B43*ak3(i))
+      ytemp(i)=y(i)+h*(B41*ak1(i)+B42*ak2(i)+B43*ak3(i))
     end do
 
     !     -- 4th step --
     call derivs(x+a4*h, ytemp, ak4)!,,st_leafmtxp,st_bemv,st_ctl)
     !$omp parallel do
     do i=1,size(y)
-      ytemp(i)=y(i)+h*(B51*dydx(i)+B52*ak2(i)+B53*ak3(i)+ B54*ak4(i))
+      ytemp(i)=y(i)+h*(B51*ak1(i)+B52*ak2(i)+B53*ak3(i)+ B54*ak4(i))
     end do
 
     !     -- 5th step --
     call derivs(x+a5*h, ytemp, ak5)!,,st_leafmtxp,st_bemv,st_ctl)
     !$omp parallel do
     do i=1,size(y)
-      ytemp(i)=y(i)+h*(B61*dydx(i)+B62*ak2(i)+B63*ak3(i)+B64*ak4(i)+B65*ak5(i))
+      ytemp(i)=y(i)+h*(B61*ak1(i)+B62*ak2(i)+B63*ak3(i)+B64*ak4(i)+B65*ak5(i))
     end do
 
     !     -- 6th step --
     call derivs(x+a6*h, ytemp, ak6)!,,st_leafmtxp,st_bemv,st_ctl)
     !$omp parallel do
     do i=1,size(y)
-      yout(i)=y(i)+h*(C1*dydx(i)+C3*ak3(i)+C4*ak4(i)+ C6*ak6(i))
+      yout(i)=y(i)+h*(C1*ak1(i)+C3*ak3(i)+C4*ak4(i)+ C6*ak6(i))
     end do
+
 
     !$omp parallel do
     do i=1,size(y)
-      yerr(i)=h*(DC1*dydx(i)+DC3*ak3(i)+DC4*ak4(i)+DC5*ak5(i)+DC6*ak6(i))
+      yerr(i)=h*(DC1*ak1(i)+DC3*ak3(i)+DC4*ak4(i)+DC5*ak5(i)+DC6*ak6(i))
     end do
     return
   end subroutine
@@ -2821,8 +2863,8 @@ write(*,*) imax,jmax
     !   rr=ycol(i)**2+zcol(i)**2
     !   if(rr<lc**2) vel(i)=5d0/rigid*sqrt(lc**2-rr)
     ! end do
-    vel=0d0
-    vel(21299:)=1d0
+    vel=1d0
+    !vel(21299:)=1d0
     !vel(1)=1d0! p=532
     ! vel(p)=1d0
 
