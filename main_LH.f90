@@ -67,7 +67,7 @@ program main
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,muinit,intau,trelax
-  real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax
+  real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax
   real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle
 
   !temporal variable
@@ -331,10 +331,10 @@ program main
     do i=1,NCELLg
       read(20,*) k,xs1(i),ys1(i),zs1(i),xs2(i),ys2(i),zs2(i),xs3(i),ys3(i),zs3(i),xcol(i),ycol(i),zcol(i)
     end do
-    zs1=zs1-0.01d0
-    zs2=zs2-0.01d0
-    zs3=zs3-0.01d0
-    zcol=zcol-0.01d0
+    !zs1=zs1-0.01d0
+    !zs2=zs2-0.01d0
+    !zs3=zs3-0.01d0
+    !zcol=zcol-0.01d0
     !call coordinate3dn(NCELLg,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3)
     !call coordinate3dns(NCELLg,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3)
     !call coordinate3dns2(NCELLg,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3)
@@ -342,6 +342,7 @@ program main
   end select
 
   if(project=='2DBEND') call coordinate_2DBEND()
+  if(project=='SEAMOUNT')call coordinate3dn_SEAMOUNT(NCELLg,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3)
 
   !call initcond3dn(phi,sigma,taus,taud)
   !stop
@@ -544,6 +545,12 @@ program main
   call params(problem,NCELLg,a0,b0,dc0,mu0,a,b,dc,f0,fw,vw)
   call loading(problem,NCELLg,sr,taudot,tauddot,sigdot)
 
+  !max time step
+  select case(load)
+  case(0)
+    dtmax=0.02d0*10d0/sr
+  end select
+
   if(foward) call foward_check()
   if(inverse) call inverse_problem()
 
@@ -612,6 +619,7 @@ program main
   sw=0
   mvelG=maxval(abs(vel))
   !output intiial condition
+  if(my_rank<npd)call output_field()
   if(my_rank==0) then
     !call output_field_fd2d()
     !write(46) disp
@@ -690,7 +698,7 @@ program main
       if(mod(k,interval).eq.0) outfield=.true.
       vel=0d0
       mu=0d0
-      
+
       do i = 1, NCELL
         i_=st_sum%lodc(i)
         phi(i_) = y(2*i-1)
@@ -706,7 +714,7 @@ program main
       if(mod(k,interval).eq.0) outfield=.true.
       vel=0d0
       mu=0d0
-      
+
       do i = 1, NCELL
         i_=st_sum%lodc(i)
         phi(i_) = y(3*i-2)
@@ -726,12 +734,12 @@ program main
     mvel=maxval(abs(vel))
     call MPI_ALLREDUCE(mvel,mvelG,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
     meandisp=sum(disp)/ncell
-    call MPI_ALLREDUCE(meandisp,meandispG,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
+    call MPI_ALLREDUCE(meandisp,meandispG,1,MPI_REAL8,MPI_SUM,MPI_COMM_WORLD,ierr)
     meandispG=meandispG/np
     meanmu=sum(mu)/ncell
-    call MPI_ALLREDUCE(meanmu,meanmuG,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
-    meanmu=meanmu/np
-    
+    call MPI_ALLREDUCE(meanmu,meanmuG,1,MPI_REAL8,MPI_SUM,MPI_COMM_WORLD,ierr)
+    meanmuG=meanmuG/np
+
     !stop
     !output
     if(my_rank==0) call output_monitor()
@@ -740,7 +748,7 @@ program main
     if(mod(k,interval)==0) outfield=.true.
     if(outfield) then
       if(my_rank==0) write(*,*) 'time step=' ,k,x/365/24/60/60
-      if(my_rank.lt.npd) call output_field()  
+      if(my_rank.lt.npd) call output_field()
     end if
 
 
@@ -1013,7 +1021,6 @@ contains
         omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref/b(i)
         if(my_rank==0) write(16,'(4e16.4)') ang(i)*180/pi,omega,log10(abs(vel(i))),tau(i)/sigma(i)
       end do
-
 
     end if
 
@@ -1432,16 +1439,23 @@ write(*,*) imax,jmax
     integer,intent(in)::NCELLg
     real(8),intent(inout)::xcol(:),ycol(:),zcol(:)
     real(8),intent(inout)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
-    real(8)::area
+    real(8)::area,amp,wid
     integer::i,j,k
-
+    amp=0.0d0
+    wid=0.5d0
+    do i=1,ncellg
+      zs1(i)=zs1(i)+bump(xs1(i),ys1(i),amp,wid)
+      zs2(i)=zs2(i)+bump(xs2(i),ys2(i),amp,wid)
+      zs3(i)=zs3(i)+bump(xs3(i),ys3(i),amp,wid)
+      zcol(i)=(zs1(i)+zs2(i)+zs3(i))/3d0
+    end do
     return
   end subroutine
 
-  function bump(y,amp,wid)
+  function bump(x,y,amp,wid)
     implicit none
-    real(8)::y,amp,wid,bump,rr
-    rr=(y-50d0)**2!+(z+10d0)**2
+    real(8)::x,y,amp,wid,bump,rr
+    rr=(x-25d0)**2+(y+5d0)**2
     bump=amp*exp(-rr/wid**2)
     return
   end function
@@ -1483,6 +1497,12 @@ write(*,*) imax,jmax
       vw(i)=vw0
       !if(creep.and.abs(i-ncellg/2)<100) a(i)=0.030d0
     end do
+
+    if(project=='SEAMOUNT')then
+      do i=1,ncellg
+        if(abs(xcol(i))>40d0.or.abs(zcol(i)+0.8)>0.7d0) a(i)=0.024
+      end do
+    end if
 
       !depth-dependent frictional properties
     if(project=="SEAS".and.problem=='2dh')then
@@ -1710,6 +1730,8 @@ write(*,*) imax,jmax
         !sigma
         ret1=-(0.5d0*(xx1+yy1)-0.5d0*(xx1-yy1)*dcos(2*ang(i))-xy1*dsin(2*ang(i)))
         sigdot(i)=vpl*ret1
+        write(15,*) taudot(i),sigdot(i)
+
       end do
       !taudot=0.6*sr
       !sigdot=0.1*sr
@@ -1813,7 +1835,11 @@ write(*,*) imax,jmax
         !write(*,*) veltmp(i)
       enddo
 
-      st_vel%vs=veltmp
+      if(load==1) then
+        st_vel%vs=veltmp-vpl
+      else
+        st_vel%vs=veltmp
+      end if
       call HACApK_adot_lattice_hyp(st_sum,st_LHp,st_ctl,wws,st_vel)
       sum_gs(:)=st_sum%vs(:)
 
@@ -1844,8 +1870,12 @@ write(*,*) imax,jmax
         veltmp(i) = 2*vref*dexp(-phitmp(i)/a(i_))*dsinh(tautmp(i)/sigmatmp(i)/a(i_))
       enddo
       !matrix-vector mutiplation
-      
-      st_vel%vs=veltmp
+
+      if(load==1) then
+        st_vel%vs=veltmp-vpl
+      else
+        st_vel%vs=veltmp
+      end if
       call HACApK_adot_lattice_hyp(st_sum,st_LHp_s,st_ctl,wws,st_vel)
       sum_gs(:)=st_sum%vs(:)
       call HACAPK_adot_lattice_hyp(st_sum,st_LHP_n,st_ctl,wws,st_vel)
@@ -2004,6 +2034,9 @@ write(*,*) imax,jmax
     do while(.true.)
 
       call rkck(y,x,h,ytemp,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+      !if(ierr==1) then
+
+      !end if
 
       errmax=0d0
       select case(problem)
@@ -2027,8 +2060,16 @@ write(*,*) imax,jmax
       !call MPI_ALLREDUCE(errmax,errmax_gb,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
       !call MPI_ALLREDUCE(errmax,errmax_gb,1,MPI_REAL8,MPI_SUM,MPI_COMM_WORLD,ierr)
       !errmax_gb=sqrt(errmax_gb/NCELLg)/eps
+
       call MPI_reduce(errmax,errmax_gb,1,MPI_REAL8,MPI_MAX,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
       call MPI_bcast(errmax_gb,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
+      !write(*,*) h,errmax,errmax_gb
+
+
+      ! call MPI_reduce(errmax,errmax_gb,1,MPI_REAL8,MPI_SUM,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+      ! errmax_gb=sqrt(errmax_gb/NCELLg)/eps
+      ! call MPI_bcast(errmax_gb,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
+
 
 
       !write(*,*) h,errmax_gb
@@ -2043,6 +2084,8 @@ write(*,*) imax,jmax
          h=0.5*h
        end if
 
+
+
       xnew=x+h
       if(xnew-x<1.d-15) then
         write(*,*)'dt is too small'
@@ -2052,6 +2095,7 @@ write(*,*) imax,jmax
     end do
 
     hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW))
+    if(load==0)hnext=min(hnext,dtmax)
     !hnext=max(0.249d0*ds0/vs,SAFETY*h*(errmax_gb**PGROW))
 
     !hnext=min(,1d9)
@@ -2073,6 +2117,7 @@ write(*,*) imax,jmax
     !integer,intent(in)::NCELL,NCELLg,rcounts(:),displs(:)
     real(8),intent(in)::y(:),x,h
     real(8),intent(out)::yout(:),yerr(:)
+    !integer,intent(out)::ierr
     !type(st_HACApK_lcontrol),intent(in) :: st_ctl
     !type(st_HACApK_leafmtxp),intent(in) :: st_leafmtxp
     !type(st_HACApK_calc_entry) :: st_bemv
@@ -2087,7 +2132,7 @@ write(*,*) imax,jmax
     parameter (C1=37./378.,C3=250./621.,C4=125./594.,C6=512./1771.)
     parameter (DC1=C1-2825./27648.,DC3=C3-18575./48384.)
     parameter (DC4=C4-13525./55296.,DC5=-277./14336.,DC6=C6-.25)
-
+    !ierr=0
     !     -- 1st step --
     call derivs(x, y, ak1)!,,st_leafmtxp,st_bemv,st_ctl)
     !$omp parallel do
@@ -2134,6 +2179,7 @@ write(*,*) imax,jmax
     !$omp parallel do
     do i=1,size(y)
       yerr(i)=h*(DC1*ak1(i)+DC3*ak3(i)+DC4*ak4(i)+DC5*ak5(i)+DC6*ak6(i))
+      !if(abs(yerr(i))>=1d6)ierr=1
     end do
     return
   end subroutine
