@@ -280,7 +280,6 @@ program main
   end if
 
   !allocation
-  allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL))
   allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg))
   xcol=0d0;ycol=0d0;zcol=0d0
 
@@ -288,17 +287,14 @@ program main
   case('2dp','2dh')
     allocate(xel(NCELLg),xer(NCELLg))
     xel=0d0;xer=0d0
-    allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL))
   case('2dn','2dnh','2dn3','25d')
     allocate(ang(NCELLg),xel(NCELLg),xer(NCELLg),yel(NCELLg),yer(NCELLg))
     ang=0d0;xel=0d0;xer=0d0;yel=0d0;yer=0d0
-    allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL))
   case('3dp','3dph')
     allocate(xs1(NCELLg),xs2(NCELLg),xs3(NCELLg),xs4(NCELLg))
     allocate(zs1(NCELLg),zs2(NCELLg),zs3(NCELLg),zs4(NCELLg))
     xs1=0d0; xs2=0d0; xs3=0d0; xs4=0d0
     zs1=0d0; zs2=0d0; zs3=0d0; zs4=0d0
-    allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL))
   case('3dnf','3dhf')
     allocate(xs1(NCELLg),xs2(NCELLg),xs3(NCELLg))
     allocate(ys1(NCELLg),ys2(NCELLg),ys3(NCELLg))
@@ -309,7 +305,6 @@ program main
     xs1=0d0; xs2=0d0; xs3=0d0
     ys1=0d0; ys2=0d0; ys3=0d0
     zs1=0d0; zs2=0d0; zs3=0d0
-    allocate(phi(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),vel(NCELL),tau(NCELL),idisp(NCELL))
   case('3dn','3dh')
     allocate(xs1(NCELLg),xs2(NCELLg),xs3(NCELLg))
     allocate(ys1(NCELLg),ys2(NCELLg),ys3(NCELLg))
@@ -320,7 +315,6 @@ program main
     xs1=0d0; xs2=0d0; xs3=0d0
     ys1=0d0; ys2=0d0; ys3=0d0
     zs1=0d0; zs2=0d0; zs3=0d0
-    allocate(phi(NCELL),vels(NCELL),veld(NCELL),taus(NCELL),taud(NCELL),sigma(NCELL),disp(NCELL),disps(NCELL),dispd(NCELL),mu(NCELL),rake(NCELL),vel(NCELL),tau(NCELL),idisp(NCELL),velp(NCELL))
 
   end select
 
@@ -467,6 +461,8 @@ program main
 
     NCELL=st_vel%ndc
     allocate(y(2*NCELL),yscal(2*NCELL),dydx(2*NCELL))
+    allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL))
+
 
   case('2dn','2dnh','25d')
     st_bemv%v='xx'
@@ -486,6 +482,7 @@ program main
 
     NCELL=st_vel%ndc
     allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL))
+    allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL))
 
   case('3dnf','3dhf')
     st_bemv%md='st'
@@ -504,6 +501,7 @@ program main
 
     NCELL=st_vel%ndc
     allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL))
+    allocate(phi(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),vel(NCELL),tau(NCELL),idisp(NCELL))
 
   case('3dn','3dh')
     !kernel for strike slip
@@ -540,8 +538,12 @@ program main
 
     NCELL=st_vel%ndc
    allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL))
+   allocate(phi(NCELL),vels(NCELL),veld(NCELL),taus(NCELL),taud(NCELL),sigma(NCELL))
+   allocate(disp(NCELL),disps(NCELL),dispd(NCELL),mu(NCELL),rake(NCELL),vel(NCELL),tau(NCELL),idisp(NCELL),velp(NCELL))
 
   end select
+
+  allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL))
 
   !setting frictional parameters
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -574,6 +576,7 @@ program main
   mu=tau/sigma
   vel=tau/abs(tau)*velinit
   phi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
+  disp=0d0
   select case(problem)
   case('3dn','3dh')
     taus=tau
@@ -618,8 +621,6 @@ program main
   x=0.d0 !x is time
   k=0
   rk=0
-  rupt=1d9
-  rupsG=0
   dtnxt = dtinit
   !outv=1d-6
   slipping=.false.
@@ -698,7 +699,7 @@ program main
       do i = 1, NCELL
         phi(i) = y(2*i-1)
         tau(i) = y(2*i)
-        disp(i_)=disp(i_)+vel(i_)*dtdid*0.5d0 !2nd order
+        disp(i)=disp(i)+vel(i)*dtdid*0.5d0 !2nd order
         vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
         disp(i)=disp(i)+vel(i)*dtdid*0.5d0
         mu(i)=tau(i)/sigma(i)
@@ -709,9 +710,9 @@ program main
         phi(i) = y(3*i-2)
         tau(i) = y(3*i-1)
         sigma(i)=y(3*i)
-        !disp(i_)=disp(i_)+vel(i_)*dtdid*0.5d0 !2nd order
+        disp(i)=disp(i)+vel(i)*dtdid*0.5d0 !2nd order
         vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
-        disp(i)=disp(i)+vel(i)*dtdid
+        disp(i)=disp(i)+vel(i)*dtdid*0.5d0
         mu(i)=tau(i)/sigma(i)
       end do
     case('3dn','3dh')
@@ -739,13 +740,13 @@ program main
     !call MPI_ALLREDUCE(meandisp,meandispG,1,MPI_REAL8,MPI_SUM,MPI_COMM_WORLD,ierr)
     call MPI_reduce(meandisp,meandispG,1,MPI_REAL8,MPI_SUM,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
     call MPI_bcast(meandispG,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
-    meandispG=meandispG/ncellg/npd
+    meandispG=meandispG/ncellg
 
     meanmu=sum(mu)
     !call MPI_ALLREDUCE(meanmu,meanmuG,1,MPI_REAL8,MPI_SUM,MPI_COMM_WORLD,ierr)
     call MPI_reduce(meanmu,meanmuG,1,MPI_REAL8,MPI_SUM,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
     call MPI_bcast(meanmuG,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
-    meanmuG=meanmuG/ncellg/npd
+    meanmuG=meanmuG/ncellg
 
     !stop
     !output
