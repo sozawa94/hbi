@@ -39,7 +39,7 @@ program main
   integer,allocatable::displs(:),rcounts(:),vars(:)
   integer:: date_time(8)
   character(len=10):: sys_time(3)
-  real(8)::time1,time2
+  real(8)::time1,time2,time3,time4,timer
 
   !for fault geometry
   real(8),allocatable::xcol(:),ycol(:),zcol(:),ds(:)
@@ -68,7 +68,7 @@ program main
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,muinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax
-  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle
+  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake
 
   !temporal variable
 
@@ -254,6 +254,8 @@ program main
       read(pvalue,*) npgl
     case('project')
       read(pvalue,*) project
+    case('crake')
+      read(pvalue,*) crake
     end select
   end do
   close(33)
@@ -428,6 +430,7 @@ program main
     st_bemv%ev21=ev21; st_bemv%ev22=ev22; st_bemv%ev23=ev23
     st_bemv%ev31=ev31; st_bemv%ev32=ev32; st_bemv%ev33=ev33
     st_bemv%problem=problem
+    st_bemv%rake=crake
   end select
 
   ! i=4998
@@ -489,6 +492,10 @@ program main
     if(slipmode.eq.'dip') st_bemv%md='dp'
     st_bemv%v='s'
     if(slipmode=='dip') st_bemv%v='d'
+    rake=rake/180*pi
+    st_bemv%md='o'
+    st_bemv%v='o'
+
     lrtrn=HACApK_generate(st_leafmtxp_s,st_bemv,st_ctl,coord,eps_h)
     lrtrn=HACApK_construct_LH(st_LHp_s,st_leafmtxp_s,st_bemv,st_ctl,coord,eps_h)
     allocate(wws(st_leafmtxp_s%ndlfs))
@@ -592,10 +599,19 @@ program main
 
   !setting output files
   if(my_rank.lt.npd) then
-    write(fname,'("output/",i0,"_",i0,".dat")') number,my_rank
+    ! write(fname,'("output/",i0,"_",i0,".dat")') number,my_rank
+    ! nout=my_rank+100
+    ! open(nout,file=fname)
+    write(fname,'("output/xyz",i0,"_",i0,".dat")') number,my_rank
     nout=my_rank+100
-    !write(*,*) my_rank,nout
     open(nout,file=fname)
+    do i=1,ncell
+      i_=st_sum%lodc(i)
+      write(nout,*) xcol(i_),ycol(i_),zcol(i_)
+    end do
+    close(nout)
+    write(fname,'("output/vel",i0,"_",i0,".dat")') number,my_rank
+    open(nout,file=fname,form='unformatted',access='stream')
   end if
   if(my_rank.eq.0) then
     write(fname,'("output/monitor",i0,".dat")') number
@@ -626,9 +642,17 @@ program main
   slipping=.false.
   eventcount=0
   sw=0
+  timer=0d0
   mvelG=maxval(abs(vel))
   !output intiial condition
-  if(my_rank<npd)call output_field()
+  if(my_rank<npd) then
+    !call output_field()
+    ! do i=1,ncell
+    !   i_=st_sum%lodc(i)
+    !   write(nout)i_
+    ! end do
+    write(nout) vel
+  end if
   if(my_rank==0) then
     !call output_field_fd2d()
     !write(46) disp
@@ -675,7 +699,10 @@ program main
   do k=1,NSTEP1
     !parallel computing for Runge-Kutta
     dttry = dtnxt
+    time3=MPI_Wtime()
     call rkqs(y,dydx,x,dttry,eps_r,dtdid,dtnxt,errmax_gb)
+    time4=MPI_Wtime()
+    timer=timer+time4-time3
 
     !limitsigma
     if(limitsigma) then
@@ -756,7 +783,8 @@ program main
     if(mod(k,interval)==0) outfield=.true.
     if(outfield) then
       if(my_rank==0) write(*,*) 'time step=' ,k,x/365/24/60/60
-      if(my_rank.lt.npd) call output_field()
+      if(my_rank<npd) write(nout) vel
+
     end if
 
 
@@ -839,8 +867,8 @@ program main
 
   time2= MPI_Wtime()
   200  if(my_rank==0) then
-  write(*,*) 'time(s)', time2-time1,k
-  write(*,*) 'time for matvec(s)', st_ctl%time(1),st_ctl%time(2)+st_ctl%time(3)
+  write(*,*) 'time(s)', time2-time1,timer
+  write(*,*) 'time for matvec(s)', sum(st_ctl%time)
   open(19,file='job.log',position='append')
   write(19,'(a20,i0,f16.2)') 'Finished job number=',number,time2-time1
   !open(19,file='job.log',position='append')
@@ -1348,7 +1376,7 @@ write(*,*) imax,jmax
     real(8),intent(inout)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
     real(8)::area,amp,wid
     integer::i,j,k
-    amp=0.0d0
+    !amp=0.0d0
     wid=0.5d0
     do i=1,ncellg
       zs1(i)=zs1(i)+bump(xs1(i),ys1(i),amp,wid)
@@ -1382,13 +1410,18 @@ write(*,*) imax,jmax
 
   subroutine params()
     implicit none
-    real(8)::len,cent,dep,a_max,xd
+    real(8)::len,cent,dep,a_max,xd,r
     integer::i
 
     !uniform
+    if(project=='SEAMOUNT')then
+    a_max=0.030d0
     do i=1,NCELL
-      a(i)=a0
-      !if(zcol(i)<=-1d0) a(i)=0.024d0
+      i_=st_sum%lodc(i)
+      dep=sqrt(ycol(i_)**2+zcol(i_)**2)
+      r=max(abs(dep-10d0)-7d0,abs(xcol(i_)-22d0)-24d0)/3d0
+      a(i)=a0+r*(a_max-a0)
+      a(i)=max(a(i),a0)
       b(i)=b0
       dc(i)=dc0
       f0(i)=mu0
@@ -1398,6 +1431,7 @@ write(*,*) imax,jmax
       !if(aftershock.and.(i>nmain)) dc(i)=0.001d0
       !if(creep.and.abs(i-ncellg/2)<100) a(i)=0.030d0
     end do
+    end if
 
     !if(project=='SEAMOUNT')then
     !  do i=1,ncellg
