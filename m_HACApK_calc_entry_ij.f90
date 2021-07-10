@@ -12,7 +12,7 @@ module m_HACApK_calc_entry_ij
     real(8),pointer::ys1(:),ys2(:),ys3(:),ys4(:)
     real(8),pointer::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:)
     real(8),pointer::strike(:),dip(:),ds(:)
-    real(8)::w
+    real(8)::w,rake
     !real(8),pointer::ds
     character(128)::v,md
   end type st_HACApK_calc_entry
@@ -673,7 +673,11 @@ contains
     case('dp')
       call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,1.d0,0.d0,rigid,rigid,&
       & Sxx,Syy,Szz,Sxy,Sxz,Syz)
+    case('o')
+      call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake),sin(st_bemv%rake),0.d0,rigid,rigid,&
+      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
     end select
+
 
     Arot(1,:)=(/st_bemv%ev11(i),st_bemv%ev21(i),st_bemv%ev31(i)/)
     Arot(2,:)=(/st_bemv%ev12(i),st_bemv%ev22(i),st_bemv%ev32(i)/)
@@ -688,6 +692,8 @@ contains
       matel3dn_ij=p(6)
     case('n')
       matel3dn_ij=p(3)
+    case('o')
+      matel3dn_ij=p(5)*cos(st_bemv%rake)+p(6)*sin(st_bemv%rake)
     case('power')
       rr=(st_bemv%ycol(i)-st_bemv%ys1(j))**2+(st_bemv%zcol(i)-st_bemv%zs1(j))**2
       theta=atan2(st_bemv%ycol(i)-st_bemv%ys1(j),st_bemv%zcol(i)-st_bemv%zs1(j))
@@ -712,6 +718,9 @@ contains
     case('dp')
       call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,1.d0,0.d0,rigid,rigid,&
       & Sxx,Syy,Szz,Sxy,Sxz,Syz)
+    case('o')
+      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake),sin(st_bemv%rake),0.d0,rigid,rigid,&
+      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
     end select
 
     Arot(1,:)=(/st_bemv%ev11(i),st_bemv%ev21(i),st_bemv%ev31(i)/)
@@ -727,6 +736,8 @@ contains
       matel3dh_ij=p(6)
     case('n')
       matel3dh_ij=p(3)
+    case('o')
+      matel3dh_ij=p(5)*cos(st_bemv%rake)+p(6)*sin(st_bemv%rake)
     case('c')
       matel3dh_ij=p(5)-0.6*p(3)
     end select
