@@ -16,8 +16,9 @@ contains
     & Sxx,Syy,Szz,Sxy,Sxz,Syz)
     implicit none
     real(8),intent(in)::X,Y,Z,Ss,Ds,Ts,mu,lambda
-    real(8),intent(inout)::P1(3),P2(3),P3(3)
+    real(8),intent(in)::P1(3),P2(3),P3(3)
     real(8),intent(out)::Sxx,Syy,Szz,Sxy,Sxz,Syz
+    real(8)::xx,yy,zz,Q1(3),Q2(3),Q3(3)
     real(8)::Sxx_m,Syy_m,Szz_m,Sxy_m,Sxz_m,Syz_m
     real(8)::Sxx_h,Syy_h,Szz_h,Sxy_h,Sxz_h,Syz_h
     real(8)::Sxx_i,Syy_i,Szz_i,Sxy_i,Sxz_i,Syz_i
@@ -29,6 +30,9 @@ contains
     !     Strain = zeros(numel(X),6);
     !     return
     ! end
+    xx=X
+    yy=Y
+    zz=Z
     ! % Calculate main dislocation contribution to strains and stresses
     ! [StsMS,StrMS] = TDstressFS(X,Y,Z,P1,P2,P3,Ss,Ds,Ts,mu,lambda);
     call TDstressFS(X,Y,Z,P1,P2,P3,Ss,Ds,Ts,mu,lambda,&
@@ -43,21 +47,24 @@ contains
     !write(*,*)'Sxx_h,Syy_h,Szz_h,Sxy_h,Sxz_h,Syz_h'
     !write(*,*)Sxx_h,Syy_h,Szz_h,Sxy_h,Sxz_h,Syz_h
     ! % Calculate image dislocation contribution to strains and stresses
-    P1(3) = -P1(3)
-    P2(3) = -P2(3)
-    P3(3) = -P3(3)
     ! [StsIS,StrIS] = TDstressFS(X,Y,Z,P1,P2,P3,Ss,Ds,Ts,mu,lambda);
-    call TDstressFS(X,Y,Z,P1,P2,P3,Ss,Ds,Ts,mu,lambda,&
+    Q1=P1
+    Q2=P2
+    Q3=P3
+    Q1(3)=-Q1(3)
+    Q2(3)=-Q2(3)
+    Q3(3)=-Q3(3)
+    call TDstressFS(xx,yy,zz,Q1,Q2,Q3,Ss,Ds,Ts,mu,lambda,&
     &Sxx_i,Syy_i,Szz_i,Sxy_i,Sxz_i,Syz_i)
     !write(*,*)Sxx_i,Syy_i,Szz_i,Sxy_i,Sxz_i,Syz_i
     ! % Calculate the complete stress and strain tensor components in EFCS
-    Sxx=Sxx_m+Sxx_h+Sxx_i
-    Syy=Syy_m+Syy_h+Syy_i
-    Szz=Szz_m+Szz_h+Szz_i
-    Sxy=Sxy_m+Sxy_h+Sxy_i
-    Sxz=Sxz_m+Sxz_h+Sxz_i
-    Syz=Syz_m+Syz_h+Syz_i
-    !Sxy=Sxy_h
+    Sxx=Sxx_m+Sxx_i+Sxx_h
+    Syy=Syy_m+Syy_i+Syy_h
+    Szz=Szz_m+Szz_i+Szz_h
+    Sxy=Sxy_m+Sxy_i+Sxy_h
+    Sxz=Sxz_m+Sxz_i+Sxz_h
+    Syz=Syz_m+Syz_i+Syz_h
+   !write(*,'(4e15.6)') Z,Sxz_m,Sxz_h,Sxz_i!Sxy=Sxy_h
     ! Stress = StsMS+StsIS+StsFSC;
     ! Strain = StrMS+StrIS+StrFSC;
 
@@ -196,7 +203,7 @@ contains
     ! Determine the best arteact-free configuration for each calculation point
     CALL trimodefinder(y_, z_, x_, p_1(2:3), p_2(2:3), p_3(2:3), & ! inputs
     & Trimode)
-    !!!write(*,*)Trimode                                 ! output
+    !write(*,*)Trimode                                 ! output
     casepLog = (Trimode == 1) ! Note that Fortran TRUE and FALSE are not necessarily represented the same way as MatLab 1 and 0 !
     casenLog = (Trimode == -1)
     casezLog = (Trimode == 0)
@@ -269,21 +276,21 @@ contains
       exz = Exz1Tn+Exz2Tn+Exz3Tn
       eyz = Eyz1Tn+Eyz2Tn+Eyz3Tn
     end if
-    !if (casezLog) then
-    !  exx = IEEE_VALUE(u, IEEE_QUIET_NAN)
-    !  eyy = IEEE_VALUE(u, IEEE_QUIET_NAN)
-    !  ezz = IEEE_VALUE(u, IEEE_QUIET_NAN)
-    !  exy = IEEE_VALUE(u, IEEE_QUIET_NAN)
-    !  exz = IEEE_VALUE(u, IEEE_QUIET_NAN)
-    !  eyz = IEEE_VALUE(u, IEEE_QUIET_NAN)
-    !end if
+    if (casezLog) then
+      exx = IEEE_VALUE(u, IEEE_QUIET_NAN)
+      eyy = IEEE_VALUE(u, IEEE_QUIET_NAN)
+      ezz = IEEE_VALUE(u, IEEE_QUIET_NAN)
+      exy = IEEE_VALUE(u, IEEE_QUIET_NAN)
+      exz = IEEE_VALUE(u, IEEE_QUIET_NAN)
+      eyz = IEEE_VALUE(u, IEEE_QUIET_NAN)
+    end if
 
-    Sxx = 2*mu*exx+lambda*(exx+eyy+ezz)
-    Syy = 2*mu*eyy+lambda*(exx+eyy+ezz)
-    Szz = 2*mu*ezz+lambda*(exx+eyy+ezz)
-    Sxy = 2*mu*exy
-    Sxz = 2*mu*exz
-    Syz = 2*mu*eyz
+    !Sxx = 2*mu*exx+lambda*(exx+eyy+ezz)
+    !Syy = 2*mu*eyy+lambda*(exx+eyy+ezz)
+    !Szz = 2*mu*ezz+lambda*(exx+eyy+ezz)
+    !Sxy = 2*mu*exy
+    !Sxz = 2*mu*exz
+    !Syz = 2*mu*eyz
     !!write(*,*)'Sxx,Syy,Szz,Sxy,Sxz,Syz in TDCS'
     !write(*,*)Sxx,Syy,Szz,Sxy,Sxz,Syz
 
@@ -384,7 +391,7 @@ contains
   call AngSetupFSC_S(X,Y,Z,bXt,bYt,bZt,P3,P1,mu,lambda,&
   &Sxx3,Syy3,Szz3,Sxy3,Sxz3,Syz3)
   !write(*,*)Sxx3,Syy3,Szz3,Sxy3,Sxz3,Syz3
-  ! write(*,*)
+  !write(*,'(4f15.9)') Sxy1,Sxy2,Sxy3,Sxy1+Sxy2+Sxy3
   !
   ! % Calculate total harmonic function contribution to strains and stresses
   ! Stress = Stress1+Stress2+Stress3;
@@ -395,6 +402,7 @@ contains
   Sxy=Sxy1+Sxy2+Sxy3
   Sxz=Sxz1+Sxz2+Sxz3
   Syz=Syz1+Syz2+Syz3
+  !write(*,'(3f15.9)') Sxy,Sxz,Syz
   return
   end subroutine
   !------------------------------------------------------------------------------
@@ -553,14 +561,17 @@ contains
   !
   ! % Calculate TD side vector and the angle of the angular dislocation pair
   SideVec = PB-PA
+  !write(*,*)
   !write(*,*)'SideVec',SideVec
   eZ = (/ 0.0D0, 0.0D0, 1.0D0 /)
   beta = acos(-SideVec(3)/sqrt(dot_product(SideVec,SideVec)))!;
   !write(*,*)beta
   !
+   Sxx=0d0;Syy=0d0;Szz=0d0;Sxy=0d0;Sxz=0d0;Syz=0d0
   if ((abs(beta)<1d-4).or.(abs(pi-beta)<1d-4)) then
   !     Stress = zeros(length(X),6);
-  Sxx=0d0;Syy=0d0;Szz=0d0;Sxy=0d0;Sxz=0d0;Syz=0d0
+  return
+  !Sxx=0d0;Syy=0d0;Szz=0d0;Sxy=0d0;Sxz=0d0;Syz=0d0
   !     Strain = zeros(length(X),6);
   else
        ey1 = (/SideVec(1),SideVec(2),0d0/)
@@ -581,6 +592,9 @@ contains
   !     [y1A,y2A,y3A] = CoordTrans(X-PA(1),Y-PA(2),Z-PA(3),A);
   CALL CoordTrans(X-PA(1),Y-PA(2),Z-PA(3), A, & ! inputs
   & y1A,y2A,y3A)
+  !if((abs(beta)<1d-1).or.(abs(pi-beta)<1d-1)) then
+  if(abs(y1A*Y1A+Y2A*Y2A).le.1d-8)return
+  !end if
   !write(*,*)'y1A,y2A,y3A',y1A,y2A,y3A
   !     % Transform coordinates from EFCS to the second ADCS
   CALL CoordTrans(SideVec(1),SideVec(2),SideVec(3), A, & ! inputs
@@ -589,7 +603,8 @@ contains
        y1B = y1A-y1AB
        y2B = y2A-y2AB
        y3B = y3A-y3AB
-  !
+  !write(*,*) 'y1B,y2B,y3B',y1B,y2B,y3B
+  if(abs(y1B*Y1B+y2B*y2B).le.1d-8) return
   !     % Transform slip vector components from EFCS to ADCS
   !     [b1,b2,b3] = CoordTrans(bX,bY,bZ,A);
   CALL CoordTrans(bx, by, bz, A, & ! inputs
@@ -601,7 +616,7 @@ contains
   !     I = (beta*y1A)>=0;
   configI=.false.
   if (beta*y1A.ge.0) configI=.true.
-  !
+  !write(*,*)beta*y1A,configI
   !     % For singularities at surface
        v11A = 0d0
        v22A = 0d0
@@ -780,7 +795,7 @@ contains
   z3b = -y1*sinB+y3b*cosB
   rb2 = y1*y1+y2*y2+y3b*y3b
   rb = sqrt(rb2)
-  !
+  !write(*,*)rb+z3b,rb+y3b!
   W1 = rb*cosB+y3b
   W2 = cosB+a/rb
   W3 = cosB+y3b/rb
@@ -792,12 +807,13 @@ contains
   W9 = 1+a/rb/cosB
   !
   N1 = 1-2*nu
-  !
+  !write(*,*)
   ! % Partial derivatives of the Burgers' function
   rFib_ry2 = z1b/rb/(rb+z3b)-y1/rb/(rb+y3b)!; % y2 = x in ADCS
   rFib_ry1 = y2/rb/(rb+y3b)-cosB*y2/rb/(rb+z3b)!; % y1 = y in ADCS
   rFib_ry3 = -sinB*y2/rb/(rb+z3b)!; % y3 = z in ADCS
-  !
+  !write(*,*)rFib_ry2,rFib_ry1,rFib_ry3
+  
   v11 = b1*(0.25d0*((-2+2*nu)*N1*rFib_ry1*cotB**2-N1*y2/W6**2*((1-W5)*cotB-&
       &y1/W6*W4)/rb*y1+N1*y2/W6*(a/rb**3*y1*cotB-1/W6*W4+y1**2/&
       &W6**2*W4/rb+y1**2/W6*a/rb**3)-N1*y2*cosB*cotB/W7**2*W2*(y1/&
