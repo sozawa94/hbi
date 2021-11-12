@@ -1,8 +1,9 @@
 #eqrupt03
 #OPTFLAGS =  -O3 -qopenmp -xCORE-AVX2 -ip -g -traceback
 #ofp
-OPTFLAGS =  -O3 -axMIC-AVX512 -ip -qopenmp
+OPTFLAGS =  -O3 -axMIC-AVX512 -ip -g -traceback
 #gpusolid
+
 #OPTFLAGS =  -O3 -xCORE-AVX2 -ip -g -traceback
 
 F90=mpiifort
@@ -12,7 +13,7 @@ LDFLAGS = -mkl=parallel
 LINK=$(F90)
 
 #Normal H
-OBJS= m_const.o TDstressFS.o HACApK_lib.o m_HACApK_calc_entry_ij.o m_HACApK_base.o m_HACApK_solve.o m_HACApK_use.o main_new.o \
+OBJS= okada.o m_const.o TDstressFS.o HACApK_lib.o m_HACApK_calc_entry_ij.o m_HACApK_base.o m_HACApK_solve.o m_HACApK_use.o main_new.o \
 
 TARGET=hbiem
 

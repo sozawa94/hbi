@@ -2,16 +2,17 @@ module m_HACApK_calc_entry_ij
   !use m_matel_ij
   use mod_constant
   use dtriangular
-  !use mod_okada
+  use mod_okada
+
   type :: st_HACApK_calc_entry
     real*8,pointer :: ao(:)
     character(128)::problem
     integer :: nd,lp61
-    real(8),pointer::xcol(:),ycol(:),zcol(:),xel(:),xer(:),yel(:),yer(:),ang(:)
+    real(8),pointer::xcol(:),ycol(:),zcol(:),xel(:),xer(:),yel(:),yer(:),ang(:),angd(:)
     real(8),pointer::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
     real(8),pointer::ys1(:),ys2(:),ys3(:),ys4(:)
     real(8),pointer::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:)
-    real(8),pointer::strike(:),dip(:),ds(:)
+    real(8),pointer::ds(:)
     real(8)::w,rake
     !real(8),pointer::ds
     character(128)::v,md
@@ -22,6 +23,7 @@ contains
   !***HACApK_entry_ij
   real*8 function HACApK_entry_ij(i, j, st_bemv)
     ! zbemv is data needed for calculating the value of the element
+    implicit none
     integer::i,j
     real(8)::tmp1,tmp2
     type(st_HACApK_calc_entry) :: st_bemv
@@ -58,6 +60,10 @@ contains
       HACApK_entry_ij=matel3dph_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
       & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
       & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
+      !write(*,*)HACApK_entry_ij
+    case('3dhfr')
+      HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%v,st_bemv%rake,st_bemv%w)
+      !write(*,*)HACApK_entry_ij
     case('3dn','3dnf')
       !HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
       HACApK_entry_ij=matel3dn_ij(i,j,st_bemv)
@@ -68,7 +74,8 @@ contains
       !HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
       HACApK_entry_ij=matelrec_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%ds,st_bemv%ang,st_bemv%w,st_bemv%v)
     end select
-
+    !stop
+    return
   end function HACApK_entry_ij
   real(8) function load2dnh(xs,ys,edge,dipangle,v)
     implicit none
@@ -343,6 +350,8 @@ contains
     tmp2=ret3dp(xcol(i)-xs1(j),xcol(i)-xs2(j),xcol(i)-xs3(j),xcol(i)-xs4(j),&
     & zcol(i)+zs1(j),zcol(i)+zs2(j),zcol(i)+zs3(j),zcol(i)+zs4(j))
     matel3dph_ij=tmp1-tmp2
+   ! write(*,*)tmp1,tmp2
+    !write(*,*) matel3dph_ij
   end function
 
   real(8) function ret3dp(dx1,dx2,dx3,dx4,dz1,dz2,dz3,dz4)
@@ -790,26 +799,8 @@ contains
     !rotation so that strike is parallel to y axis
     dx=cos(strike(j))*(xcol(i)-xcol(j))+sin(strike(j))*(ycol(i)-ycol(j))
     dy=-sin(strike(j))*(xcol(i)-xcol(j))+cos(strike(j))*(ycol(i)-ycol(j))
-    !select case(md)
-    !case('st')
-    !call dc3d(alpha,dx,dy,ds(j),w,&
-    !& ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz)
-    call dc3d(alpha,dx,dy,ds(j),w,sxx,sxy,syy)
-    ! case('dp')
-    !   call dc3d(alpha,dx,dy,zcol(i),zcol(j),dip(j),-0.5d0*ds,0.5d0*ds,-0.5d0*ds,0.5d0*ds,0d0,1d-8,0d0, ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,iret)
-    !end select
-    ! exx=-uxx
-    ! eyy=-uyy
-    ! ezz=-uzz
-    ! exy=-0.5d0*(uxy+uyx)
-    ! !eyz=-0.5d0*(uyz+uzy)
-    ! !ezx=-0.5d0*(uzx+uxz)
-    ! sxx=rigid*(exx+eyy+ezz)+2*rigid*exx
-    ! syy=rigid*(exx+eyy+ezz)+2*rigid*eyy
-    ! !szz=rigid*(exx+eyy+ezz)+2*rigid*ezz
-    ! sxy=2*rigid*exy
-    !sxz=2*rigid*ezx
-    !syz=2*rigid*eyz
+
+    call dc3d25(alpha,dx,dy,ds(j),w,sxx,sxy,syy)
 
     !rerotation
     select case(v)
@@ -822,7 +813,7 @@ contains
     end select
     return
   end function matelrec_ij
-  subroutine  dc3d(alpha,x,y,dl,dw,sxx,sxy,syy)
+  subroutine  dc3d25(alpha,x,y,dl,dw,sxx,sxy,syy)
     implicit none
     real(8),intent(in)::alpha,x,y,dl,dw
     real(8),intent(out)::sxx,sxy,syy
@@ -841,7 +832,7 @@ contains
     u=0d0
     do k=1,2
       do j=1,2
-        call ua(alpha,xi(j),et(k),q,dua)
+        call ua25(alpha,xi(j),et(k),q,dua)
         !du(1)  =-dua(1)
         !du(2)=dua(3)
         !du(3)=-dua(2)
@@ -888,8 +879,8 @@ contains
     sxy=2*rigid*exy
     return
 
-  end subroutine dc3d
-  subroutine  ua(alpha,xi,et,q,du)
+  end subroutine dc3d25
+  subroutine  ua25(alpha,xi,et,q,du)
     implicit none
     real(8),intent(in)::xi,et,q,alpha
     !integer,intent(in)::kxi,ket
@@ -924,4 +915,83 @@ contains
 
     return
   end subroutine
-end module
+  real(8) function okada_ij(i,j,xcol,ycol,zcol,ang,angd,v,rake,w)
+    implicit none
+    integer,intent(in)::i,j
+    !type(st_HACApK_calc_entry) :: st_bemv
+    real(8),intent(in)::xcol(:),ycol(:),zcol(:),ang(:),angd(:),rake,w
+    character(128),intent(in)::v
+    integer::iret
+    real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha
+    real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,z,depth,dip
+
+    alpha=(1d0+(0.5d0/pois-1d0))/(1d0+2d0*(0.5d0/pois-1d0))
+    !rotation so that strike is parallel to y axis
+   ! write(*,*) st_bemv%strike(j)
+   ! dx=cos(st_bemv%ang(j))*(st_bemv%xcol(i)-st_bemv%xcol(j))+sin(st_bemv%ang(j))*(st_bemv%ycol(i)-st_bemv%ycol(j))
+   ! dy=-sin(st_bemv%ang(j))*(st_bemv%xcol(i)-st_bemv%xcol(j))+cos(st_bemv%ang(j))*(st_bemv%ycol(i)-st_bemv%ycol(j))
+     dx=cos(ang(j))*(xcol(i)-xcol(j))+sin(ang(j))*(ycol(i)-ycol(j))
+    dy=-sin(ang(j))*(xcol(i)-xcol(j))+cos(ang(j))*(ycol(i)-ycol(j))
+
+    !select case(md)
+    !case('st')
+    !call dc3d(alpha,dx,dy,ds(j),w,&
+    !& ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz)
+    !w=st_bemv%w
+    z=zcol(i)
+    depth=-zcol(j)
+    dip=angd(j)*180/pi
+    !rake=st_bemv%rake
+   !st_bemv%dip(j)=pi/180
+   !write(*,*)w
+   !
+
+    call okada(2.d0/3.d0,dx/w,dy/w,z/w,depth/w,dip,-0.5d0,0.5d0,-0.5d0,0.5d0,cos(rake),sin(rake),0d0,&
+   &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz)
+  ! write(*,*) st_bemv%zcol(i),-st_bemv%zcol(j),st_bemv%angd(j)*180/pi
+   ! write(*,*)uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz
+    ! write(*,*)iret    ! case('dp')
+    !   call dc3d(alpha,dx,dy,zcol(i),zcol(j),dip(j),-0.5d0*ds,0.5d0*ds,-0.5d0*ds,0.5d0*ds,0d0,1d-8,0d0, ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,iret)
+    !end select
+    exx=-uxx
+    eyy=-uyy
+    ezz=-uzz
+    exy=-0.5d0*(uxy+uyx)
+    eyz=-0.5d0*(uyz+uzy)
+    ezx=-0.5d0*(uzx+uxz)
+    sxx=rigid*(exx+eyy+ezz)+2*rigid*exx
+    syy=rigid*(exx+eyy+ezz)+2*rigid*eyy
+    szz=rigid*(exx+eyy+ezz)+2*rigid*ezz
+    sxy=2*rigid*exy
+    sxz=2*rigid*ezx
+    syz=2*rigid*eyz
+ ! write(*,*)sxx,syy,szz,sxy,syz,sxz
+
+    rotang=ang(i)-ang(j)
+    dpang=angd(i)
+
+    Arot(:,1)=(/cos(rotang),-sin(rotang),0d0/)
+    Arot(:,2)=(/sin(rotang)*cos(dpang),cos(rotang)*cos(dpang),sin(dpang)/)
+    Arot(:,3)=(/sin(rotang)*sin(dpang),cos(rotang)*sin(dpang),-cos(dpang)/)
+   ! write(*,*)Arot
+
+   ! write(*,*)Arot
+   call TensTrans(Sxx,Syy,Szz,Sxy,Sxz,Syz,Arot,&
+   &p(1),p(2),p(3),p(4),p(5),p(6))
+
+
+  ! write(*,*)p
+   !write(*,*)st_bemv%v
+    select case(v)
+      case('n')
+        okada_ij=p(3)
+      case('o')
+        okada_ij=p(5)*cos(rake)+p(6)*sin(rake)
+    end select
+ ! write(*,*) okada_ij
+    ! rr=(st_bemv%xcol(i)-st_bemv%xs1(j))**2+(st_bemv%zcol(i)-st_bemv%zs1(j))**2
+    ! okada_ij=1/rr
+   return
+   
+  end function okada_ij
+  end module
