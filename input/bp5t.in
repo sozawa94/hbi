@@ -1,0 +1,15 @@
+problem      3dht !3d half space & rectangle elements
+ncellg 9250
+sigmaconst T
+ds           1d0
+filenumber    200
+interval     100
+nstep     10000
+tmax   567648e5
+backslip T
+vpl          1d-9
+dtinit      1d-1
+parameterfromfile T
+parameter_file bp5tparam.dat
+geometry bp5
+restart F
