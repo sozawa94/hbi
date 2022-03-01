@@ -1,7 +1,7 @@
 !=====================================================================*
 !                                                                     *
 !   Software Name : HACApK                                            *
-!         Version : 1.2.0                                             *
+!         Version : 1.0.0                                             *
 !                                                                     *
 !   License                                                           *
 !     This file is part of HACApK.                                    *
@@ -23,11 +23,9 @@
 !                                                                     *
 !=====================================================================*
 !C**************************************************************************
-!C  This file includes examples of integrating routines for H-matrices
-!C  created by Akihiro Ida at Kyoto University on May 2012
-!C  added a sentence related to HACApK_view to HACApK1.0.0 on May 2017
-!C  added sentences related to strong admissiblity to HACApK1.0.0 on May 2017
-!C  last modified by Akihiro Ida on May 2017
+!C  This file includes example routines for Lattice H-matrices
+!C  created by Akihiro Ida on March 2020
+!C  last modified by Akihiro Ida on March 2020
 !C**************************************************************************
 module m_HACApK_use
  use m_HACApK_solve
@@ -36,48 +34,34 @@ module m_HACApK_use
 contains
 
 !*** HACApK_gensolv
- integer function HACApK_gensolv(st_leafmtxp,st_bemv,st_ctl,gmid,rhs,sol,ztol)
- include 'mpif.h'
- type(st_HACApK_leafmtxp) :: st_leafmtxp
- type(st_HACApK_lcontrol) :: st_ctl
- type(st_HACApK_calc_entry) :: st_bemv
- real*8 :: gmid(st_bemv%nd,3),rhs(st_bemv%nd),sol(st_bemv%nd),ztol
- 1000 format(5(a,i10)/)
- 2000 format(5(a,1pe15.8)/)
+ integer function     HACApK_gensolv(st_leafmtxp,st_bemv,st_ctl,gmid,rhs,sol,ztol)
+   include 'mpif.h'
+   type(st_HACApK_leafmtxp) :: st_leafmtxp
+   type(st_HACApK_LHp) :: st_LHp
+   type(st_HACApK_calc_entry) :: st_bemv
+   type(st_HACApK_lcontrol) :: st_ctl
+   type(st_HACApK_latticevec) :: st_au,st_u
+   real*8 :: gmid(st_bemv%nd,3),rhs(st_bemv%nd),sol(st_bemv%nd),ztol
+   real*8,dimension(:),allocatable :: wws
+1000 format(5(a,i10)/)
+2000 format(5(a,1pe15.8)/)
+3000 format(5(a,f13.6)/)
 
- mpinr=st_ctl%lpmd(3); mpilog=st_ctl%lpmd(4); nrank=st_ctl%lpmd(2); icomm=st_ctl%lpmd(1); nthr=st_ctl%lpmd(20)
- icomm=st_ctl%lpmd(1)
- lrtrn=HACApK_generate(st_leafmtxp,st_bemv,st_ctl,gmid,ztol)
- call MPI_Barrier( icomm, ierr )
-! lrtrn=HACApK_solve(st_leafmtxp,st_bemv,st_ctl,rhs,sol,ztol)
- call MPI_Barrier( icomm, ierr )
-! st_ctl%time(:)=0.0d0
+ 
+   mpinr=st_ctl%lpmd(3); mpilog=st_ctl%lpmd(4); nrank=st_ctl%lpmd(2); icomm=st_ctl%lpmd(1); nthr=st_ctl%lpmd(20)
+   icomm=st_ctl%lpmd(1)
 
+   lrtrn=HACApK_generate(st_leafmtxp,st_bemv,st_ctl,gmid,ztol)
+   lrtrn=HACApK_construct_LH(st_LHp,st_leafmtxp,st_bemv,st_ctl,gmid,ztol)
 
+   allocate(wws(st_leafmtxp%ndlfs))
+   lrtrn=HACApK_gen_lattice_vector(st_u,st_leafmtxp,st_ctl)
+   lrtrn=HACApK_gen_lattice_vector(st_au,st_leafmtxp,st_ctl)
 
-!  goto 9999
+   call HACApK_adot_lattice_hyp(st_au,st_LHp,st_ctl,wws,st_u)
 
-
-
- if(st_ctl%param(8)==10 .or. st_ctl%param(8)==20)then
-!!!   call HACApK_measurez_time_ax_blrmtx(st_leafmtxp,st_ctl,st_bemv%nd,lrtrn)
-  if(st_ctl%lpmd(32)==st_ctl%lpmd(36))then
-     call HACApK_measurez_time_ax_blrmtx4(st_leafmtxp,st_ctl,st_bemv%nd,lrtrn)
-     call HACApK_measurez_time_ax_blrmtx3(st_leafmtxp,st_ctl,st_bemv%nd,lrtrn)
-  endif
-   call HACApK_measurez_time_ax_blrmtx2(st_leafmtxp,st_ctl,st_bemv%nd,lrtrn)
-!!!   call HACApK_measurez_time_ax_blrmtx(st_leafmtxp,st_ctl,st_bemv%nd,lrtrn)
-  if(st_ctl%lpmd(32)==st_ctl%lpmd(36))then
-     call HACApK_measurez_time_ax_blrmtx4(st_leafmtxp,st_ctl,st_bemv%nd,lrtrn)
-     call HACApK_measurez_time_ax_blrmtx3(st_leafmtxp,st_ctl,st_bemv%nd,lrtrn)
-  endif
-   call HACApK_measurez_time_ax_blrmtx2(st_leafmtxp,st_ctl,st_bemv%nd,lrtrn)
- else
-   call HACApK_measurez_time_ax_lfmtx(st_leafmtxp,st_ctl,st_bemv%nd,lrtrn)
-   call HACApK_measurez_time_ax_lfmtx(st_leafmtxp,st_ctl,st_bemv%nd,lrtrn)
- endif
-9999 continue
  HACApK_gensolv=lrtrn
+
  endfunction
 
 !*** HACApK_generate
@@ -89,17 +73,17 @@ contains
  real*8 :: coord(st_bemv%nd,*)
  integer*8 :: mem8,nth1_mem,imem
  integer*4 :: ierr
- integer*4,dimension(:),allocatable :: lnmtx(:),ltmp(:)
+ integer*4,dimension(:),allocatable :: lnmtx(:)
  1000 format(5(a,i10)/)
  2000 format(5(a,1pe15.8)/)
-
+ 
  lrtrn=0
  nofc=st_bemv%nd; nffc=1; ndim=3
  mpinr=st_ctl%lpmd(3); mpilog=st_ctl%lpmd(4); nrank=st_ctl%lpmd(2); icomm=st_ctl%lpmd(1); nthr=st_ctl%lpmd(20)
  st_ctl%param(71)=ztol
-
+ 
  call HACApK_chk_st_ctl(st_ctl)
-
+ 
  if(st_ctl%param(1)>0 .and. mpinr==0) print*,'***************** HACApK start ********************'
  if(st_ctl%param(1)>1)  write(mpilog,1000) 'irank=',mpinr,', nrank=',nrank
  nd=nofc*nffc
@@ -107,10 +91,14 @@ contains
  if(st_ctl%param(1)>0 .and. mpinr==0) write(*,1000) 'nrank=',nrank,' nth=',nthr
  if(st_ctl%param(1)>0 .and. mpinr==0) print*,'param:'
  if(st_ctl%param(1)>0 .and. mpinr==0) write(*,10000) st_ctl%param(1:100)
- 10000 format(10(1pe10.3))
+ 10000 format(10(1pe10.3)/)
  allocate(lnmtx(3))
  call MPI_Barrier( icomm, ierr )
  st_s=MPI_Wtime()
+
+ !do il=1,nd
+ !  write(42,*) coord(il,1:3)
+ !enddo
 
  if(st_ctl%param(8)==10)then
    call HACApK_generate_frame_blrmtx(st_leafmtxp,st_bemv,st_ctl,coord,lnmtx,nofc,nffc,ndim)
@@ -119,6 +107,7 @@ contains
  else
    call HACApK_generate_frame_leafmtx(st_leafmtxp,st_bemv,st_ctl,coord,lnmtx,nofc,nffc,ndim)
  endif
+ 
  if(st_leafmtxp%nlf<1)then
    print*,'ERROR!; sub HACApK_generate; irank=',mpinr,' nlf=',st_leafmtxp%nlf; goto 9999
  endif
@@ -149,20 +138,20 @@ contains
  endif
  call MPI_Barrier( icomm, ierr )
  st_cal_matnorm=MPI_Wtime()
-
- if(st_ctl%param(8)==10 .or. st_ctl%param(8)==20)then
- else
-   if(st_ctl%param(1)>1)  write(mpilog,1000) 'ndnr_s=',st_ctl%lpmd(6),', ndnr_e=',st_ctl%lpmd(7),', ndnr=',st_ctl%lpmd(5)
-   if(st_ctl%param(1)>1) write(*,1000) 'irank=',mpinr,' ndlf_s=',st_ctl%lpmd(11),', ndlf_e=',st_ctl%lpmd(12),', nlf=',st_leafmtxp%nlf
-   lnps=nd+1; lnpe=0
+ if(st_ctl%param(1)>1)  write(mpilog,1000) 'ndnr_s=',st_ctl%lpmd(6),', ndnr_e=',st_ctl%lpmd(7),', ndnr=',st_ctl%lpmd(5)
+ if(st_ctl%param(1)>1) write(*,1000) 'irank=',mpinr,' ndlf_s=',st_ctl%lpmd(11),', ndlf_e=',st_ctl%lpmd(12),', ndlf=',st_leafmtxp%nlf
+ lnps=nd+1; lnpe=0
+ if(st_leafmtxp%nlf<1)then
+   print*,'ERROR!; sub HACApK_generate; irank=',mpinr,' nlf=',st_leafmtxp%nlf
  endif
-
- if(st_ctl%param(7)==1) call HACApK_gen_mat_plot(st_leafmtxp,st_ctl%lpmd,st_ctl%lthr)
-
+ 
+ if(st_ctl%param(7)==1)call HACApK_gen_mat_plot(st_leafmtxp,st_ctl%lpmd,st_ctl%lthr)
+ 
  if(st_ctl%param(10)==0) return
  call HACApK_fill_leafmtx_hyp(st_leafmtxp%st_lf,st_bemv,st_ctl%param,znrm,st_ctl%lpmd,lnmtx,st_ctl%lod,st_ctl%lod,nd,st_leafmtxp%nlf,lnps,lnpe,st_ctl%lthr)
 ! call HACApK_fill_leafmtx(st_leafmtxp%st_lf,st_bemv,st_ctl%param,znrm,st_ctl%lpmd,lnmtx,st_ctl%lod,st_ctl%lod,nd,st_leafmtxp%nlf,lnps,lnpe)
  call MPI_Barrier( icomm, ierr )
+ if(st_ctl%param(1)>1)  write(mpilog,*) 'No. of nsmtx',lnmtx(1:3)
  ndnr_s=st_ctl%lpmd(6); ndnr_e=st_ctl%lpmd(7); ndnr=st_ctl%lpmd(5)
 
  st_fill_hmtx=MPI_Wtime()
@@ -176,15 +165,11 @@ contains
 
  call MPI_Barrier( icomm, ierr )
 
- if(st_ctl%param(8)==10)then
-   call HACApK_chk_blrmtx(st_leafmtxp,st_ctl,lnmtx,nd,mem8)
-  else
-   call HACApK_chk_leafmtx(st_leafmtxp,st_ctl,lnmtx,nd,mem8)
-  endif
+ call HACApK_chk_leafmtx(st_leafmtxp,st_ctl,lnmtx,nd,mem8)
 
  ktp=0
  call HACApK_setcutthread(st_ctl%lthr,st_leafmtxp,st_ctl,mem8,nthr,ktp)
-
+      
  call MPI_Barrier( icomm, ierr )
  if(st_ctl%param(8)==10 .or. st_ctl%param(8)==20)then
  else
@@ -195,10 +180,10 @@ contains
    st_ctl%lsp(mpinr+1)=lnps
    call MPI_Allgather(lnps,1,MPI_INTEGER,st_ctl%lsp,1, MPI_INTEGER, icomm, ierr )
 
-   if(st_ctl%param(1)>0 .and. mpinr==0) write(*,*) 'lnp=',st_ctl%lnp(:)
-   if(st_ctl%param(1)>0 .and. mpinr==0) write(*,*) 'lsp=',st_ctl%lsp(:)
+   if(st_ctl%param(1)>1 .and. mpinr==0) write(*,*) 'lnp=',st_ctl%lnp(:)
+   if(st_ctl%param(1)>1 .and. mpinr==0) write(*,*) 'lsp=',st_ctl%lsp(:)
  endif
-
+ 
  if(st_ctl%param(11)/=0) then
    call MPI_Barrier( icomm, ierr )
    call HACApK_accuracy_leafmtx(st_leafmtxp,st_bemv,st_ctl,st_ctl%lod,st_ctl%lod,st_ctl%lpmd,nofc,nffc)
@@ -207,77 +192,79 @@ contains
  HACApK_generate=lrtrn
  endfunction
 
-!*** HACApK_solve
-!  integer function HACApK_solve(st_leafmtxp,st_bemv,st_ctl,rhs,sol,ztol)
-!  include 'mpif.h'
-!  type(st_HACApK_leafmtxp) :: st_leafmtxp
-!  type(st_HACApK_lcontrol) :: st_ctl
-!  type(st_HACApK_calc_entry) :: st_bemv
-!  real*8 :: rhs(st_bemv%nd),sol(st_bemv%nd),ztol
-!  real*8,pointer :: param(:)
-!  real*8,dimension(:),allocatable :: u,b,www,ao
-!  integer*4,pointer :: lpmd(:),lnp(:),lsp(:),lthr(:),lod(:)
-!  1000 format(5(a,i10)/)
-!  2000 format(5(a,1pe15.8)/)
-!
-!  lpmd => st_ctl%lpmd(:); lnp(0:) => st_ctl%lnp; lsp(0:) => st_ctl%lsp;lthr(0:) => st_ctl%lthr;lod => st_ctl%lod(:); param=>st_ctl%param(:)
-!  mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); icomm=lpmd(1); nthr=lpmd(20)
-! ! param(91)=ztol
-!  if(st_ctl%param(1)>0 .and. mpinr==0) print*,'HACApK_solve start'
-!  nofc=st_bemv%nd;nffc=1;ndim=3
-!  nd=nofc*nffc
-!  if(st_ctl%param(1)>1) write(*,*) 'irank=',mpinr,' lthr=',lthr(0:nthr-1)
-!  allocate(u(nd),b(nd)); u(:nd)=sol(lod(:nd)); b(:nd)=rhs(lod(:nd))
-!  if(param(61)==3)then
-! !   do il=ndnr_s,ndnr_e
-!    do il=1,nd
-!      u(il)=u(il)/st_bemv%ao(lod(il))
-!      b(il)=b(il)*st_bemv%ao(lod(il))
-!    enddo
-!  endif
-!  if(param(83)>0) then
-!    allocate(ao(nd))
-!    do il=1,nd
-!      zzz=HACApK_entry_ij(il,il,st_bemv)
-!      ao(il)=1.0d0/zzz
-!    enddo
-!
-!    call MPI_Barrier( icomm, ierr )
-!    st_measure_time_bicgstab=MPI_Wtime()
-!    if(param(85)==1)then
-! !     call HACApK_bicgstab_lfmtx(st_leafmtxp,st_ctl,u,b,param,nd,nstp,lrtrn)
-!      if(st_ctl%param(8)==10 .or. st_ctl%param(8)==20)then
-! !       call HACApK_bicgstab_blrmtx_hyp(st_leafmtxp,st_ctl,u,b,param,nd,nstp,lrtrn)
-!        call HACApK_bicgstab_blrleaf_hyp(st_leafmtxp,st_ctl,u,b,param,nd,nstp,lrtrn)
-!      else
-!        call HACApK_bicgstab_lfmtx_hyp(st_leafmtxp,st_ctl,u,b,param,nd,nstp,lrtrn)
-!      endif
-!    elseif(param(85)==2)then
-!      if(st_ctl%param(8)==10)then
-!        if(st_ctl%param(1)>0 .and. mpinr==0) print*,'ERROR!!! ; GCRM for BLR is not available'; goto 9999
-!      else
-!        call HACApK_gcrm_lfmtx(st_leafmtxp,st_ctl,st_bemv,u,b,param,nd,nstp,lrtrn)
-!      endif
-!    else
-!    endif
-!    call MPI_Barrier( icomm, ierr )
-!    en_measure_time_bicgstab=MPI_Wtime()
-!    time_bicgstab = en_measure_time_bicgstab - st_measure_time_bicgstab
-!    if(st_ctl%param(1)>0 .and. mpinr==0)  write(6,2000)              'time_HACApK_solve  =',time_bicgstab
-!    if(st_ctl%param(1)>0 .and. mpinr==0 .and. nstp>1)  write(6,2000) '       time_1step  =',time_bicgstab/nstp
-!    allocate(www(nd))
-!    sol(:nd)=0.0d0; www(lod(:nd))=u(:nd); sol(:nd)=www(:nd)
-!    deallocate(www)
-!    if(param(61)==3)then
-!      do il=1,nd
-!        sol(il)=sol(il)*st_bemv%ao(il)
-!      enddo
-!    endif
-!  endif
-!  HACApK_solve=lrtrn
-!  return
-! 9999 continue
-!  stop
-!  endfunction
+!*** HACApK_construct_LH
+ integer function HACApK_construct_LH(st_LHp,st_leafmtxp,st_bemv,st_ctl,coord,ztol)
+ include 'mpif.h'
+ type(st_HACApK_LHp) :: st_LHp
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_calc_entry) :: st_bemv
+ type(st_HACApK_lcontrol) :: st_ctl
+ type(st_HACApK_lf9lttc),pointer :: st_lfp
+ real*8 :: coord(st_bemv%nd,*)
+ integer*8 :: mem8,nth1_mem,imem
+ integer*4 :: ierr
+ integer*4,dimension(:),allocatable :: lnmtx(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,1pe15.8)/)
+ 
+ lrtrn=0
+ nofc=st_bemv%nd; nffc=1; ndim=3
+ mpinr=st_ctl%lpmd(3); mpilog=st_ctl%lpmd(4); nrank=st_ctl%lpmd(2); icomm=st_ctl%lpmd(1); nthr=st_ctl%lpmd(20)
+ st_ctl%param(71)=ztol
+ allocate(lnmtx(3))
+ 
+ nd=nofc*nffc
+ st_s=MPI_Wtime()
+ if(st_ctl%param(8)==20)then
+   call HACApK_generate_frame_LH(st_LHp,st_bemv,st_ctl,coord,lnmtx,nofc,nffc,ndim)
+ else
+   print*,'ERROR!; sub HACApK_generate_LH; irank=',mpinr,' st_ctl%param(8)=',st_ctl%param(8); goto 9999
+ endif
+ 
+ nlf=st_leafmtxp%nlf
+ do is=1,nlf
+   ilf=st_leafmtxp%st_lf(is)%lttcl
+   itf=st_leafmtxp%st_lf(is)%lttct
+   st_lfp=>st_LHp%st_lfp(ilf,itf)
+   ip=st_lfp%nlf+1
+   st_lfp%nlf=ip
+   st_lfp%st_lf(ip)=st_leafmtxp%st_lf(is)
+   st_lfp%st_lf(ip)%nstrtl=st_lfp%st_lf(ip)%nstrtl-st_LHp%lbstrtl(ilf)+1
+   st_lfp%st_lf(ip)%nstrtt=st_lfp%st_lf(ip)%nstrtt-st_LHp%lbstrtt(itf)+1
+ enddo
+ 
+ if(st_ctl%param(1)>1) then
+   write(mpilog,1000) 'HACApK_construct_LH; nlf=',st_LHp%nlf
+   write(mpilog,1000) '       nlfl=',st_LHp%nlfl,'; nlft=',st_LHp%nlft
+   write(mpilog,1000) '       ndlfs=',st_LHp%ndlfs,'; ndtfs=',st_LHp%ndtfs
+   write(mpilog,*) 'st_LHp%lbstrtl='
+     write(mpilog,'(10(i9))') st_LHp%lbstrtl(:)
+   write(mpilog,*) 'st_LHp%lbstrtt='
+     write(mpilog,'(10(i9))') st_LHp%lbstrtt(:)
+   write(mpilog,*) 'st_LHp%lbndlfs='
+     write(mpilog,'(10(i9))') st_LHp%lbndlfs(:)
+   write(mpilog,*) 'st_LHp%lbndtfs='
+     write(mpilog,'(10(i9))') st_LHp%lbndtfs(:)
+   write(mpilog,*) 'st_LHp%latticel='
+     write(mpilog,'(10(i9))') st_LHp%latticel(:)
+   write(mpilog,*) 'st_LHp%latticet='
+     write(mpilog,'(10(i9))') st_LHp%latticet(:)
+   write(mpilog,*) 'st_LHp%lbndcsl='
+     write(mpilog,'(10(i9))') st_LHp%lbndcsl(:)
+   write(mpilog,*) 'st_LHp%lbndcst='
+     write(mpilog,'(10(i9))') st_LHp%lbndcst(:)
+!   do il=1,st_LHp%nlfl
+!     write(mpilog,*) 'st_lfp_ndl=',st_LHp%st_lfp(il,:)%ndl
+!     write(mpilog,*) 'st_lfp_ndt=',st_LHp%st_lfp(il,:)%ndt
+!   enddo
+ endif
+ 
+ call MPI_Barrier( icomm, ierr )
+        
+
+9999 continue
+ HACApK_construct_LH=lrtrn
+ endfunction
+
 
 endmodule m_HACApK_use

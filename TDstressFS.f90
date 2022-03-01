@@ -1,14 +1,6 @@
 module dtriangular
   USE, INTRINSIC :: IEEE_ARITHMETIC
   implicit none
-  !real(8)::Sxx,Syy,Szz,Sxy,Sxz,Syz
-  !REAL*8, DIMENSION(3):: P1, P2, P3
-  !P1=(/-1.d0,0.d0,0.d0/)
-  !P2=(/1.d0,-1.d0,-1.d0/)
-  !P3=(/0.d0,15.d0,5.d0/)
-  !call  TDstressFS(0.d0,0.d0,0.d0,P1,P2,P3,-1.d0,2.d0,3.d0,1d0,1d0, &
-  !& Sxx,Syy,Szz,Sxy,Sxz,Syz)
-  !write(*,'(6e12.4)') Sxx,Syy,Szz,Sxy,Sxz,Syz
   !stop
 contains
   !-------------------------------------------------------------------------------
@@ -23,31 +15,16 @@ contains
     real(8)::Sxx_h,Syy_h,Szz_h,Sxy_h,Sxz_h,Syz_h
     real(8)::Sxx_i,Syy_i,Szz_i,Sxy_i,Sxz_i,Syz_i
 
-    ! if any(Z>0 | P1(3)>0 | P2(3)>0 | P3(3)>0)
-    !     error('Half-space solution: Z coordinates must be negative!')
-    ! elseif P1(3)==0 && P2(3)==0 && P3(3)==0
-    !     Stress = zeros(numel(X),6);
-    !     Strain = zeros(numel(X),6);
-    !     return
-    ! end
     xx=X
     yy=Y
     zz=Z
-    ! % Calculate main dislocation contribution to strains and stresses
-    ! [StsMS,StrMS] = TDstressFS(X,Y,Z,P1,P2,P3,Ss,Ds,Ts,mu,lambda);
+
     call TDstressFS(X,Y,Z,P1,P2,P3,Ss,Ds,Ts,mu,lambda,&
     &Sxx_m,Syy_m,Szz_m,Sxy_m,Sxz_m,Syz_m)
-    !write(*,*)Sxx_m,Syy_m,Szz_m,Sxy_m,Sxz_m,Syz_m
-    !
-    ! % Calculate harmonic function contribution to strains and stresses
-    ! [StsFSC,StrFSC] = TDstress_HarFunc(X,Y,Z,P1,P2,P3,Ss,Ds,Ts,mu,lambda);
+
     call TDstress_HarFunc(X,Y,Z,P1,P2,P3,Ss,Ds,Ts,mu,lambda,&
     &Sxx_h,Syy_h,Szz_h,Sxy_h,Sxz_h,Syz_h)
-    !Sxx_h=0d0;Syy_h=0d0;szz_h=0d0;Sxy_h=0d0;Sxz_h=0d0;Syz_h=0d0
-    !write(*,*)'Sxx_h,Syy_h,Szz_h,Sxy_h,Sxz_h,Syz_h'
-    !write(*,*)Sxx_h,Syy_h,Szz_h,Sxy_h,Sxz_h,Syz_h
-    ! % Calculate image dislocation contribution to strains and stresses
-    ! [StsIS,StrIS] = TDstressFS(X,Y,Z,P1,P2,P3,Ss,Ds,Ts,mu,lambda);
+
     Q1=P1
     Q2=P2
     Q3=P3
@@ -56,36 +33,24 @@ contains
     Q3(3)=-Q3(3)
     call TDstressFS(xx,yy,zz,Q1,Q2,Q3,Ss,Ds,Ts,mu,lambda,&
     &Sxx_i,Syy_i,Szz_i,Sxy_i,Sxz_i,Syz_i)
-    !write(*,*)Sxx_i,Syy_i,Szz_i,Sxy_i,Sxz_i,Syz_i
-    ! % Calculate the complete stress and strain tensor components in EFCS
+
     Sxx=Sxx_m+Sxx_i+Sxx_h
     Syy=Syy_m+Syy_i+Syy_h
     Szz=Szz_m+Szz_i+Szz_h
     Sxy=Sxy_m+Sxy_i+Sxy_h
     Sxz=Sxz_m+Sxz_i+Sxz_h
     Syz=Syz_m+Syz_i+Syz_h
-   !write(*,'(4e15.6)') Z,Sxz_m,Sxz_h,Sxz_i!Sxy=Sxy_h
-    ! Stress = StsMS+StsIS+StsFSC;
-    ! Strain = StrMS+StrIS+StrFSC;
 
   end subroutine
   subroutine TDstressFS(X,Y,Z,P1,P2,P3,Ss,Ds,Ts,mu,lambda,&
     & Sxx,Syy,Szz,Sxy,Sxz,Syz)
-    IMPLICIT NONE
-    REAL*8, INTENT(IN) :: X, Y, Z ! <==== In my version, these are scalars,
-    !       and (X, Y, Z) is the single observation point.
-    !       However, in the MatLab version, these are (potentially very long) column vectors,
-    !       with values rearranged from 0-D, 1-D, 2-D, or 3-D arrays!
-    REAL*8, DIMENSION(3), INTENT(IN) :: P1, P2, P3 ! The three vertices of the triangular dislocation.
-    REAL*8, INTENT(IN) :: Ss, Ds, Ts ! 3 components of Burger's vector: Strike-slip, Dip-slip, Tensile-slip
-    REAL*8 :: nu,mu,lambda
-    REAL*8, INTENT(OUT) :: Sxx,Syy,Szz,Sxy,Sxz,Syz ! 3 components of displacement at the observation point (East, North, Vertical/Up).
-    REAL*8 :: exx,eyy,ezz,exy,exz,eyz
-    REAL*8 :: Exx_,Eyy_,Ezz_,Exy_,Exz_,Eyz_
-
-    INTEGER :: Trimode
-    LOGICAL :: casepLog, casenLog, casezLog
-    REAL*8 :: A, B, C, bx, by, bz, Fi, na, nb, nc, &
+    implicit none
+    real(8),intent(in)::X, Y, Z, P1(3), P2(3), P3(3), Ss, Ds, Ts,mu,lambda
+    real(8),intent(out):: Sxx,Syy,Szz,Sxy,Sxz,Syz
+    real(8) :: nu,exx,eyy,ezz,exy,exz,eyz,Exx_,Eyy_,Ezz_,Exy_,Exz_,Eyz_
+    integer :: Trimode
+    logical :: casepLog, casenLog, casezLog
+    real(8) :: A, B, C, bx, by, bz, Fi, na, nb, nc, &
     & u, u1Tn, u2Tn, u3Tn, u1Tp, u2Tp, u3Tp, v, v1Tn, v2Tn, v3Tn, v1Tp, v2Tp, v3Tp, w, w1Tn, w2Tn, w3Tn, w1Tp, w2Tp, w3Tp, &
     & x_, xn, xp, y_, yn, yp, z_, zn, zp
     REAL*8, DIMENSION(3) :: a_, b_, c_  ! N.B. "_" = "lower-case" (because Fortran is NOT case-sensitive).
@@ -97,38 +62,7 @@ contains
     real(8)::Exx1Tn,Eyy1Tn,Ezz1Tn,Exy1Tn,Exz1Tn,Eyz1Tn
     real(8)::Exx2Tn,Eyy2Tn,Ezz2Tn,Exy2Tn,Exz2Tn,Eyz2Tn
     real(8)::Exx3Tn,Eyy3Tn,Ezz3Tn,Exy3Tn,Exz3Tn,Eyz3Tn! TDstressFS
-    ! Calculates stresses and strains associated with a triangular dislocation
-    ! in an elastic full-space
-    !
-    ! TD: Triangular Dislocation
-    ! EFCS: Earth-Fixed Coordinate System
-    ! TDCS: Triangular Dislocation Coordinate System
-    ! ADCS: Angular Dislocation Coordinate System
-    !
-    ! INPUTS
-    ! X, Y and Z:
-    ! Coordinates of calculation points in EFCS (East, North, Up) X, Y and Z
-    ! must have the same size
-    !
-    ! P1,P2 and P3:
-    ! Coordinates of TD vertices in EFCS
-    !
-    ! Ss, Ds and Ts:
-    ! TD slip vector components (Strike-slip, Dip-slip, Tensile-slip)
-    !
-    ! mu and lambda:
-    ! Lame constants
-    !
-    ! OUTPUTS
-    ! Stress:
-    ! Calculated stress tensor components in EFCS The six columns of Stress
-    ! are Sxx, Syy, Szz, Sxy, Sxz and Syz, respectively The stress components
-    ! have the same unit as Lame constants
-    !
-    ! Strain:
-    ! Calculated strain tensor components in EFCS The six columns of Strain
-    ! are Exx, Eyy, Ezz, Exy, Exz and Eyz, respectively The strain components
-    ! are dimensionless
+
 
     nu = 1/(1+lambda/mu)/2 ! Poisson's ratio
     !!!write(*,*) 'calc'
@@ -136,19 +70,6 @@ contains
     bx = Ts ! Tensile-slip
     by = Ss ! Strike-slip
     bz = Ds ! Dip-slip
-
-    ! bx = Ss ! Tensile-slip
-    ! by = Ts ! Strike-slip
-    ! bz = Ds ! Dip-slip
-
-    !!write(*,*) 'bx,by,bz',bx,by,bz
-
-
-    ! Calculate unit strike, dip and normal to TD vectors: For a horizontal TD
-    ! as an exception, if the normal vector points upward, the strike and dip
-    ! vectors point Northward and Westward, whereas if the normal vector points
-    ! downward, the strike and dip vectors point Southward and Westward,
-    ! respectively
 
     P2mP1 = P2 - P1 ! all 3 components
     P3mP1 = P3 - P1
@@ -164,9 +85,8 @@ contains
       Vstrike = eY * Vnorm(3)
     END IF
     Vstrike=Vstrike/sqrt(dot_product(Vstrike,Vstrike))
-    CALL DCross(Vnorm, Vstrike, Vdip) ! (apparently, no normalization is needed here)
-    !!write(*,*) Vnorm,Vstrike,Vdip
-    p_1 = 0.0D0 ! "_" = "lower-case"
+    CALL DCross(Vnorm, Vstrike, Vdip)
+    p_1 = 0.0D0
     p_2 = 0.0D0
     p_3 = 0.0D0
 
@@ -200,11 +120,11 @@ contains
     !& bx,by,bz)
     !!write(*,*) 'bx,by,bz',bx,by,bz
 
-    ! Determine the best arteact-free configuration for each calculation point
+
     CALL trimodefinder(y_, z_, x_, p_1(2:3), p_2(2:3), p_3(2:3), & ! inputs
     & Trimode)
     !write(*,*)Trimode                                 ! output
-    casepLog = (Trimode == 1) ! Note that Fortran TRUE and FALSE are not necessarily represented the same way as MatLab 1 and 0 !
+    casepLog = (Trimode == 1)
     casenLog = (Trimode == -1)
     casezLog = (Trimode == 0)
 
@@ -321,37 +241,15 @@ contains
     real(8)::bx,by,bz,P2mP1(3),P3mP1(3),Vstrike(3),Vnorm(3),Vdip(3),eY(3),eZ(3)
     real(8)::At(3,3),bxt,byt,bzt
     real(8)::Sxx1,Syy1,Szz1,Sxy1,Sxz1,Syz1,Sxx2,Syy2,Szz2,Sxy2,Sxz2,Syz2,Sxx3,Syy3,Szz3,Sxy3,Sxz3,Syz3
-  ! function [Stress,Strain]=TDstress_HarFunc(X,Y,Z,P1,P2,P3,Ss,Ds,Ts,mu,lambda)
-  ! % TDstress_HarFunc calculates the harmonic function contribution to the
-  ! % strains and stresses associated with a triangular dislocation in a
-  ! % half-space. The function cancels the surface normal tractions induced by
-  ! % the main and image dislocations.
-  !
+
   bx = Ts!; % Tensile-slip
   by = Ss!; % Strike-slip
   bz = Ds!; % Dip-slip
-  !
-  ! % Calculate unit strike, dip and normal to TD vectors: For a horizontal TD
-  ! % as an exception, if the normal vector points upward, the strike and dip
-  ! % vectors point Northward and Westward, whereas if the normal vector points
-  ! % downward, the strike and dip vectors point Southward and Westward,
-  ! % respectively.
-  ! Vnorm = cross(P2-P1,P3-P1);
-  ! Vnorm = Vnorm/norm(Vnorm);
-  !
-  ! eY = [0 1 0]';
-  ! eZ = [0 0 1]';
-  ! Vstrike = cross(eZ,Vnorm);
-  !
-  ! if norm(Vstrike)==0
-  !     Vstrike = eY*Vnorm(3);
-  ! end
-  ! Vstrike = Vstrike/norm(Vstrike);
-  ! Vdip = cross(Vnorm,Vstrike);
-  P2mP1 = P2 - P1 ! all 3 components
+
+  P2mP1 = P2 - P1
   P3mP1 = P3 - P1
   !write(*,*) P2mP1,P3mP1
-  CALL DCross(P2mP1, P3mP1, Vnorm) ! but, this still needs to be normalized:
+  CALL DCross(P2mP1, P3mP1, Vnorm)
   Vnorm=Vnorm/sqrt(dot_product(Vnorm,Vnorm))
   !write(*,*)Vnorm
   eY = (/ 0.0D0, 1.0D0, 0.0D0 /)
@@ -364,22 +262,13 @@ contains
   END IF
   Vstrike=Vstrike/sqrt(dot_product(Vstrike,Vstrike))
   !write(*,*)Vstrike
-  CALL DCross(Vnorm, Vstrike, Vdip) ! (apparently, no normalization is needed here)
-  !write(*,*)Vdip
-  ! % Transform slip vector components from TDCS into EFCS
-  ! A = [Vnorm Vstrike Vdip];
-  ! [bX,bY,bZ] = CoordTrans(bx,by,bz,A);
+  CALL DCross(Vnorm, Vstrike, Vdip)
   At(1:3, 1) = Vnorm(1:3)
   At(1:3, 2) = Vstrike(1:3)
   At(1:3, 3) = Vdip(1:3)
   CALL CoordTrans(bx, by, bz, At, & ! inputs
   & bxt, byt, bzt)
-  !write(*,*) bx,by,bz,bxt,byt,bzt
-  !
-  ! % Calculate contribution of angular dislocation pair on each TD side
-  ! [Stress1,Strain1] = AngSetupFSC_S(X,Y,Z,bX,bY,bZ,P1,P2,mu,lambda); % P1P2
-  ! [Stress2,Strain2] = AngSetupFSC_S(X,Y,Z,bX,bY,bZ,P2,P3,mu,lambda); % P2P3
-  ! [Stress3,Strain3] = AngSetupFSC_S(X,Y,Z,bX,bY,bZ,P3,P1,mu,lambda); % P3P1
+
   call AngSetupFSC_S(X,Y,Z,bXt,bYt,bZt,P1,P2,mu,lambda,&
   &Sxx1,Syy1,Szz1,Sxy1,Sxz1,Syz1)
   !write(*,*)Sxx1,Syy1,Szz1,Sxy1,Sxz1,Syz1
@@ -393,9 +282,6 @@ contains
   !write(*,*)Sxx3,Syy3,Szz3,Sxy3,Sxz3,Syz3
   !write(*,'(4f15.9)') Sxy1,Sxy2,Sxy3,Sxy1+Sxy2+Sxy3
   !
-  ! % Calculate total harmonic function contribution to strains and stresses
-  ! Stress = Stress1+Stress2+Stress3;
-  ! Strain = Strain1+Strain2+Strain3;
   Sxx=Sxx1+Sxx2+Sxx3
   Syy=Syy1+Syy2+Syy3
   Szz=Szz1+Szz2+Szz3
@@ -412,11 +298,6 @@ contains
     REAL*8, INTENT(IN) :: Txx1,Tyy1,Tzz1,Txy1,Txz1,Tyz1
     REAL*8, DIMENSION(3, 3) :: A
     REAL*8, INTENT(OUT) :: Txx2,Tyy2,Tzz2,Txy2,Txz2,Tyz2
-    ! TensTrans Transforms the coordinates of tensors,from x1y1z1 coordinate
-    ! system to x2y2z2 coordinate system "A" is the transformation matrix,
-    ! whose columns e1,e2 and e3 are the unit base vectors of the x1y1z1 The
-    ! coordinates of e1,e2 and e3 in A must be given in x2y2z2 The transpose
-    ! of A (ie, A') does the transformation from x2y2z2 into x1y1z1
 
     Txx2 = A(1,1)**2*Txx1+2*A(1,1)*A(2,1)*Txy1+2*A(1,1)*A(3,1)*Txz1+2*A(2,1)*A(3,1)*Tyz1+&
     &  A(2,1)**2*Tyy1+A(3,1)**2*Tzz1
@@ -432,19 +313,12 @@ contains
     &  A(1,2)*A(3,3))*Txz1+(A(2,3)*A(3,2)+A(3,3)*A(2,2))*Tyz1+A(2,2)*A(2,3)*Tyy1+A(3,2)*A(3,3)*Tzz1
   end subroutine
   !------------------------------------------------------------------------------
-  SUBROUTINE CoordTrans(x1, x2, x3, A, & ! inputs
-    & Xcap1, Xcap2, Xcap3)      ! outputs
-    ! CoordTrans transforms the coordinates of the vectors, from
-    ! x1x2x3 coordinate system to X1X2X3 coordinate system "A" is the
-    ! transformation matrix, whose columns e1,e2 and e3 are the unit base
-    ! vectors of the x1x2x3 The coordinates of e1,e2 and e3 in A must be given
-    ! in X1X2X3 The transpose of A (ie, A') will transform the coordinates
-    ! from X1X2X3 into x1x2x3
+  SUBROUTINE CoordTrans(x1, x2, x3, A, &
+    & Xcap1, Xcap2, Xcap3)
     IMPLICIT NONE
     REAL*8, INTENT(IN) :: x1, x2, x3
     REAL*8, DIMENSION(3, 3) :: A
     REAL*8, INTENT(OUT) :: Xcap1, Xcap2, Xcap3
-    !  "cap" = "capital" added because Fortran does not distinguish upper- from lower-case
 
     Xcap1 = A(1, 1) * x1 + A(1, 2) * x2 + A(1, 3) * x3
     Xcap2 = A(2, 1) * x1 + A(2, 2) * x2 + A(2, 3) * x3
@@ -459,18 +333,6 @@ contains
     REAL*8, DIMENSION(2), INTENT(IN) :: p1, p2, p3
     INTEGER, INTENT(OUT) :: trimode
     REAL*8 :: a, b, c
-    ! trimodefinder calculates the normalized barycentric coordinates of
-    ! the points with respect to the TD vertices and specifies the appropriate
-    ! artefact-free configuration of the angular dislocations for the
-    ! calculations The input matrices x, y and z share the same size and
-    ! correspond to the y, z and x coordinates in the TDCS, respectively p1,
-    ! p2 and p3 are two-component matrices representing the y and z coordinates
-    ! of the TD vertices in the TDCS, respectively
-    ! The components of the output (trimode) corresponding to each calculation
-    ! points, are 1 for the first configuration, -1 for the second
-    ! configuration and 0 for the calculation point that lie on the TD sides
-
-
     a = ((p2(2)-p3(2))*(x-p3(1))+(p3(1)-p2(1))*(y-p3(2)))/  &
     & ((p2(2)-p3(2))*(p1(1)-p3(1))+(p3(1)-p2(1))*(p1(2)-p3(2)))
     b = ((p3(2)-p1(2))*(x-p3(1))+(p1(1)-p3(1))*(y-p3(2)))/  &
@@ -489,9 +351,6 @@ contains
   !------------------------------------------------------------------------------
   SUBROUTINE TDSetupD(x, y, z, alpha, bx, by, bz, nu, TriVertex, SideVec, & ! inputs
     & exx,eyy,ezz,exy,exz,eyz)                              ! outputs
-    ! TDSetupS transforms coordinates of the calculation points as well as
-    ! slip vector components from ADCS into TDCS It then calculates the
-    ! strains in ADCS and transforms them into TDCS
     IMPLICIT NONE
     REAL*8, INTENT(IN) :: alpha, bx, by, bz, nu, x, y, z
     REAL*8, DIMENSION(3), INTENT(IN) :: SideVec, TriVertex
@@ -553,13 +412,8 @@ contains
     real(8)::v11A,v22A,v33A,v12A,v13A,v23A,v11B,v22B,v33B,v12B,v13B,v23B
     real(8)::v11,v22,v33,v12,v13,v23,exx,eyy,ezz,exy,exz,eyz
     real(8),parameter::pi=4*atan(1d0)
-
-  ! % AngSetupFSC_S calculates the Free Surface Correction to strains and
-  ! % stresses associated with angular dislocation pair on each TD side.
-  !
   nu = lambda/(lambda+mu)/2!; % Poisson's ratio
   !
-  ! % Calculate TD side vector and the angle of the angular dislocation pair
   SideVec = PB-PA
   !write(*,*)
   !write(*,*)'SideVec',SideVec
@@ -568,7 +422,7 @@ contains
   !write(*,*)beta
   !
    Sxx=0d0;Syy=0d0;Szz=0d0;Sxy=0d0;Sxz=0d0;Syz=0d0
-  if ((abs(beta)<1d-4).or.(abs(pi-beta)<1d-4)) then
+  if ((abs(beta)<1d-3).or.(abs(pi-beta)<1d-3)) then
   !     Stress = zeros(length(X),6);
   return
   !Sxx=0d0;Syy=0d0;Szz=0d0;Sxy=0d0;Sxz=0d0;Syz=0d0
@@ -593,7 +447,7 @@ contains
   CALL CoordTrans(X-PA(1),Y-PA(2),Z-PA(3), A, & ! inputs
   & y1A,y2A,y3A)
   !if((abs(beta)<1d-1).or.(abs(pi-beta)<1d-1)) then
-  if(abs(y1A*Y1A+Y2A*Y2A).le.1d-8)return
+  !if(abs(y1A*Y1A+Y2A*Y2A).le.1d-6.and.(abs(beta)<1d-3.or.abs(pi-beta)>1d-3))return
   !end if
   !write(*,*)'y1A,y2A,y3A',y1A,y2A,y3A
   !     % Transform coordinates from EFCS to the second ADCS
@@ -604,7 +458,7 @@ contains
        y2B = y2A-y2AB
        y3B = y3A-y3AB
   !write(*,*) 'y1B,y2B,y3B',y1B,y2B,y3B
-  if(abs(y1B*Y1B+y2B*y2B).le.1d-8) return
+  !if(abs(y1B*Y1B+y2B*y2B).le.1d-6.and.(abs(beta)<1d-3.or.abs(pi-beta)<1d-3)) return
   !     % Transform slip vector components from EFCS to ADCS
   !     [b1,b2,b3] = CoordTrans(bX,bY,bZ,A);
   CALL CoordTrans(bx, by, bz, A, & ! inputs
@@ -615,7 +469,7 @@ contains
   !     % points near the free surface
   !     I = (beta*y1A)>=0;
   configI=.false.
-  if (beta*y1A.ge.0) configI=.true.
+  if (beta*y1A.ge.0d0) configI=.true.
   !write(*,*)beta*y1A,configI
   !     % For singularities at surface
        v11A = 0d0
@@ -701,11 +555,6 @@ contains
   !------------------------------------------------------------------------------
   SUBROUTINE AngDisStrain(x, y, z, alpha, bx, by, bz, nu, & ! inputs
     & Exx,Eyy,Ezz,Exy,Exz,Eyz) ! outputs
-    ! AngDisStrain calculates the strains associated with an angular
-    ! dislocation in an elastic full-space
-    !Note that the orginal MatLab version allows x, y, and z to be arrays of test points
-    !(in 0-D, 1-D, 2-D, or 3-D) however, in this Fortran version there is only a single
-    !test point at (x, y, z), and each of these is a simple REAL*8 scalar number
 
     IMPLICIT NONE
     REAL*8, PARAMETER :: pi = 4*atan(1.d0)
@@ -714,8 +563,8 @@ contains
     REAL*8 :: cosA, eta, r, sinA, ux, uy, uz, vx, vy, vz, wx, wy, wz, zz, zeta
     Real*8 :: C,r2,r2z2,r3,r3z,rFi_rx,rFi_ry,rFi_rz,rz,S,W,W2,W2r,W2r2,Wr,Wr3,x2,y2,z2
 
-    sinA = sin(alpha)
-    cosA = cos(alpha)
+    sinA = dsin(alpha)
+    cosA = dcos(alpha)
     eta = y*cosA-z*sinA
     zeta = y*sinA+z*cosA
 
@@ -723,7 +572,7 @@ contains
     y2 = y**2
     z2 = z**2
     r2 = x2+y2+z2
-    r = sqrt(r2)
+    r = dsqrt(r2)
     r3 = r*r2
     rz = r*(r-z)
     r2z2 = r2*(r-z)**2
@@ -772,9 +621,7 @@ contains
     &(y*z/Wr3-sinA*cosA/W2+(y*cosA+z*sinA)/W2r-y*z/W2r2)
 
   end subroutine
-  !-------------------------------------------------------------------------------
-  ! function [v11,v22,v33,v12,v13,v23] = AngDisStrainFSC(y1,y2,y3,beta,...
-  !     b1,b2,b3,nu,a)
+
   subroutine AngDisStrainFSC(y1,y2,y3,beta,b1,b2,b3,nu,a,&
     &v11,v22,v33,v12,v13,v23)
     implicit none
@@ -782,19 +629,16 @@ contains
     real(8),intent(out)::v11,v22,v33,v12,v13,v23
     real(8)::sinB,cosB,cotB,y3b,z1b,z3b,rb2,rb,W1,W2,W3,W4,W5,W6,W7,W8,W9,N1
     real(8)::rFib_ry2,rFib_ry1,rFib_ry3
-    REAL*8, PARAMETER :: pi = 4*atan(1.d0)
-  ! % AngDisStrainFSC calculates the harmonic function contribution to the
-  ! % strains associated with an angular dislocation in an elastic half-space.
-  !
-  sinB = sin(beta)
-  cosB = cos(beta)
-  cotB = 1d0/tan(beta)
+    REAL*8, PARAMETER :: pi = 4*datan(1.d0)
+  sinB = dsin(beta)
+  cosB = dcos(beta)
+  cotB = 1d0/dtan(beta)
   !write(*,*)'cotB',cotB
   y3b = y3+2*a
   z1b = y1*cosB+y3b*sinB
   z3b = -y1*sinB+y3b*cosB
   rb2 = y1*y1+y2*y2+y3b*y3b
-  rb = sqrt(rb2)
+  rb = dsqrt(rb2)
   !write(*,*)rb+z3b,rb+y3b!
   W1 = rb*cosB+y3b
   W2 = cosB+a/rb
@@ -813,7 +657,7 @@ contains
   rFib_ry1 = y2/rb/(rb+y3b)-cosB*y2/rb/(rb+z3b)!; % y1 = y in ADCS
   rFib_ry3 = -sinB*y2/rb/(rb+z3b)!; % y3 = z in ADCS
   !write(*,*)rFib_ry2,rFib_ry1,rFib_ry3
-  
+
   v11 = b1*(0.25d0*((-2+2*nu)*N1*rFib_ry1*cotB**2-N1*y2/W6**2*((1-W5)*cotB-&
       &y1/W6*W4)/rb*y1+N1*y2/W6*(a/rb**3*y1*cotB-1/W6*W4+y1**2/&
       &W6**2*W4/rb+y1**2/W6*a/rb**3)-N1*y2*cosB*cotB/W7**2*W2*(y1/&

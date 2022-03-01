@@ -8,12 +8,12 @@ module m_HACApK_calc_entry_ij
     real*8,pointer :: ao(:)
     character(128)::problem
     integer :: nd,lp61
-    real(8),pointer::xcol(:),ycol(:),zcol(:),xel(:),xer(:),yel(:),yer(:),ang(:),angd(:)
+    real(8),pointer::xcol(:),ycol(:),zcol(:),xel(:),xer(:),yel(:),yer(:),ang(:),angd(:),rake(:)
     real(8),pointer::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
     real(8),pointer::ys1(:),ys2(:),ys3(:),ys4(:)
     real(8),pointer::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:)
     real(8),pointer::ds(:)
-    real(8)::w,rake
+    real(8)::w
     !real(8),pointer::ds
     character(128)::v,md
   end type st_HACApK_calc_entry
@@ -61,13 +61,13 @@ contains
       & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
       & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
       !write(*,*)HACApK_entry_ij
-    case('3dhfr')
+    case('3dhr')
       HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%v,st_bemv%rake,st_bemv%w)
       !write(*,*)HACApK_entry_ij
-    case('3dn','3dnf')
+    case('3dn','3dnt')
       !HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
       HACApK_entry_ij=matel3dn_ij(i,j,st_bemv)
-    case('3dh','3dhf') !half space
+    case('3dh','3dht') !half space
       HACApK_entry_ij=matel3dh_ij(i,j,st_bemv)
       !HACApK_entry_ij=matelh1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%strike,st_bemv%dip,st_bemv%v,st_bemv%md)
     case('25d')
@@ -219,7 +219,7 @@ contains
     integer,intent(in)::i,j
     real(8),intent(in)::xcol(:),ycol(:),xel(:),xer(:),yel(:),yer(:),ang(:)
     character(128),intent(in)::v,md
-    real(8)::xp,xm,yp,ym,kern11,kern12,kern22,sin2,cos2,ds
+    real(8)::xp,xm,yp,ym,kern11,kern12,kern22,sin2,cos2,ds,sum_xx,sum_xy,sum_yy
 
     xp=cos(ang(j))*(xcol(i)-xel(j))+sin(ang(j))*(ycol(i)-yel(j))
     xm=cos(ang(j))*(xcol(i)-xer(j))+sin(ang(j))*(ycol(i)-yer(j))
@@ -234,26 +234,24 @@ contains
       kern12=-0.5d0*rigid/vs*(inte12o(xp,yp)-inte12o(xm,ym))
       kern22=-0.5d0*rigid/vs*(inte22o(xp,yp)-inte22o(xm,ym))
     end if
-    ! xp=dcos(ang(j))*(xcol(i)-xcol(j))+dsin(ang(j))*(ycol(i)-ycol(j))
-    ! yp=-dsin(ang(j))*(xcol(i)-xcol(j))+dcos(ang(j))*(ycol(i)-ycol(j))
-    ! ds=dsqrt((xer(j)-xel(j))**2+(yer(j)-yel(j))**2)
-    ! !write(*,*) xp,yp,ds
-    ! kern11=-0.5d0*rigid/vs*(inte11s(xp+0.5d0*ds,yp)-inte11s(xp-0.5d0*ds,yp))
-    ! kern12=-0.5d0*rigid/vs*(inte12s(xp+0.5d0*ds,yp)-inte12s(xp-0.5d0*ds,yp))
-    ! kern22=-0.5d0*rigid/vs*(inte22s(xp+0.5d0*ds,yp)-inte22s(xp-0.5d0*ds,yp))
-    !kern12=-kern12
-    !write(*,*) kern11,kern22
 
     !=>global coordinate system
     sin2=dsin(-2*ang(j))
     cos2=dcos(-2*ang(j))
+    !select case(v)
+    !case('xx')
+      sum_xx=0.5d0*(kern11+kern22)+0.5d0*(kern11-kern22)*cos2+kern12*sin2
+    !case('xy')
+      sum_xy=-0.5d0*(kern11-kern22)*sin2+kern12*cos2
+    !case('yy')
+      sum_yy=0.5d0*(kern11+kern22)-0.5d0*(kern11-kern22)*cos2-kern12*sin2
+    !end select
+
     select case(v)
-    case('xx')
-      tensor2d_ij=0.5d0*(kern11+kern22)+0.5d0*(kern11-kern22)*cos2+kern12*sin2
-    case('xy')
-      tensor2d_ij=-0.5d0*(kern11-kern22)*sin2+kern12*cos2
-    case('yy')
-      tensor2d_ij=0.5d0*(kern11+kern22)-0.5d0*(kern11-kern22)*cos2-kern12*sin2
+    case('s')
+      tensor2d_ij=0.5d0*(sum_xx-sum_yy)*dsin(-2*ang(i))+sum_xy*dcos(-2*ang(i))
+    case('n')
+      tensor2d_ij=-(0.5d0*(sum_xx+sum_yy)-0.5d0*(sum_xx-sum_yy)*dcos(2*ang(i))-sum_xy*dsin(2*ang(i)))
     end select
   end function
 
@@ -682,8 +680,8 @@ contains
     case('dp')
       call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,1.d0,0.d0,rigid,rigid,&
       & Sxx,Syy,Szz,Sxy,Sxz,Syz)
-    case('o')
-      call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake),sin(st_bemv%rake),0.d0,rigid,rigid,&
+    case('s','o')
+      call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake(i)),sin(st_bemv%rake(i)),0.d0,rigid,rigid,&
       & Sxx,Syy,Szz,Sxy,Sxz,Syz)
     end select
 
@@ -695,18 +693,18 @@ contains
     &p(1),p(2),p(3),p(4),p(5),p(6))
 
     select case(st_bemv%v)
-    case('s')
-      matel3dn_ij=p(5)
-    case('d')
-      matel3dn_ij=p(6)
+    !case('s')
+    !  matel3dn_ij=p(5)
+    !case('d')
+    !  matel3dn_ij=p(6)
     case('n')
       matel3dn_ij=p(3)
-    case('o')
-      matel3dn_ij=p(5)*cos(st_bemv%rake)+p(6)*sin(st_bemv%rake)
-    case('power')
-      rr=(st_bemv%ycol(i)-st_bemv%ys1(j))**2+(st_bemv%zcol(i)-st_bemv%zs1(j))**2
-      theta=atan2(st_bemv%ycol(i)-st_bemv%ys1(j),st_bemv%zcol(i)-st_bemv%zs1(j))
-      matel3dn_ij=1.d0/rr**(1+cos(theta))
+    case('s','o')
+      matel3dn_ij=p(5)*cos(st_bemv%rake(i))+p(6)*sin(st_bemv%rake(i))
+    !case('power')
+    !  rr=(st_bemv%ycol(i)-st_bemv%ys1(j))**2+(st_bemv%zcol(i)-st_bemv%zs1(j))**2
+    !  theta=atan2(st_bemv%ycol(i)-st_bemv%ys1(j),st_bemv%zcol(i)-st_bemv%zs1(j))
+    !  matel3dn_ij=1.d0/rr**(1+cos(theta))
     end select
   end function matel3dn_ij
   real(8) function matel3dh_ij(i,j,st_bemv)
@@ -727,8 +725,8 @@ contains
     case('dp')
       call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,1.d0,0.d0,rigid,rigid,&
       & Sxx,Syy,Szz,Sxy,Sxz,Syz)
-    case('o')
-      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake),sin(st_bemv%rake),0.d0,rigid,rigid,&
+    case('s','o')
+      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake(i)),sin(st_bemv%rake(i)),0.d0,rigid,rigid,&
       & Sxx,Syy,Szz,Sxy,Sxz,Syz)
     end select
 
@@ -739,16 +737,16 @@ contains
     &p(1),p(2),p(3),p(4),p(5),p(6))
 
     select case(st_bemv%v)
-    case('s')
-      matel3dh_ij=p(5)
-    case('d')
-      matel3dh_ij=p(6)
+    ! case('s')
+    !   matel3dh_ij=p(5)
+    ! case('d')
+    !   matel3dh_ij=p(6)
     case('n')
       matel3dh_ij=p(3)
-    case('o')
-      matel3dh_ij=p(5)*cos(st_bemv%rake)+p(6)*sin(st_bemv%rake)
-    case('c')
-      matel3dh_ij=p(5)-0.6*p(3)
+    case('s','o')
+      matel3dh_ij=p(5)*cos(st_bemv%rake(i))+p(6)*sin(st_bemv%rake(i))
+    ! case('c')
+    !   matel3dh_ij=p(5)-0.6*p(3)
     end select
   end function matel3dh_ij
   real(8) function matelh1_ij(i,j,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,v,md)
@@ -919,7 +917,7 @@ contains
     implicit none
     integer,intent(in)::i,j
     !type(st_HACApK_calc_entry) :: st_bemv
-    real(8),intent(in)::xcol(:),ycol(:),zcol(:),ang(:),angd(:),rake,w
+    real(8),intent(in)::xcol(:),ycol(:),zcol(:),ang(:),angd(:),rake(:),w
     character(128),intent(in)::v
     integer::iret
     real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha
@@ -946,7 +944,7 @@ contains
    !write(*,*)w
    !
 
-    call okada(2.d0/3.d0,dx/w,dy/w,z/w,depth/w,dip,-0.5d0,0.5d0,-0.5d0,0.5d0,cos(rake),sin(rake),0d0,&
+    call okada(alpha,dx/w,dy/w,z/w,depth/w,dip,-0.5d0,0.5d0,-0.5d0,0.5d0,cos(rake(j)),sin(rake(j)),0d0,&
    &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz)
   ! write(*,*) st_bemv%zcol(i),-st_bemv%zcol(j),st_bemv%angd(j)*180/pi
    ! write(*,*)uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz
@@ -985,13 +983,73 @@ contains
     select case(v)
       case('n')
         okada_ij=p(3)
-      case('o')
-        okada_ij=p(5)*cos(rake)+p(6)*sin(rake)
+      case('s','o')
+        okada_ij=p(5)*cos(rake(i))+p(6)*sin(rake(i))
     end select
  ! write(*,*) okada_ij
     ! rr=(st_bemv%xcol(i)-st_bemv%xs1(j))**2+(st_bemv%zcol(i)-st_bemv%zs1(j))**2
     ! okada_ij=1/rr
    return
-   
+
   end function okada_ij
+
+  real(8) function okada_load(x,y,z,xs1,xs2,ys,ang,angd,fdp,v,rake)
+    implicit none
+    real(8),intent(in)::x,y,z,xs1,xs2,ys,ang,angd,fdp,rake
+    character(128),intent(in)::v
+    integer::iret
+    real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha
+    real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,depth,dip
+
+    alpha=(1d0+(0.5d0/pois-1d0))/(1d0+2d0*(0.5d0/pois-1d0))
+    !rotation so that strike is parallel to y axis
+    dx=x-xs1
+    dy=y-ys
+    depth=fdp/2
+    dip=90d0
+
+    call okada(alpha,dx,dy,z,depth,dip,0d0,xs2-xs1,-0.5d0*fdp,0.5d0*fdp,cos(rake),sin(rake),0d0,&
+   &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz)
+
+    exx=-uxx
+    eyy=-uyy
+    ezz=-uzz
+    exy=-0.5d0*(uxy+uyx)
+    eyz=-0.5d0*(uyz+uzy)
+    ezx=-0.5d0*(uzx+uxz)
+    sxx=rigid*(exx+eyy+ezz)+2*rigid*exx
+    syy=rigid*(exx+eyy+ezz)+2*rigid*eyy
+    szz=rigid*(exx+eyy+ezz)+2*rigid*ezz
+    sxy=2*rigid*exy
+    sxz=2*rigid*ezx
+    syz=2*rigid*eyz
+ ! write(*,*)sxx,syy,szz,sxy,syz,sxz
+
+    rotang=ang
+    dpang=angd
+
+    Arot(:,1)=(/cos(rotang),-sin(rotang),0d0/)
+    Arot(:,2)=(/sin(rotang)*cos(dpang),cos(rotang)*cos(dpang),sin(dpang)/)
+    Arot(:,3)=(/sin(rotang)*sin(dpang),cos(rotang)*sin(dpang),-cos(dpang)/)
+   ! write(*,*)Arot
+
+   ! write(*,*)Arot
+   call TensTrans(Sxx,Syy,Szz,Sxy,Sxz,Syz,Arot,&
+   &p(1),p(2),p(3),p(4),p(5),p(6))
+
+
+  ! write(*,*)p
+   !write(*,*)st_bemv%v
+    select case(v)
+      case('n')
+        okada_load=p(3)
+      case('o')
+        okada_load=p(5)*cos(rake)+p(6)*sin(rake)
+    end select
+ ! write(*,*) okada_ij
+    ! rr=(st_bemv%xcol(i)-st_bemv%xs1(j))**2+(st_bemv%zcol(i)-st_bemv%zs1(j))**2
+    ! okada_ij=1/rr
+   return
+
+ end function okada_load
   end module
