@@ -65,7 +65,7 @@ program main
   !controls
   logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal,outpertime
   logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,foward,inverse,geofromfile,restart,latticeh
-  character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,initcond_file,parameter_file
+  character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dummy(10)
@@ -114,6 +114,14 @@ program main
     read(input_file,*) number
     write(*,*) number
   end if
+
+  if(my_rank==0) then
+  outdir='output'
+  write(command, *) 'if [ ! -d ', trim(outdir), ' ]; then mkdir -p ', trim(outdir), '; fi'
+  write(*, *) trim(command)
+  call system(command)
+  end if
+
   call MPI_BARRIER(MPI_COMM_WORLD,ierr);time1=MPI_Wtime()
 
   !default parameters
@@ -132,6 +140,7 @@ program main
   slipfinal=.false.
   restart=.false.
   latticeh=.false.
+  outpertime=.false.
   maxsig=300d0
   minsig=10d0
   amp=0d0
@@ -229,14 +238,10 @@ program main
       read(pvalue,*) restart
     case('latticeh')
       read(pvalue,*) latticeh
-    case('initcondfromfile')
-      read(pvalue,*) initcondfromfile
     case('parameterfromfile')
       read(pvalue,*) parameterfromfile
     case('parameter_file')
       read(pvalue,*) parameter_file
-    case('initcond_file')
-      read(pvalue,*) initcond_file
     end select
   end do
   close(33)
@@ -347,16 +352,20 @@ program main
       if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
       stop
     end if
-    read(12,*)
+    do while(.true.)
+      read(12,*) dum
+      if(dum=='facet') exit
+    end do
     !write(*,*) ios
     do k=1,ncellg
-      read(12,*)
-      read(12,*)
-      read(12,*) dum,xs1(k),ys1(k),zs1(k)
-      read(12,*) dum,xs2(k),ys2(k),zs2(k)
-      read(12,*) dum,xs3(k),ys3(k),zs3(k)
-      read(12,*)
-      read(12,*)
+      !read(12,*)
+      read(12,*) !outer loop
+      read(12,*) dum,xs1(k),ys1(k),zs1(k) !vertex
+      read(12,*) dum,xs2(k),ys2(k),zs2(k) !vertex
+      read(12,*) dum,xs3(k),ys3(k),zs3(k) !vertex
+      read(12,*) !end loop
+      read(12,*) !endfacet
+      read(12,*) !facet
       xcol(k)=(xs1(k)+xs2(k)+xs3(k))/3
       ycol(k)=(ys1(k)+ys2(k)+ys3(k))/3
       zcol(k)=(zs1(k)+zs2(k)+zs3(k))/3
@@ -908,7 +917,7 @@ program main
 
     !event list
     if(.not.slipping) then
-      if(mvelG>2d-1) then
+      if(mvelG>1d-1) then
         slipping=.true.
         eventcount=eventcount+1
         moment0=meandispG
@@ -934,7 +943,7 @@ program main
     end if
     !
     if(slipping) then
-      if(mvelG<1d-1) then
+      if(mvelG<5d-2) then
         slipping=.false.
         tout=x
         moment=meandispG-moment0
