@@ -9,5 +9,5 @@ vpl          1d-9 !backslip rate
 dtinit      1d-1 !initial time step
 parameterfromfile T !nonuniform parameters
 parameter_file "examples/bp5tparam.dat"
-geometry "examples/bp5t.stl" !fault geometry
+geometry_file "examples/bp5t.stl" !fault geometry
 restart F !no restart
