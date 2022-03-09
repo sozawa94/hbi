@@ -51,7 +51,7 @@ program main
 
   !parameters for each elements
   real(8),allocatable::a(:),b(:),dc(:),f0(:),fw(:),vw(:),vc(:),taudot(:),tauddot(:),sigdot(:)
-  real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:),taudotg(:),sigmadotg(:)
+  real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:)
 
   !variables
   real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:)
@@ -268,7 +268,7 @@ program main
   allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg))
   allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),f0g(NCELLg))
   allocate(taug(NCELLg),sigmag(NCELLg),velG(NCELLg),rake(NCELLg))
-  allocate(taudotg(NCELLg),sigmadotg(NCELLg))
+  allocate(taudotg(NCELLg),sigdotg(NCELLg))
 
   xcol=0d0;ycol=0d0;zcol=0d0;ds=0d0
 
@@ -394,7 +394,7 @@ program main
   if(parameterfromfile) then
     open(99,file=parameter_file)
     do i=1,ncellg
-      read(99,*) rake(i),ag(i),bg(i),dcg(i),f0g(i),taug(i),sigmag(i),velg(i),taudotg(i),sigmadotg(i)
+      read(99,*) rake(i),ag(i),bg(i),dcg(i),f0g(i),taug(i),sigmag(i),velg(i),taudotg(i),sigdotg(i)
     end do
     close(99)
   end if
@@ -519,6 +519,11 @@ program main
   dc=dc0
   f0=mu0
 
+  if(.not.backslip) then
+    taudot=sr
+    sigdot=0d0
+  end if
+
   if(parameterfromfile) then
     do i=1,NCELL
       i_=st_sum%lodc(i)
@@ -526,12 +531,9 @@ program main
       b(i)=bg(i_)
       dc(i)=dcg(i_)
       f0(i)=f0g(i_)
+      taudot(i)=taudotg(i_)
+      sigdot(i)=sigdotg(i_)
     end do
-  end if
-
-  if(.not.backslip) then
-    taudot=sr
-    sigdot=0d0
   end if
 
   !setting frictional parameters
