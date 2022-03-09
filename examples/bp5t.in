@@ -1,15 +1,13 @@
 problem      3dht !3d half space & rectangle elements
-ncellg 9250
-sigmaconst T
-ds           1d0
-filenumber    200
-interval     100
-nstep     10000
-tmax   567648e5
-backslip T
-vpl          1d-9
-dtinit      1d-1
-parameterfromfile T
-parameter_file examples/bp5tparam.dat
-geometry examples/bp5t.stl
-restart F
+ncellg 9250 !number of elements
+filenumber    200 !id of output files
+interval     100 !output and checkpointing every 100 steps
+nstep     10000 !time steps
+tmax   567648e5 !maximum time (s)
+backslip T !loading with backslip 
+vpl          1d-9 !backslip rate
+dtinit      1d-1 !initial time step
+parameterfromfile T !nonuniform parameters
+parameter_file "examples/bp5tparam.dat"
+geometry "examples/bp5t.stl" !fault geometry
+restart F !no restart

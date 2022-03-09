@@ -51,7 +51,7 @@ program main
 
   !parameters for each elements
   real(8),allocatable::a(:),b(:),dc(:),f0(:),fw(:),vw(:),vc(:),taudot(:),tauddot(:),sigdot(:)
-  real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:)
+  real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:),taudotg(:),sigmadotg(:)
 
   !variables
   real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:)
@@ -195,7 +195,7 @@ program main
     case('interval')
       read (pvalue,*) interval
     case('geometry')
-      read (pvalue,*) geofile
+      read (pvalue,'(a)') geofile
     case('velinit')
       read (pvalue,*) velinit
     case('tauinit')
@@ -241,7 +241,7 @@ program main
     case('parameterfromfile')
       read(pvalue,*) parameterfromfile
     case('parameter_file')
-      read(pvalue,*) parameter_file
+      read(pvalue,'(a)') parameter_file
     end select
   end do
   close(33)
@@ -268,6 +268,7 @@ program main
   allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg))
   allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),f0g(NCELLg))
   allocate(taug(NCELLg),sigmag(NCELLg),velG(NCELLg),rake(NCELLg))
+  allocate(taudotg(NCELLg),sigmadotg(NCELLg))
 
   xcol=0d0;ycol=0d0;zcol=0d0;ds=0d0
 
@@ -393,7 +394,7 @@ program main
   if(parameterfromfile) then
     open(99,file=parameter_file)
     do i=1,ncellg
-      read(99,*) rake(i),ag(i),bg(i),dcg(i),f0g(i),taug(i),sigmag(i),velg(i)
+      read(99,*) rake(i),ag(i),bg(i),dcg(i),f0g(i),taug(i),sigmag(i),velg(i),taudotg(i),sigmadotg(i)
     end do
     close(99)
   end if
@@ -886,7 +887,7 @@ program main
 
     if(outfield) then
       if(my_rank==0) then
-        write(*,*) 'time step=' ,k,x/365/24/60/60
+        write(*,'(a,i0,f17.8,a)') 'time step=' ,k,x/365/24/60/60, ' yr'
         !if(slipping) then
         !  write(53,*) k,x/365/24/60/60,1
         !else
@@ -1567,7 +1568,7 @@ contains
       !print *, sum(st_sum%vs)
       !ret1(:)=st_sum%vs(:)
 
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_s,st_bemv,st_ctl,ret1,vec)
+      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_n,st_bemv,st_ctl,ret2,vec)
       !st_vel%vs=vec
       !call HACApK_adot_lattice_hyp(st_sum,st_LHp_n,st_ctl,wws,st_vel)
       !print *, sum(st_sum%vs)

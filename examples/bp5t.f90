@@ -7,7 +7,7 @@ program main
   real(8),parameter::pi=4.d0*atan(1.d0)
   real(8),parameter::ds0=1d0,mu0=0.6d0,vref=1d-6,vs=3.464d0,velinit=1d-9,rigid=32.04d0
   real(8)::xcol(n),ycol(n),zcol(n),ang(n),angd(n),rake(n),xr(n),yr(n),zr(n),ds(n)
-  real(8)::a(n),b(n),dc(n),f0(n),vel(n),sigma(n),tau(n),mu(n)
+  real(8)::a(n),b(n),dc(n),f0(n),vel(n),sigma(n),tau(n),mu(n),taudot(n),sigmadot(n)
   real(8)::xs1(n),xs2(n),xs3(n),ys1(n),ys2(n),ys3(n),zs1(n),zs2(n),zs3(n)
   character(128)::dummy
 
@@ -71,7 +71,10 @@ program main
      mu(i)=a(i)*asinh(0.5d0*vel(i)/vref*exp((f0(i)+b(i)*log(vref/velinit))/a(i)))+rigid/(2*Vs)*vel(i)
      tau(i)=mu(i)*sigma(i)
 
-     write(111,'(8e17.8)') 0d0,a(i),b(i),dc(i),f0(i),tau(i),sigma(i),vel(i)
+     taudot(i)=0d0
+     sigmadot(i)=0d0
+
+     write(111,'(10e17.8)') 0d0,a(i),b(i),dc(i),f0(i),tau(i),sigma(i),vel(i),taudot(i),sigmadot(i)
      !write(111,'(8e17.8)') 0d0,a(i),b(i),dc(i),f0(i),xcol(i),ycol(i),zcol(i)
      !write(*,*) i,omega
      !if(my_rank.eq.0)write(*,*)phi(i),sigma(i),vel(i)
