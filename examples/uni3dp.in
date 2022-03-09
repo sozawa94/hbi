@@ -1,0 +1,20 @@
+problem      3dp !3d planar fault in ful-space
+imax 200
+jmax 200 !number of elements =40,000
+filenumber    100 !id of output files
+interval     100 !output and checkpointing every 100 steps
+nstep     30000 !time steps
+tmax   567648e5 !maximum time (s)
+backslip T !loading with backslip 
+vpl          1d-9 !backslip rate
+dtinit      1d0 !initial time step
+ds 0.1 !element size
+parameterfromfile F !nonuniform parameters
+a 0.016
+b 0.020
+dc 0.020
+f0 0.60
+tauinit 59.0
+sigmainit 100.0
+velinit 2d-9
+restart F !no restart

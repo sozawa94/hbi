@@ -144,9 +144,6 @@ program main
   maxsig=300d0
   minsig=10d0
   amp=0d0
-  vc0=1d6
-  vw0=1d6
-  fw0=0.3d0
   dtinit=1d0
   tp=86400d0
   trelax=1d18
@@ -184,7 +181,7 @@ program main
       read (pvalue,*) b0
     case('dc')
       read (pvalue,*) dc0
-    case('mu0')
+    case('f0')
       read (pvalue,*) mu0
     case('load')
       read (pvalue,*) load
@@ -194,7 +191,7 @@ program main
       read (pvalue,*) vpl
     case('interval')
       read (pvalue,*) interval
-    case('geometry')
+    case('geometry_file')
       read (pvalue,'(a)') geofile
     case('velinit')
       read (pvalue,*) velinit
@@ -334,6 +331,7 @@ program main
     call coordinate2dn()
   case('3dp')
     call coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
+    ds=ds0*ds0
   case('3dnr','3dhr')
     open(20,file=geofile,status='old',iostat=ios)
     if(ios /= 0) then
@@ -759,6 +757,10 @@ program main
     call MPI_bcast(meanmuG,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
     meanmuG=meanmuG/sg
 
+    call MPI_BARRIER(MPI_COMM_WORLD,ierr); time2=MPI_Wtime()
+    if(my_rank==0) write(*,*) 'Finished all initial processing, time(s)=',time2-time1
+    time1=MPI_Wtime()
+
     !output intiial condition
     if(my_rank<npd) then
       !call output_field()
@@ -772,6 +774,8 @@ program main
       write(nout4) tau
     end if
     k=0
+    errmax_gb=0d0
+    dtdid=0d0
     if(my_rank==0) then
       call output_monitor()
     end if
@@ -803,9 +807,7 @@ program main
     !if(my_rank==53)write(*,*) phi(i),tau(i),sigma(i)
   end do
   !stop
-  call MPI_BARRIER(MPI_COMM_WORLD,ierr); time2=MPI_Wtime()
-  if(my_rank==0) write(*,*) 'Finished all initial processing, time(s)=',time2-time1
-  time1=MPI_Wtime()
+
 
   do k=kstart,NSTEP
     !parallel computing for Runge-Kutta
@@ -903,15 +905,6 @@ program main
         write(nout3) sigma
         write(nout4) tau
       end if
-      ! else
-      !   if(my_rank==0) then
-      !     write(46) disp
-      !     write(47) vel
-      !     write(48) tau!-taudot*x
-      !     write(49) sigma!-sigdot*x
-      !     call output_field()
-      !   end if
-      !end if
     end if
 
     if(my_rank==0.and.k>kend) call output_monitor()
@@ -1042,69 +1035,6 @@ contains
     write(nout,*)
   end subroutine
 
-  !------------initond-----------------------------------------------------------!
-  subroutine initcond_BP3(phi,sigma,tau,disp,vel)
-    implicit none
-    real(8),intent(out)::phi(:),sigma(:),tau(:),disp(:),vel(:)
-    real(8)::omega,dep,a_max
-    a_max=0.025d0
-    do i=1,NCELLg
-      !sigma(i)=min(17.0*zcol(i)+10d0,240d0)
-      sigma(i)=50d0
-      vel(i)=velinit
-      dep=-zcol(i)
-      if((abs(xcol(i)+24d0).lt.6d0).and.(abs(dep-10d0).lt.6d0)) vel(i)=1d-2
-      !mu(i)=f0(i)+(a(i)-b(i))*log(vel(i)/vref)
-      mu(i)=a_max*asinh(0.5d0*vel(i)/vref*exp((f0(i)+b(i)*log(vref/abs(velinit)))/a_max))+rigid/(2*Vs)*vel(i)
-      tau(i)=mu(i)*sigma(i)
-      phi(i)=a(i)*dlog(2*vref/abs(vel(i))*sinh(abs(tau(i))/sigma(i)/a(i)))
-      disp(i)=0d0
-      omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref
-      !write(*,*) i,omega
-      !if(my_rank.eq.0)write(*,*)phi(i),sigma(i),vel(i)
-    end do
-  end subroutine
-  subroutine initcond_BP4(phi,sigma,tau,disp,vel)
-    implicit none
-    real(8),intent(out)::phi(:),sigma(:),tau(:),disp(:),vel(:)
-    real(8)::omega,dep
-    do i=1,NCELLg
-      sigma(i)=50d0
-      vel(i)=velinit
-
-      !nucleation
-      if((abs(xcol(i)+22.5d0).lt.6d0).and.(abs(zcol(i)+7.5d0).lt.6d0)) vel(i)=1d-3
-      !mu(i)=f0(i)+(a(i)-b(i))*log(vel(i)/vref)
-      mu(i)=a(i)*asinh(0.5d0*vel(i)/vref*exp((f0(i)+b(i)*log(vref/velinit))/a(i)))+rigid/(2*Vs)*vel(i)
-      tau(i)=mu(i)*sigma(i)
-      phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(abs(tau(i))/sigma(i)/a(i)))
-      disp(i)=0d0
-      omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref
-      !write(*,*) i,omega
-      !if(my_rank.eq.0)write(*,*)phi(i),sigma(i),vel(i)
-    end do
-  end subroutine
-  subroutine initcond_BP5(phi,sigma,tau,disp,vel)
-    implicit none
-    real(8),intent(out)::phi(:),sigma(:),tau(:),disp(:),vel(:)
-    real(8)::omega,dep
-    do i=1,NCELLg
-      !sigma(i)=min(17.0*zcol(i)+10d0,240d0)
-      sigma(i)=25d0
-      vel(i)=velinit
-      dep=-zcol(i)
-      if((abs(xcol(i)+24d0).lt.6d0).and.(abs(dep-10d0).lt.6d0)) vel(i)=1d-2
-      !mu(i)=f0(i)+(a(i)-b(i))*log(vel(i)/vref)
-      mu(i)=a(i)*asinh(0.5d0*vel(i)/vref*exp((f0(i)+b(i)*log(vref/velinit))/a(i)))+rigid/(2*Vs)*vel(i)
-      tau(i)=mu(i)*sigma(i)
-      phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(abs(tau(i))/sigma(i)/a(i)))
-      disp(i)=0d0
-      omega=exp((phi(i)-f0(i))/b(i))*vel(i)/vref
-      !write(*,*) i,omega
-      !if(my_rank.eq.0)write(*,*)phi(i),sigma(i),vel(i)
-    end do
-  end subroutine
-
   !------------coordinate-----------------------------------------------------------!
   subroutine coordinate2dp(NCELLg,ds0,xel,xer,xcol)
     implicit none
@@ -1227,8 +1157,7 @@ contains
     real(8),intent(in) ::y(:)
     real(8),intent(out) :: dydx(:)
     real(8) :: veltmp(NCELL),tautmp(NCELL),sigmatmp(NCELL),phitmp(NCELL)
-    real(8) :: taustmp(NCELL),taudtmp(NCELL),velstmp(NCELL),veldtmp(NCELL)
-    real(8) :: sum_gs(NCELL),sum_gn(NCELL),sum_gd(NCELL)!,velstmpG(NCELLg),veldtmpG(NCELLg)
+    real(8) :: sum_gs(NCELL),sum_gn(NCELL)!,velstmpG(NCELLg),veldtmpG(NCELLg)
     !real(8) :: sum_xx(NCELL),sum_xy(NCELL),sum_yy(NCELL)!,sum_xz(NCELL),sum_yz(NCELL),sum_zz(NCELL)
     !real(8) :: sum_xxG(NCELLg),sum_xyG(NCELLg),sum_yyG(NCELLg)!,sum_xzG(NCELLg),sum_yzG(NCELLg),sum_zzG(NCELLg)
     !real(8) :: sum_xx2G(NCELLg),sum_xy2G(NCELLg),sum_yy2G(NCELLg),sum_xz2G(NCELLg),sum_yz2G(NCELLg),sum_zz2G(NCELLg)
@@ -1245,7 +1174,7 @@ contains
       tautmp(i) = y(3*i-1)
       sigmatmp(i) = y(3*i)
       veltmp(i) = 2*vref*dexp(-phitmp(i)/a(i))*dsinh(tautmp(i)/sigmatmp(i)/a(i))
-      !if(my_rank==53)write(*,*) veltmp(i)
+      !if(my_rank==0)write(*,*) veltmp(i)
     enddo
 
     !matrix-vector mutiplation
@@ -1380,8 +1309,13 @@ contains
       timeH=timeH+time4-time3
 
       errmax=0d0
-      do i=1,NCELL
-        if(abs(yerr(3*i-2)/ytemp(3*i-2))/eps>errmax) errmax=abs(yerr(3*i-2)/ytemp(3*i-2))/eps
+      !do i=1,NCELL
+      !  if(abs(yerr(3*i-2)/ytemp(3*i-2))/eps>errmax) errmax=abs(yerr(3*i-2)/ytemp(3*i-2))/eps
+        !errmax=errmax+yerr(3*i-2)**2
+      !end do
+
+      do i=1,3*NCELL
+        if(abs(yerr(i)/ytemp(i))/eps>errmax) errmax=abs(yerr(i)/ytemp(i))/eps
         !errmax=errmax+yerr(3*i-2)**2
       end do
       !call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -1403,7 +1337,7 @@ contains
 
 
 
-      !write(*,*) h,errmax_gb
+      !if(my_rank==0)write(*,*) h,errmax_gb
       !if(h<0.25d0*ds0/vs)exit
       if((errmax_gb<1.d0).and.(errmax_gb>1d-15)) then
         exit
@@ -1570,7 +1504,7 @@ contains
       !print *, sum(st_sum%vs)
       !ret1(:)=st_sum%vs(:)
 
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_n,st_bemv,st_ctl,ret2,vec)
+      if(.not.sigmaconst)lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_n,st_bemv,st_ctl,ret2,vec)
       !st_vel%vs=vec
       !call HACApK_adot_lattice_hyp(st_sum,st_LHp_n,st_ctl,wws,st_vel)
       !print *, sum(st_sum%vs)
