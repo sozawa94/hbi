@@ -56,12 +56,12 @@ contains
       HACApK_entry_ij=matel3dp_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
       & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
       & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
-    case('3dph')
-      HACApK_entry_ij=matel3dph_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
-      & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
-      & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
-      !write(*,*)HACApK_entry_ij
-    case('3dhr')
+    ! case('3dph')
+    !   HACApK_entry_ij=matel3dph_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
+    !   & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
+    !   & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
+    !   !write(*,*)HACApK_entry_ij
+    case('3dhr','3dph')
       HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%v,st_bemv%rake,st_bemv%w)
       !write(*,*)HACApK_entry_ij
     case('3dn','3dnt')

@@ -229,6 +229,8 @@ program main
       read(pvalue,*) minsig
     case('crake')
       read(pvalue,*) crake
+    case('dipangle')
+      read(pvalue,*) dipangle
     case('outpertime')
       read(pvalue,*) outpertime
     case('restart')
@@ -247,9 +249,10 @@ program main
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
 
-  !MPI setting
-  if(problem=='3dp') NCELLg=imax*jmax
-
+  select case(problem)
+  case('3dp','3dph')
+    NCELLg=imax*jmax
+  end select
   !stop
   !call varscalc(NCELL,displs,vars)
   if(my_rank==0) then
@@ -303,7 +306,7 @@ program main
     ys1=0d0; ys2=0d0; ys3=0d0
     zs1=0d0; zs2=0d0; zs3=0d0
     rake=0d0
-  case('3dnr','3dhr')
+  case('3dnr','3dhr','3dph')
     allocate(ang(NCELLg),angd(NCELLg))
     !xs1=0d0; xs2=0d0; xs3=0d0; xs4=0d0
     !ys1=0d0; ys2=0d0; ys3=0d0; ys4=0d0
@@ -335,15 +338,17 @@ program main
   case('3dnr','3dhr')
     open(20,file=geofile,status='old',iostat=ios)
     if(ios /= 0) then
-      if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
-      stop
+     if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
+     stop
     end if
     do i=1,NCELLg
-      read(20,*) xcol(i),ycol(i),zcol(i),ang(i),angd(i)
-      ds(i)=ds0*ds0
+     read(20,*) xcol(i),ycol(i),zcol(i),ang(i),angd(i)
+     ds(i)=ds0*ds0
     end do
-
     close(20)
+  case('3dph')
+    call coordinate3ddip(imax,jmax,ds0,dipangle)
+    ds=ds0*ds0
   case('3dnt','3dht')
     !.stl format
     open(12,file=geofile,iostat=ios)
@@ -435,7 +440,7 @@ program main
     st_bemv%zs4=zs4
     st_bemv%problem=problem
 
-  case('3dhr','3dnr')
+  case('3dhr','3dnr','3dph')
     allocate(st_bemv%xcol(NCELLg),st_bemv%ycol(NCELLg),st_bemv%zcol(NCELLg))
     allocate(st_bemv%ang(NCELLg),st_bemv%angd(NCELLg),st_bemv%rake(NCELLg))
     st_bemv%xcol=xcol
@@ -1010,7 +1015,7 @@ Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 select case(problem)
 case('2dp','2dph','2dn3','3dp')
   lrtrn=HACApK_free_leafmtxp(st_leafmtxp_s)
-case('2dn','2dh','3dnt','3dht','3dnr','3dhr')
+case('2dn','2dh','3dnt','3dht','3dnr','3dhr','3dph')
   lrtrn=HACApK_free_leafmtxp(st_leafmtxp_s)
   lrtrn=HACApK_free_leafmtxp(st_leafmtxp_n)
 end select
@@ -1095,6 +1100,62 @@ contains
     end do
     return
   end subroutine coordinate3dp
+
+    subroutine coordinate3ddip(imax,jmax,ds0,dipangle)
+      implicit none
+      integer,intent(in)::imax,jmax
+      real(8),intent(in)::ds0,dipangle
+      !integer,intent(in)::NCELLg
+      !real(8),intent(out)::xcol(:),ycol(:),zcol(:)
+      !real(8),intent(out)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
+      integer::i,j,k
+      real(8)::xc,yc,zc,amp,yr(0:imax),zr(0:imax),stangle
+
+
+        !dipangle=dipangle*pi/180d0
+        stangle=0d0*pi/180d0
+         k=0
+         yr(0)=0d0
+         zr(0)=0d0
+         !nb=int(50.0*jmax/320.0)
+         !if(my_rank==0) write(*,*)nb
+         do j=1,jmax
+         yr(j)=yr(j-1)-ds0*cos(dipangle*pi/180d0)
+         zr(j)=zr(j-1)-ds0*sin(dipangle*pi/180d0)
+         end do
+         do i=1,imax
+           do j=1,jmax
+           k=k+1
+             xcol(k)=(i-imax/2-0.5d0)*ds0
+             !ys1(k)=yr(j-1)
+             !ys2(k)=yr(j-1)
+             !ys3(k)=yr(j)
+             !ys4(k)=yr(j)
+             ycol(k)=0.5d0*(yr(j-1)+yr(j)) !-(j-0.5d0)*ds0*cos(dipangle)
+             zcol(k)=0.5d0*(zr(j-1)+zr(j)) !-(j-0.5d0)*ds0*sin(dipangle)
+             !xcol(k)=(i-imax/2-0.5d0)*ds0
+             !zcol(k)=(j-jmax/2-0.5d0)*ds0
+             !xs1(k)=xcol(k)+0.5d0*ds0
+             !xs2(k)=xcol(k)-0.5d0*ds0
+             !xs3(k)=xcol(k)-0.5d0*ds0
+             !xs4(k)=xcol(k)+0.5d0*ds0
+             !zs1(k)=zcol(k)+0.5d0*ds0*sin(dipangle)
+             !zs2(k)=zcol(k)+0.5d0*ds0*sin(dipangle)
+             !zs3(k)=zcol(k)-0.5d0*ds0*sin(dipangle)
+             !zs4(k)=zcol(k)-0.5d0*ds0*sin(dipangle)
+             !ys1(k)=ycol(k)+0.5d0*ds0*cos(dipangle)*sin(stangle)
+             !ys2(k)=ycol(k)-0.5d0*ds0*cos(dipangle)*sin(stangle)
+             !ys3(k)=ycol(k)-0.5d0*ds0*cos(dipangle)*sin(stangle)
+             !ys4(k)=ycol(k)+0.5d0*ds0*cos(dipangle)*sin(stangle)
+             angd(k)=datan2(zr(j-1)-zr(j),yr(j-1)-yr(j))
+             ang(k)=0d0
+             !write(*,*)angd(k)
+             if(my_rank==0)write(111,*)xcol(k),ycol(k),zcol(k)
+             end do
+         end do
+
+      return
+    end subroutine coordinate3ddip
 
   subroutine evcalc(xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,ev11,ev12,ev13,ev21,ev22,ev23,ev31,ev32,ev33,ds)
     !calculate ev for each element
@@ -1185,7 +1246,7 @@ contains
     end if
     !call MPI_BARRIER(MPI_COMM_WORLD,ierr);time3=MPI_Wtime()
     call HACApK_adot_lattice_hyp(st_sum,st_LHp_s,st_ctl,wws,st_vel)
-    if(problem=='3dhr') then
+    if(problem=='3dhr'.or.problem=='3dph') then
       sum_gs(:)=st_sum%vs(:)/ds0
     else
       sum_gs(:)=st_sum%vs(:)
@@ -1195,7 +1256,7 @@ contains
       sum_gn=0d0
     else
       call HACAPK_adot_lattice_hyp(st_sum,st_LHP_n,st_ctl,wws,st_vel)
-      if(problem=='3dhr') then
+      if(problem=='3dhr'.or.problem=='3dph') then
         sum_gn(:)=st_sum%vs(:)/ds0
       else
         sum_gn(:)=st_sum%vs(:)

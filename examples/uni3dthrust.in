@@ -1,0 +1,22 @@
+problem      3dph !3d planar thrust fault with rectangular mesh
+imax 200
+jmax 200 
+filenumber    300 !id of output files
+interval     100 !output and checkpointing every 100 steps
+nstep     100 !time steps
+tmax   567648e5 !maximum time (s)
+backslip T !loading with backslip 
+vpl          1d-9 !backslip rate
+dtinit      0.1 !initial time step
+ds 0.1 !element size
+dipangle 30.0
+crake 90.0
+parameterfromfile F !nonuniform parameters
+a 0.016
+b 0.020
+dc 0.020
+f0 0.60
+tauinit 59.0
+sigmainit 100.0
+velinit 2d-9
+restart F !no restart
