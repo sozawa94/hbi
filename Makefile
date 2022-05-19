@@ -8,7 +8,7 @@
 
 #wisteria
 OPTFLAGS = -Kfast -Kopenmp
-F90=mpifrtpx -Kfast
+F90=mpifrtpx -Kfast -Kopenmp
 
 F90FLAGS = $(OPTFLAG)
 LDFLAGS = -mkl=parallel
