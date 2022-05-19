@@ -91,7 +91,6 @@ program main
   call MPI_COMM_SIZE(MPI_COMM_WORLD,np,ierr )
   npd=int(sqrt(dble(np)))
   call MPI_COMM_RANK(MPI_COMM_WORLD,my_rank,ierr )
-
   if(my_rank==0) then
     write(*,*) '# of MPI cores', np
   end if
@@ -1199,7 +1198,6 @@ contains
 
   !computing dydx for time integration
   subroutine derivs(x, y, dydx)
-    !$ use omp_lib
     use m_HACApK_solve
     use m_HACApK_base
     use m_HACApK_use
@@ -1336,7 +1334,6 @@ contains
   !---------------------------------------------------------------------
   subroutine rkqs(y,dydx,x,htry,eps,hdid,hnext,errmax_gb)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
     !---------------------------------------------------------------------
-    !$ use omp_lib
     use m_HACApK_solve
     use m_HACApK_base
     use m_HACApK_use
@@ -1430,7 +1427,6 @@ contains
   !---------------------------------------------------------------------
   subroutine rkck(y,x,h,yout,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
     !---------------------------------------------------------------------
-    !$ use omp_lib
     use m_HACApK_solve
     use m_HACApK_base
     use m_HACApK_use
