@@ -726,7 +726,7 @@ contains
       call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,1.d0,0.d0,rigid,rigid,&
       & Sxx,Syy,Szz,Sxy,Sxz,Syz)
     case('s','o')
-      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake(i)),sin(st_bemv%rake(i)),0.d0,rigid,rigid,&
+      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake(j)),sin(st_bemv%rake(j)),0.d0,rigid,rigid,&
       & Sxx,Syy,Szz,Sxy,Sxz,Syz)
     end select
 
@@ -982,7 +982,7 @@ contains
    !write(*,*)st_bemv%v
     select case(v)
       case('n')
-        okada_ij=p(3)
+        okada_ij=-p(3)
       case('s','o')
         okada_ij=p(5)*cos(rake(i))+p(6)*sin(rake(i))
     end select
