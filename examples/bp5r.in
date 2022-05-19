@@ -1,0 +1,17 @@
+foward T
+problem      3dph
+imax 100 !number of elements
+jmax 40
+filenumber    201 !id of output files
+interval     100 !output and checkpointing every 100 steps
+nstep     100000 !time steps
+tmax   567648e5 !maximum time (s)
+backslip T !loading with backslip 
+vpl          1d-9 !backslip rate
+dtinit      1d-1 !initial time step
+parameterfromfile T !nonuniform parameters
+parameter_file "examples/bp5rparam.dat"
+restart F !no restart
+ds 1.0
+dipangle 90.0
+crake 0.0
