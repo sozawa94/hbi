@@ -490,6 +490,8 @@ program main
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
   !if(np==1) st_ctl%param(43)=1
   st_ctl%param(8)=20
+  !st_ctl%param(7)=1
+  !st_ctl%param(12)=1
   select case(problem)
   case('2dp','2dn3','3dp')
     sigmaconst=.true.
@@ -667,11 +669,12 @@ program main
     kstart=1
     kend=0
     if(my_rank<npd) then
-      ! write(fname,'("output/ind",i0,"_",i0,".dat")') number,my_rank
-      ! nout=my_rank+100
-      ! open(nout,file=fname,form='unformatted',access='stream')
-      ! write(nout)st_sum%lodc(1:NCELL)
-      ! close(nout)
+      write(fname,'("output/ind",i0,"_",i0,".dat")') number,my_rank
+      nout=my_rank+100
+      open(nout,file=fname,form='unformatted',access='stream')
+      write(nout)st_sum%lodc(1:NCELL)
+      close(nout)
+
       write(fname,'("output/xyz",i0,"_",i0,".dat")') number,my_rank
       nout=my_rank+100
       open(nout,file=fname)
@@ -710,7 +713,7 @@ program main
       open(44,file=fname)
       open(19,file='job.log',position='append')
       call date_and_time(sys_time(1), sys_time(2), sys_time(3), date_time)
-      write(19,'(a20,i0,a6,a12,a6,a12)') 'Starting job number=',number,'date',sys_time(1),'time',sys_time(2)
+      write(19,'(a20,i0,a6,a12,a6,a12,a4,i0)') 'Starting job number=',number,'date',sys_time(1),'time',sys_time(2),'np',np
       close(19)
 
     end if
@@ -902,6 +905,9 @@ program main
         !else
         !  write(53,*) k,x/365/24/60/60,0
         !end if
+        close(52)
+        write(fname,'("output/monitor",i0,".dat")') number
+        open(52,file=fname,position='append')
       end if
       !lattice H
       if(my_rank<npd) then
@@ -927,44 +933,33 @@ program main
         tout=onset_time
 
         !onset save
-        if(slipevery.and.(my_rank==0)) then
-          !write(46) disp
-          !write(47) vel
-          !if(project=='2DBEND')then
-          !  write(48) tau-taudot*x
-          !  write(49) sigma-sigdot*x
-          !else
-          !  write(48) tau!-taudot*x
-          !  write(49) sigma!-sigdot*x
-          !end if
-          !call output_field()
+        if(slipevery.and.(my_rank<npd)) then
+          write(nout) vel
+          write(nout2) disp
+          write(nout3) sigma
+          write(nout4) tau
         end if
 
       end if
     end if
     !
     if(slipping) then
-      if(mvelG<5d-2) then
+      if(mvelG<1d-3) then
         slipping=.false.
         tout=x
         moment=meandispG-moment0
         !eventcount=eventcount+1
         !end of an event
         if(my_rank==0) then
-          write(44,'(i0,f17.2,f14.4)') eventcount,onset_time,(log10(moment*rigid*sg)+5.9)/1.5
-          if(slipevery) then
-            !call output_field()
-            !write(46) disp
-            !write(47) vel
-            !if(project=='2DBEND')then
-            !  write(48) tau-taudot*x
-            !  write(49) sigma-sigdot*x
-            !else
-            !  write(48) tau!-taudot*x
-            !  write(49) sigma!-sigdot*x
-            !end if
-          end if
+          write(44,'(i0,i7,f17.2,f14.4)') eventcount,k,onset_time,(log10(moment*rigid*sg)+5.9)/1.5
         end if
+        if(slipevery.and.(my_rank<npd)) then
+          write(nout) vel
+          write(nout2) disp
+          write(nout3) sigma
+          write(nout4) tau
+        end if
+
       end if
       !   vmaxevent=max(vmaxevent,maxval(vel))
       !   !write(53,'(i6,4e16.6)') !k,x-onset_time,sum(disp-idisp),sum(vel),sum(acg**2)
@@ -1560,13 +1555,17 @@ contains
     !   end if
     ! case('3dnt','3dht','3dnr','3dhr')
       lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_s,st_bemv,st_ctl,ret1,vec)
+      if(problem=='3dhr'.or.problem=='3dph') ret1(:)=ret1(:)/ds0
       !st_vel%vs=vec
       !call HACApK_adot_lattice_hyp(st_sum,st_LHp_s,st_ctl,wws,st_vel)
       !print *, sum(st_sum%vs)
       !ret1(:)=st_sum%vs(:)
 
-      if(.not.sigmaconst)lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_n,st_bemv,st_ctl,ret2,vec)
-      !st_vel%vs=vec
+      if(.not.sigmaconst) then
+        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_n,st_bemv,st_ctl,ret2,vec)
+        if(problem=='3dhr'.or.problem=='3dph') ret2(:)=ret2(:)/ds0
+      end if
+!st_vel%vs=vec
       !call HACApK_adot_lattice_hyp(st_sum,st_LHp_n,st_ctl,wws,st_vel)
       !print *, sum(st_sum%vs)
       !ret2(:)=st_sum%vs(:)
