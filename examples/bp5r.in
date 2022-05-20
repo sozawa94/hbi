@@ -1,4 +1,4 @@
-foward T
+foward F
 problem      3dph
 imax 100 !number of elements
 jmax 40
