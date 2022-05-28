@@ -2,8 +2,8 @@ module mod_okada
   implicit none
   !real(8),parameter::pi2=8.d0*datan(1.d0)
   !real(8),parameter::epso=1d-6
-  real(8),private::xi2,et2,q2,r,r2,r3,r5,d,yp,tt,alx,ale,x11,y11,x32,y32,ey,ez,fy,fz,gy,gz,hy,hz
-  real(8),private::alp1,alp2,alp3,alp4,alp5,sd,cd,sdsd,cdcd,sdcd,s2d,c2d
+  !real(8),private::xi2,et2,q2,r,r2,r3,r5,d,yp,tt,alx,ale,x11,y11,x32,y32,ey,ez,fy,fz,gy,gz,hy,hz
+  !real(8),private::sd,cd,sdsd,cdcd,sdcd,s2d,c2d
   !real(8)::p,q,s,t,xy,yp,x2,y2,d2,qr,qrx,a3,a5,b3,c3,fuy,vy,wy,fuz,vz,wz
 
 contains
@@ -14,18 +14,18 @@ contains
     real(8),intent(out)::ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz
     integer::i,j,k
     real(8),parameter::pi2=8.d0*datan(1.d0),epso=1d-6
-    real(8)::p18,ddip,aalpha,zz,dd1,dd2,dd3,r12,r21,r22,p,q
-    real(8):: dummy(5)
+    real(8)::p18,ddip,aalpha,zz,d,dd1,dd2,dd3,r12,r21,r22,p,q
+    real(8):: dummy(5),sd,cd
     real(8)::  xi(2),et(2)
     integer::kxi(2),ket(2)
     real(8)::  u(12),du(12),dua(12),dub(12),duc(12)
     !real(8)::xi2,et2,q2,r,r2,r3,r5,d,yp,tt,alx,ale,x11,y11,x32,y32,ey,ez,fy,fz,gy,gz,hy,hz
     !real(8):alp1,alp2,alp3,alp4,alp5,sd,cd,sdsd,cdcd,sdcd,s2d,c2d
-        alp1=(1d0-alpha)/2d0
-        alp2= alpha/2d0
-        alp3=(1d0-alpha)/alpha
-        alp4= 1d0-alpha
-        alp5= alpha
+        ! alp1=(1d0-alpha)/2d0
+        ! alp2= alpha/2d0
+        ! alp3=(1d0-alpha)/alpha
+        ! alp4= 1d0-alpha
+        ! alp5= alpha
         !----
         p18=pi2/360.d0
         sd=dsin(dip*p18)
@@ -35,11 +35,11 @@ contains
           if(sd.gt.0d0) sd= 1d0
           if(sd.lt.0d0) sd=-1d0
         endif
-        sdsd=sd*sd
-        cdcd=cd*cd
-        sdcd=sd*cd
-        s2d=2d0*sdcd
-        c2d=cdcd-sdsd
+        ! sdsd=sd*sd
+        ! cdcd=cd*cd
+        ! sdcd=sd*cd
+        ! s2d=2d0*sdcd
+        ! c2d=cdcd-sdsd
        ! write(29,*)sd,cd
 
    ! zz=z
@@ -94,9 +94,9 @@ contains
     u=0d0
     do k=1,2
       do j=1,2
-        call dccon2(xi(j),et(k),q,sd,cd,kxi(k),ket(j))
+        !call dccon2(xi(j),et(k),q,sd,cd,kxi(k),ket(j))
        ! call ua(xi(j),et(k),q,dd1,dd2,dd3,dua)
-         call ua(xi(j),et(k),q,disl1,disl2,disl3,dua)
+         call ua(xi(j),et(k),q,sd,cd,kxi,ket,disl1,disl2,disl3,alpha,dua)
 
         !----
         !!write(*,*)'sd,cd',sd,cd
@@ -179,10 +179,10 @@ contains
     !====
     do k=1,2
       do j=1,2
-        call dccon2(xi(j),et(k),q,sd,cd,kxi(k),ket(j))
-        call ua(xi(j),et(k),q,disl1,disl2,disl3,dua)
-        call ub(xi(j),et(k),q,disl1,disl2,disl3,dub)
-        call uc(xi(j),et(k),q,z,disl1,disl2,disl3,duc)
+        !call dccon2(xi(j),et(k),q,sd,cd,kxi(k),ket(j))
+        call ua(xi(j),et(k),q,sd,cd,kxi,ket,disl1,disl2,disl3,alpha,dua)
+        call ub(xi(j),et(k),q,sd,cd,kxi,ket,disl1,disl2,disl3,alpha,dub)
+        call uc(xi(j),et(k),q,z,sd,cd,kxi,ket,disl1,disl2,disl3,alpha,duc)
         !----
         du(1)=dua(1)+dub(1)+z*duc(1)
         du(2)=(dua(2)+dub(2)+z*duc(2))*cd-(dua(3)+dub(3)+z*duc(3))*sd
@@ -222,14 +222,16 @@ contains
     uzz=u(12)
     return
   end subroutine okada
-  subroutine  ua(xi,et,q,disl1,disl2,disl3,dua)
+  subroutine  ua(xi,et,q,sd,cd,kxi,ket,disl1,disl2,disl3,alpha,dua)
     implicit none
-    real(8),intent(in)::xi,et,q,disl1,disl2,disl3
+    real(8),intent(in)::xi,et,q,alpha,disl1,disl2,disl3,sd,cd
+    integer,intent(in)::kxi(2),ket(2)
     real(8),intent(out)::dua(12)
-    real(8)::du(12),qx,qy,xy
+    real(8)::du(12),qx,qy,xy,alp1,alp2,alp3,alp4,alp5,rxi,ret
+    real(8)::xi2,et2,q2,r,r2,r3,r5,d,yp,tt,alx,ale,x11,y11,x32,y32,ey,ez,fy,fz,gy,gz,hy,hz
     integer::i
      real(8),parameter::pi2=8.d0*datan(1.d0),epso=1d-6
-    
+
     !c
     !*******************************************************************
     !****    displacement and strain at depth (part-a)             *****
@@ -245,6 +247,39 @@ contains
     !real(8)::alp1,alp2,alp3,alp4,alp5,sd,cd,sdsd,cdcd,sdcd,s2d,c2d
     !real(8)::xi2,et2,q2,r,r2,r3,r5,y,d,tt,alx,ale,x11,y11,x32,y32,ey,ez,fy,fz,gy,gz,hy,hz
     !----
+    alp1=(1d0-alpha)/2d0
+    alp2= alpha/2d0
+    alp3=(1d0-alpha)/alpha
+    alp4= 1d0-alpha
+    alp5= alpha
+
+    xi2=xi*xi
+    et2=et*et
+    q2=q*q
+    r2=xi2+et2+q2
+    r =dsqrt(r2)
+    r3=r *r2
+    r5=r3*r2
+    yp =et*cd+q*sd
+    d =et*sd-q*cd
+    tt=datan(xi*et/(q*r))
+    rxi=r+xi
+    alx=dlog(rxi)
+    x11=1d0/(r*rxi)
+    x32=(r+rxi)*x11*x11/r
+    ret=r+et
+    ale=dlog(ret)
+    y11=1d0/(r*ret)
+    y32=(r+ret)*y11*y11/r
+    ey=sd/r-yp*q/r3
+    ez=cd/r+d*q/r3
+    fy=d/r3+xi2*y32*sd
+    fz=yp/r3+xi2*y32*cd
+    gy=2d0*x11*sd-yp*q*x32
+    gz=2d0*x11*cd+d*q*x32
+    hy=d*q*x32+xi*q*y32*sd
+    hz=yp*q*x32+xi*q*y32*cd
+
     do i=1,12
       dua(i)=0d0
     end do
@@ -293,12 +328,14 @@ contains
     !write(*,*)'u',u
     return
   end subroutine
-  subroutine  ub(xi,et,q,disl1,disl2,disl3,dub)
+  subroutine  ub(xi,et,q,sd,cd,kxi,ket,disl1,disl2,disl3,alpha,dub)
     implicit none
-    real(8),intent(in)::xi,et,q,disl1,disl2,disl3
+    real(8),intent(in)::xi,et,q,disl1,disl2,disl3,alpha,sd,cd
+    integer,intent(in)::kxi(2),ket(2)
     real(8),intent(out)::dub(12)
     real(8)::du(12),d11,rd,ai4,aj2,aj5,ai3,ak1,aj3,aj6,rd2,ai1,ai2,ak2,ak4,aj1,aj4,qx,qy
-    real(8)::xs,ak3,xy
+    real(8)::xs,ak3,xy,alp1,alp2,alp3,alp4,alp5,rxi,ret
+    real(8)::xi2,et2,q2,r,r2,r3,r5,d,yp,tt,alx,ale,x11,y11,x32,y32,ey,ez,fy,fz,gy,gz,hy,hz
     integer::i
  real(8),parameter::pi2=8.d0*datan(1.d0),epso=1d-6
 
@@ -317,6 +354,39 @@ contains
     !real(8)::xi2,et2,q2,r,r2,r3,r5,y,d,tt,alx,ale,x11,y11,x32,y32,ey,ez,fy,fz,gy,gz,hy,hz
     !----
     ! !write(*,*)'sd,cd',sd,cd
+    alp1=(1d0-alpha)/2d0
+    alp2= alpha/2d0
+    alp3=(1d0-alpha)/alpha
+    alp4= 1d0-alpha
+    alp5= alpha
+
+    xi2=xi*xi
+    et2=et*et
+    q2=q*q
+    r2=xi2+et2+q2
+    r =dsqrt(r2)
+    r3=r *r2
+    r5=r3*r2
+    yp =et*cd+q*sd
+    d =et*sd-q*cd
+    tt=datan(xi*et/(q*r))
+    rxi=r+xi
+    alx=dlog(rxi)
+    x11=1d0/(r*rxi)
+    x32=(r+rxi)*x11*x11/r
+    ret=r+et
+    ale=dlog(ret)
+    y11=1d0/(r*ret)
+    y32=(r+ret)*y11*y11/r
+    ey=sd/r-yp*q/r3
+    ez=cd/r+d*q/r3
+    fy=d/r3+xi2*y32*sd
+    fz=yp/r3+xi2*y32*cd
+    gy=2d0*x11*sd-yp*q*x32
+    gz=2d0*x11*cd+d*q*x32
+    hy=d*q*x32+xi*q*y32*sd
+    hz=yp*q*x32+xi*q*y32*cd
+
     rd=r+d
     ! !write(*,*) 'rd',rd
     d11=1d0/(r*rd)
@@ -327,9 +397,9 @@ contains
         ai4=0d0
       else
         xs=dsqrt(xi2+q2)
-        ai4=1d0/cdcd*( xi/rd*sdcd+2d0*datan((et*(xs+q*cd)+xs*(r+xs)*sd)/(xi*(r+xs)*cd)) )
+        ai4=1d0/cd/cd*( xi/rd*sd*cd+2d0*datan((et*(xs+q*cd)+xs*(r+xs)*sd)/(xi*(r+xs)*cd)) )
       endif
-      ai3=(yp*cd/rd-ale+sd*dlog(rd))/cdcd
+      ai3=(yp*cd/rd-ale+sd*dlog(rd))/cd/cd
       ak1=xi*(d11-y11*sd)/cd
       ak3=(q*y11-yp*d11)/cd
       aj3=(ak1-aj2*sd)/cd
@@ -383,30 +453,33 @@ contains
     !=====================================
     !====    dip-slip contribution   =====
     !=====================================
-      du( 1)=-q/r      +alp3*ai3*sdcd
-      du( 2)=-et*qx-tt -alp3*xi/rd*sdcd
-      du( 3)= q*qx     +alp3*ai4*sdcd
-      du( 4)= xi*q/r3     +alp3*aj4*sdcd
-      du( 5)= et*q/r3+qy  +alp3*aj5*sdcd
-      du( 6)=-q2/r3       +alp3*aj6*sdcd
-      du( 7)=-ey          +alp3*aj1*sdcd
-      du( 8)=-et*gy-xy*sd +alp3*aj2*sdcd
-      du( 9)= q*gy        +alp3*aj3*sdcd
-      du(10)=-ez          -alp3*ak3*sdcd
-      du(11)=-et*gz-xy*cd -alp3*xi*d11*sdcd
-      du(12)= q*gz        -alp3*ak4*sdcd
+      du( 1)=-q/r      +alp3*ai3*sd*cd
+      du( 2)=-et*qx-tt -alp3*xi/rd*sd*cd
+      du( 3)= q*qx     +alp3*ai4*sd*cd
+      du( 4)= xi*q/r3     +alp3*aj4*sd*cd
+      du( 5)= et*q/r3+qy  +alp3*aj5*sd*cd
+      du( 6)=-q2/r3       +alp3*aj6*sd*cd
+      du( 7)=-ey          +alp3*aj1*sd*cd
+      du( 8)=-et*gy-xy*sd +alp3*aj2*sd*cd
+      du( 9)= q*gy        +alp3*aj3*sd*cd
+      du(10)=-ez          -alp3*ak3*sd*cd
+      du(11)=-et*gz-xy*cd -alp3*xi*d11*sd*cd
+      du(12)= q*gz        -alp3*ak4*sd*cd
       !write(*,*)'ub,du',du
       do i=1,12
         dub(i)=dub(i)+disl2/pi2*du(i)
       end do
     return
   end
-  subroutine  uc(xi,et,q,z,disl1,disl2,disl3,duc)
+  subroutine  uc(xi,et,q,z,sd,cd,kxi,ket,disl1,disl2,disl3,alpha,duc)
     implicit none
-    real(8),intent(in)::xi,et,q,z,disl1,disl2,disl3
+    real(8),intent(in)::xi,et,q,z,disl1,disl2,disl3,alpha,sd,cd
+    integer,intent(in)::kxi(2),ket(2)
     real(8),intent(out)::duc(12)
     real(8)::du(12),c,x53,y53,h,z32,z53,y0,z0,ppy,ppz,qq,qqy,qqz,xy,qx,qy,qr,cqx,cdr,yy0
-    integer::i   
+    real(8)::alp1,alp2,alp3,alp4,alp5,rxi,ret
+    real(8)::xi2,et2,q2,r,r2,r3,r5,d,yp,tt,alx,ale,x11,y11,x32,y32,ey,ez,fy,fz,gy,gz,hy,hz
+    integer::i
      real(8),parameter::pi2=8.d0*datan(1.d0),epso=1d-6
 !c
     !*******************************************************************
@@ -423,6 +496,39 @@ contains
     !!real(8)::alp1,alp2,alp3,alp4,alp5,sd,cd,sdsd,cdcd,sdcd,s2d,c2d
     !real(8)::xi2,et2,q2,r,r2,r3,r5,y,d,tt,alx,ale,x11,y11,x32,y32,ey,ez,fy,fz,gy,gz,hy,hz
     !----
+    alp1=(1d0-alpha)/2d0
+    alp2= alpha/2d0
+    alp3=(1d0-alpha)/alpha
+    alp4= 1d0-alpha
+    alp5= alpha
+
+    xi2=xi*xi
+    et2=et*et
+    q2=q*q
+    r2=xi2+et2+q2
+    r =dsqrt(r2)
+    r3=r *r2
+    r5=r3*r2
+    yp =et*cd+q*sd
+    d =et*sd-q*cd
+    tt=datan(xi*et/(q*r))
+    rxi=r+xi
+    alx=dlog(rxi)
+    x11=1d0/(r*rxi)
+    x32=(r+rxi)*x11*x11/r
+    ret=r+et
+    ale=dlog(ret)
+    y11=1d0/(r*ret)
+    y32=(r+ret)*y11*y11/r
+    ey=sd/r-yp*q/r3
+    ez=cd/r+d*q/r3
+    fy=d/r3+xi2*y32*sd
+    fz=yp/r3+xi2*y32*cd
+    gy=2d0*x11*sd-yp*q*x32
+    gz=2d0*x11*cd+d*q*x32
+    hy=d*q*x32+xi*q*y32*sd
+    hz=yp*q*x32+xi*q*y32*cd
+
     c=d+z
     x53=(8.d0*r2+9.d0*r*xi+3d0*xi2)*x11*x11*x11/r2
     y53=(8.d0*r2+9.d0*r*et+3d0*et2)*y11*y11*y11/r2
@@ -461,7 +567,7 @@ contains
       du( 9)=-alp4*q/r3+yy0*sd  +alp5*(cdr*cd+c*d*qr-(y0*cd+q*z0)*sd)
       du(10)= alp4*xi*ppz*cd    -alp5*xi*qqz
       du(11)= alp4*2d0*(yp/r3-y0*cd)*sd+d/r3*cd -alp5*(cdr*cd+c*d*qr)
-      du(12)=         yy0*cd    -alp5*(cdr*sd-c*yp*qr-y0*sdsd+q*z0*cd)
+      du(12)=         yy0*cd    -alp5*(cdr*sd-c*yp*qr-y0*sd*sd+q*z0*cd)
       do i=1,12
         duc(i)=duc(i)+disl1/pi2*du(i)
       end do
@@ -474,10 +580,10 @@ contains
       du( 4)=-alp4*xi/r3*cd +alp5*c*xi*qr +xi*q*y32*sd
       du( 5)=-alp4*yp/r3     +alp5*c*et*qr
       du( 6)=    d/r3-y0*sd +alp5*c/r3*(1d0-3d0*q2/r2)
-      du( 7)=-alp4*et/r3+y0*sdsd -alp5*(cdr*sd-c*yp*qr)
+      du( 7)=-alp4*et/r3+y0*sd*sd -alp5*(cdr*sd-c*yp*qr)
       du( 8)= alp4*(x11-yp*yp*x32) -alp5*c*((d+2d0*q*cd)*x32-yp*et*q*x53)
       du( 9)=  xi*ppy*sd+yp*d*x32 +alp5*c*((yp+2d0*q*sd)*x32-yp*q2*x53)
-      du(10)=      -q/r3+y0*sdcd -alp5*(cdr*cd+c*d*qr)
+      du(10)=      -q/r3+y0*sd*cd -alp5*(cdr*cd+c*d*qr)
       du(11)= alp4*yp*d*x32       -alp5*c*((yp-2d0*q*sd)*x32+d*et*q*x53)
       du(12)=-xi*ppz*sd+x11-d*d*x32-alp5*c*((d-2d0*q*cd)*x32-d*q2*x53)
       do i=1,12
@@ -487,78 +593,78 @@ contains
     !write(*,*)u
     return
   end subroutine
-  subroutine  dccon2(xi,et,q,sd,cd,kxi,ket)
-    implicit none
-    real(8),intent(in)::xi,et,q,sd,cd
-    integer,intent(in)::kxi,ket
-    real(8)::rxi,ret
-    !c
-    !*********************************************************************
-    !****   calculate station geometry constants for finite source   *****
-    !*********************************************************************
-    !c
-    !**** input
-    !****   xi,et,q : station coordinates in fault system
-    !****   sd,cd   : sin, cos of dip-angle
-    !****   kxi,ket : kxi=1, ket=1 means r+xi<epso, r+et<epso, respectively
-    !c
-    !c### caution ### if xi,et,q are sufficiently small, they are set to zer0
-    !c
-    !real(8)::sd,cd
-    !----
-   ! if(dabs(xi).lt.epso) xi=0d0
-   ! if(dabs(et).lt.epso) et=0d0
-   ! if(dabs( q).lt.epso)  q=0d0
-    xi2=xi*xi
-    et2=et*et
-    q2=q*q
-    r2=xi2+et2+q2
-    r =dsqrt(r2)
-   ! if(r.eq.0d0) return
-    r3=r *r2
-    r5=r3*r2
-    yp =et*cd+q*sd
-    d =et*sd-q*cd
-    !----
-   ! if(q.eq.0d0) then
-   !   tt=0d0
-   ! else
-      tt=datan(xi*et/(q*r))
-   ! endif
-    !----
-   ! if(kxi.eq.1) then
-   !   alx=-dlog(r-xi)
-   !   x11=0d0
-   !   x32=0d0
-   ! else
-      rxi=r+xi
-      alx=dlog(rxi)
-      x11=1d0/(r*rxi)
-      x32=(r+rxi)*x11*x11/r
-   ! endif
-    !----
-   ! if(ket.eq.1) then
-   !   ale=-dlog(r-et)
-   !   y11=0d0
-   !   y32=0d0
-   ! else
-      ret=r+et
-      ale=dlog(ret)
-      y11=1d0/(r*ret)
-      y32=(r+ret)*y11*y11/r
-   ! endif
-    !----
-    ey=sd/r-yp*q/r3
-    ez=cd/r+d*q/r3
-    fy=d/r3+xi2*y32*sd
-    fz=yp/r3+xi2*y32*cd
-    gy=2d0*x11*sd-yp*q*x32
-    gz=2d0*x11*cd+d*q*x32
-    hy=d*q*x32+xi*q*y32*sd
-    hz=yp*q*x32+xi*q*y32*cd
-    ! !write(*,*) 'dccon2'
-    ! !write(*,*)xi2,et2,q2,r,r2,r3,r5,d,tt,alx,ale,x11,y11,x32,y32,ey,ez,fy,fz,gy,gz,hy,hz
-
-    return
-  end subroutine
+  ! subroutine  dccon2(xi,et,q,sd,cd,kxi,ket)
+  !   implicit none
+  !   real(8),intent(in)::xi,et,q,sd,cd
+  !   integer,intent(in)::kxi,ket
+  !   real(8)::rxi,ret
+  !   !c
+  !   !*********************************************************************
+  !   !****   calculate station geometry constants for finite source   *****
+  !   !*********************************************************************
+  !   !c
+  !   !**** input
+  !   !****   xi,et,q : station coordinates in fault system
+  !   !****   sd,cd   : sin, cos of dip-angle
+  !   !****   kxi,ket : kxi=1, ket=1 means r+xi<epso, r+et<epso, respectively
+  !   !c
+  !   !c### caution ### if xi,et,q are sufficiently small, they are set to zer0
+  !   !c
+  !   !real(8)::sd,cd
+  !   !----
+  !  ! if(dabs(xi).lt.epso) xi=0d0
+  !  ! if(dabs(et).lt.epso) et=0d0
+  !  ! if(dabs( q).lt.epso)  q=0d0
+  !   xi2=xi*xi
+  !   et2=et*et
+  !   q2=q*q
+  !   r2=xi2+et2+q2
+  !   r =dsqrt(r2)
+  !  ! if(r.eq.0d0) return
+  !   r3=r *r2
+  !   r5=r3*r2
+  !   yp =et*cd+q*sd
+  !   d =et*sd-q*cd
+  !   !----
+  !  ! if(q.eq.0d0) then
+  !  !   tt=0d0
+  !  ! else
+  !     tt=datan(xi*et/(q*r))
+  !  ! endif
+  !   !----
+  !  ! if(kxi.eq.1) then
+  !  !   alx=-dlog(r-xi)
+  !  !   x11=0d0
+  !  !   x32=0d0
+  !  ! else
+  !     rxi=r+xi
+  !     alx=dlog(rxi)
+  !     x11=1d0/(r*rxi)
+  !     x32=(r+rxi)*x11*x11/r
+  !  ! endif
+  !   !----
+  !  ! if(ket.eq.1) then
+  !  !   ale=-dlog(r-et)
+  !  !   y11=0d0
+  !  !   y32=0d0
+  !  ! else
+  !     ret=r+et
+  !     ale=dlog(ret)
+  !     y11=1d0/(r*ret)
+  !     y32=(r+ret)*y11*y11/r
+  !  ! endif
+  !   !----
+  !   ey=sd/r-yp*q/r3
+  !   ez=cd/r+d*q/r3
+  !   fy=d/r3+xi2*y32*sd
+  !   fz=yp/r3+xi2*y32*cd
+  !   gy=2d0*x11*sd-yp*q*x32
+  !   gz=2d0*x11*cd+d*q*x32
+  !   hy=d*q*x32+xi*q*y32*sd
+  !   hz=yp*q*x32+xi*q*y32*cd
+  !   ! !write(*,*) 'dccon2'
+  !   ! !write(*,*)xi2,et2,q2,r,r2,r3,r5,d,tt,alx,ale,x11,y11,x32,y32,ey,ez,fy,fz,gy,gz,hy,hz
+  !
+  !   return
+  ! end subroutine
 end module mod_okada
