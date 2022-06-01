@@ -637,8 +637,18 @@ program main
     call MPI_bcast(sigma,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
     call MPI_bcast(disp,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
 
-    if(my_rank==0) write(*,*) 'finished reading restart condition'
+    s=0d0
+    do i=1,NCELL
+      i_=st_sum%lodc(i)
+      s=s+ds(i_)
+    end do
 
+    call MPI_reduce(s,sG,1,MPI_REAL8,MPI_SUM,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    call MPI_bcast(mvelG,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
+    
+    call MPI_BARRIER(MPI_COMM_WORLD,ierr); time2=MPI_Wtime()
+    if(my_rank==0) write(*,*) 'Finished all initial processing, time(s)=',time2-time1
+    time1=MPI_Wtime()
   !no restart
   else
 
