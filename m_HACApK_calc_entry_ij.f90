@@ -681,8 +681,8 @@ contains
       call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,1.d0,0.d0,rigid,rigid,&
       & Sxx,Syy,Szz,Sxy,Sxz,Syz)
     case('s','o')
-      call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake(i)),sin(st_bemv%rake(i)),0.d0,rigid,rigid,&
-      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
+      call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake(i)),&
+      &sin(st_bemv%rake(i)),0.d0,rigid,rigid,Sxx,Syy,Szz,Sxy,Sxz,Syz)
     end select
 
 
@@ -726,8 +726,8 @@ contains
       call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,1.d0,0.d0,rigid,rigid,&
       & Sxx,Syy,Szz,Sxy,Sxz,Syz)
     case('s','o')
-      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake(j)),sin(st_bemv%rake(j)),0.d0,rigid,rigid,&
-      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
+      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake(j)),&
+      & sin(st_bemv%rake(j)),0.d0,rigid,rigid,Sxx,Syy,Szz,Sxy,Sxz,Syz)
     end select
 
     Arot(1,:)=(/st_bemv%ev11(i),st_bemv%ev21(i),st_bemv%ev31(i)/)
