@@ -272,10 +272,10 @@ program main
   xcol=0d0;ycol=0d0;zcol=0d0;ds=0d0
 
   select case(problem)
-  case('2dp','2dph')
+  case('2dp')
     allocate(xel(NCELLg),xer(NCELLg))
     xel=0d0;xer=0d0
-  case('2dn','2dh','2dn3')
+  case('2dn','2dph','2dn3')
     allocate(ang(NCELLg),xel(NCELLg),xer(NCELLg),yel(NCELLg),yer(NCELLg))
     ang=0d0;xel=0d0;xer=0d0;yel=0d0;yer=0d0
   case('3dp')
@@ -318,8 +318,10 @@ program main
   !mesh generation (rectangular assumed)
   if(my_rank==0) write(*,*) 'Generating mesh'
   select case(problem)
-  case('2dp','2dph')
+  case('2dp')
     call coordinate2dp(NCELLg,ds0,xel,xer,xcol)
+  case('2dph')
+    call coordinate2dph()
   case('2dn')
     open(20,file=geofile,status='old',iostat=ios)
     if(ios /= 0) then
@@ -409,12 +411,12 @@ program main
   !lrtrn=HACApK_init(NCELLg,st_ctl2,st_bemv,icomm)
   allocate(coord(NCELLg,3))
   select case(problem)
-  case('2dp','2dph')
+  case('2dp')
     allocate(st_bemv%xcol(NCELLg),st_bemv%xel(NCELLg),st_bemv%xer(NCELLg))
     st_bemv%xcol=xcol;st_bemv%xel=xel;st_bemv%xer=xer
     st_bemv%problem=problem
 
-  case('2dn','2dn3','2dh')
+  case('2dn','2dn3','2dph')
     allocate(st_bemv%xcol(NCELLg),st_bemv%xel(NCELLg),st_bemv%xer(NCELLg),st_bemv%ds(NCELLg))
     allocate(st_bemv%ycol(NCELLg),st_bemv%yel(NCELLg),st_bemv%yer(NCELLg),st_bemv%ang(NCELLg))
     st_bemv%xcol=xcol;st_bemv%xel=xel;st_bemv%xer=xer
@@ -645,7 +647,7 @@ program main
 
     call MPI_reduce(s,sG,1,MPI_REAL8,MPI_SUM,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
     call MPI_bcast(mvelG,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
-    
+
     call MPI_BARRIER(MPI_COMM_WORLD,ierr); time2=MPI_Wtime()
     if(my_rank==0) write(*,*) 'Finished all initial processing, time(s)=',time2-time1
     time1=MPI_Wtime()
@@ -671,6 +673,7 @@ program main
         vel(i)=velg(i_)
         mu(i)=tau(i)/sigma(i)
         phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
+        !write(*,*) tau(i),sigma(i),vel(i)
       end do
     end if
 
@@ -1017,9 +1020,9 @@ end if
 !if(my_rank==0) write(19,'(a20,i0,f16.2)')'Finished job number=',number,time2-time1
 Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 select case(problem)
-case('2dp','2dph','2dn3','3dp')
+case('2dp','2dn3','3dp')
   lrtrn=HACApK_free_leafmtxp(st_leafmtxp_s)
-case('2dn','2dh','3dnt','3dht','3dnr','3dhr','3dph')
+case('2dn','2dph','3dnt','3dht','3dnr','3dhr','3dph')
   lrtrn=HACApK_free_leafmtxp(st_leafmtxp_s)
   lrtrn=HACApK_free_leafmtxp(st_leafmtxp_n)
 end select
@@ -1063,6 +1066,26 @@ contains
     !close(14)
     return
   end subroutine
+
+  subroutine coordinate2dph()
+    implicit none
+    integer::i,j,k
+    !planar fault with element size ds and dipangle=dipangle
+    do i=1,NCELLg
+      ds(i)=ds0
+      xel(i)=(i-1)*ds0*cos(dipangle*pi/180)
+      xer(i)=i*ds0*cos(dipangle*pi/180)
+      yel(i)=(i-1)*ds0*sin(dipangle*pi/180)
+      yer(i)=i*ds0*sin(dipangle*pi/180)
+      xcol(i)=0.5d0*(xel(i)+xer(i))
+      ycol(i)=0.5d0*(yel(i)+yer(i))
+      ang(i)=datan2(yer(i)-yel(i),xer(i)-xel(i))
+      !write(14,'(3e16.6)') xcol(i),xel(i),xer(i)
+    enddo
+    !close(14)
+    return
+  end subroutine
+
   subroutine coordinate2dn()
     implicit none
     integer::i
@@ -1367,7 +1390,8 @@ contains
     do while(.true.)
 
       call MPI_BARRIER(MPI_COMM_WORLD,ierr);time3=MPI_Wtime()
-      call rkck(y,x,h,ytemp,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+      call rkck(y,x,h,ytemp,yerr)
+      !call rk2(y,x,h,ytemp,yerr)
       time4=MPI_Wtime()
       timeH=timeH+time4-time3
 
@@ -1512,12 +1536,46 @@ contains
     return
   end subroutine
 
+  subroutine rk2(y,x,h,yout,yerr)
+    implicit none
+    real(8),intent(in)::y(:),x,h
+    real(8),intent(out)::yout(:),yerr(:)
+    real(8)::ytemp(3*NCELL),y1(3*NCELL),ak1(3*NCELL),ak2(3*NCELL)
+    integer::i
+
+    !1st-order solution
+    call derivs(x, y, ak1)
+    !$omp parallel do
+    do i=1,size(y)
+      y1(i)=y(i)+h*ak1(i)
+    end do
+
+    !2nd-order solution
+    !$omp parallel do
+    do i=1,size(y)
+      ytemp(i)=y(i)+0.5d0*h*ak1(i)
+    end do
+    call derivs(x+0.5*h, ytemp, ak2)
+
+    !$omp parallel do
+    do i=1,size(y)
+      yout(i)=y(i)+h*ak2(i)
+      yerr(i)=yout(i)-y1(i)
+    end do
+
+    return
+  end subroutine
+
   subroutine foward_check()
     implicit none
     real(8)::rr,lc,ret1(NCELLg),ret2(NCELLg),vec(NCELLg)
     integer::p
 
-    vec=1d0
+    vec=0d0
+    do i=1,NCELL
+      i_=st_sum%lodc(i)
+      if(ycol(i_)>5d0) vec(i)=1d0
+    end do
     write(fname,'("output/stress",i0)') number
     open(29,file=fname)
 
@@ -1560,26 +1618,26 @@ contains
     !     end do
     !   end if
     ! case('3dnt','3dht','3dnr','3dhr')
-      lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_s,st_bemv,st_ctl,ret1,vec)
+      !lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_s,st_bemv,st_ctl,ret1,vec)
+      st_vel%vs=vec
+      call HACApK_adot_lattice_hyp(st_sum,st_LHp_s,st_ctl,wws,st_vel)
+      ret1(:)=st_sum%vs(:)
       if(problem=='3dhr'.or.problem=='3dph') ret1(:)=ret1(:)/ds0
-      !st_vel%vs=vec
-      !call HACApK_adot_lattice_hyp(st_sum,st_LHp_s,st_ctl,wws,st_vel)
-      !print *, sum(st_sum%vs)
-      !ret1(:)=st_sum%vs(:)
 
       if(.not.sigmaconst) then
-        lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_n,st_bemv,st_ctl,ret2,vec)
+        !lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_n,st_bemv,st_ctl,ret2,vec)
+        st_vel%vs=vec
+        call HACApK_adot_lattice_hyp(st_sum,st_LHp_n,st_ctl,wws,st_vel)
+        ret2(:)=st_sum%vs(:)
         if(problem=='3dhr'.or.problem=='3dph') ret2(:)=ret2(:)/ds0
       end if
-!st_vel%vs=vec
-      !call HACApK_adot_lattice_hyp(st_sum,st_LHp_n,st_ctl,wws,st_vel)
-      !print *, sum(st_sum%vs)
-      !ret2(:)=st_sum%vs(:)
+
 
       !lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_n,st_bemv,st_ctl,ret2,vec)
       if(my_rank==0) then
-        do i=1,NCELLg
-          write(29,'(5e16.4)') xcol(i),ycol(i),zcol(i),ret1(i),ret2(i)
+        do i=1,NCELL
+          i_=st_sum%lodc(i)
+          write(29,'(6e16.4)') xcol(i_),ycol(i_),zcol(i_),vec(i_),ret1(i),ret2(i)
           ! write(29,'(2i4,3e16.4)')i,j,a(i),b(i),dc(i)
         end do
       end if
