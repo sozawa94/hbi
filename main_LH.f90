@@ -246,12 +246,6 @@ program main
 
   !limitsigma=.true.
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-
-
-  select case(problem)
-  case('3dp','3dph')
-    NCELLg=imax*jmax
-  end select
   !stop
   !call varscalc(NCELL,displs,vars)
   if(my_rank==0) then
@@ -259,8 +253,27 @@ program main
     write(*,*) 'project',project
   end if
 
+  select case(problem)
+  case('3dp','3dph')
+    NCELLg=imax*jmax
+  case('3dht')
+    open(12,file=geofile,iostat=ios)
+    if(ios /= 0) then
+      if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
+      stop
+    end if
+    nl=0
+    do
+     read(12,'()',end=100)
+     nl = nl + 1
+    end do
+100 close(12)
+    ncellg=nl/7
+    if(my_rank==0) write(*,*) 'NCELLg',ncellg
+  end select
+
   if(ncellg==0.and.my_rank==0) then
-    write(*,*) 'error: Ncell is zero'
+    write(*,*) 'error: Ncellg is zero'
     stop
   end if
   !allocation
@@ -357,13 +370,13 @@ program main
       if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
       stop
     end if
+
     do while(.true.)
       read(12,*) dum
       if(dum=='facet') exit
     end do
     !write(*,*) ios
     do k=1,ncellg
-      !read(12,*)
       read(12,*) !outer loop
       read(12,*) dum,xs1(k),ys1(k),zs1(k) !vertex
       read(12,*) dum,xs2(k),ys2(k),zs2(k) !vertex
@@ -377,6 +390,8 @@ program main
     !  write(*,*)ios
       !if(my_rank==0)write(*,'(9e17.8)') xs1(k),ys1(k),zs1(k),xs2(k),ys2(k),zs2(k),xs3(k),ys3(k),zs3(k)
     end do
+
+
     !mesh format created by .msh => mkelm.c
     ! open(20,file=geofile,status='old',iostat=ios)
     ! if(ios /= 0) then
