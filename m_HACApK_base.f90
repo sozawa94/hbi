@@ -584,7 +584,10 @@ endfunction
         allocate(st_LHp%st_lfp(ilf,itf)%st_lf(1))
       else
         nlf=nlf+st_leafmtx(is)%nlf
+        if(associated(st_LHp%st_lfp(ilf,itf)%st_lf))then
+        else
         allocate(st_LHp%st_lfp(ilf,itf)%st_lf(st_leafmtx(is)%nlf))
+        endif
       endif
     endif
   enddo; enddo
@@ -3127,8 +3130,9 @@ endfunction
    do ic=1,nnson
      call HACApK_free_st_clt(st_clt%pc_sons(ic))
    enddo
-   deallocate(st_clt%bmin,st_clt%bmax)
-   deallocate(st_clt%pc_sons)
+   if(associated(st_clt%bmin)) deallocate(st_clt%bmin)
+   if(associated(st_clt%bmax)) deallocate(st_clt%bmax)
+   if(associated(st_clt%pc_sons)) deallocate(st_clt%pc_sons)
  end subroutine HACApK_free_st_clt
 
 !***HACApK_generate_cluster
