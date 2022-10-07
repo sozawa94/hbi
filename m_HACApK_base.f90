@@ -1,7 +1,7 @@
 !=====================================================================*
 !                                                                     *
 !   Software Name : HACApK                                            *
-!         Version : 3.0.0                                             *
+!         Version : 4.0.0                                             *
 !                                                                     *
 !   License                                                           *
 !     This file is part of HACApK.                                    *
@@ -32,7 +32,8 @@
 !C  added functions related to Block clustering to HACApK1.2.0 on May 2017
 !C  added functions related to Lattice H-matrix to HACApK1.3.0 on Aug 2017
 !C  added functions related to Uniform Lattice size to HACApK2.3.0 on Aug 2018
-!C  last modified by Akihiro Ida on Aug 2018
+!C  added functions related to thread tarallelized HMVM to HACApK3.0.0 on May 2022
+!C  last modified by Akihiro Ida on May 2022
 !C**************************************************************************
 module m_HACApK_base
  use m_HACApK_calc_entry_ij
@@ -69,6 +70,39 @@ module m_HACApK_base
     !!!
     type(st_HACApK_leafmtx),pointer :: st_lf(:)=>null()
   end type st_HACApK_leafmtx
+!*** *type :: st_HACApK_leafmtx3
+  type :: st_HACApK_leafmtx3
+    integer*4 ltmtx  ! kind of the matrix; 1:rk 2:full
+    integer*4 kt
+    integer*4 nstrtl,ndl;
+    integer*4 nstrtt,ndt;
+    integer*4 lttcl,lttct
+    
+    integer*4 nlf ! number of leaves(sub-matrices) in the MPI process
+    !!!
+    integer*8 a1size !!!
+    !!!
+    real*8,allocatable :: a1(:,:)
+    real*8,allocatable :: a2(:,:)
+    !!!
+  end type st_HACApK_leafmtx3
+
+!*** *type :: st_HACApK_leafmtx2
+  type :: st_HACApK_leafmtx2
+     integer*4,dimension(:),allocatable :: leaf_str,body_str,dense_str,leaf_end
+     integer*4,dimension(:),allocatable :: ltmtx  ! kind of the matrix; 1:rk 2:full
+     integer*4,dimension(:),allocatable :: kt
+     integer*4,dimension(:),allocatable :: nstrtl,ndl;
+     integer*4,dimension(:),allocatable :: nstrtt,ndt;
+     integer*4,dimension(:),allocatable :: a1size !!!
+     real*8,dimension(:),allocatable :: body
+     integer*4,dimension(:),allocatable :: ls,le,lss,lee,zaut_str,num_vec
+     integer*4,dimension(:,:),allocatable :: vec_num
+     real*8,dimension(:),allocatable :: zaut
+     integer*4,dimension(:),allocatable :: dense_num_row, dense_ndl_str, dense_ndl_end, dense_leaf_id, dense_meta_idx_str
+     integer*4,dimension(:),allocatable :: dense_ndt, dense_nstrtt, dense_idx_str
+     integer*4 :: dense_max_row
+  end type st_HACApK_leafmtx2
 
 !*** type :: st_HACApK_leafmtxp
   type st_HACApK_leafmtxp
@@ -84,6 +118,8 @@ module m_HACApK_base
     integer*4 st_lf_stride
     !!!
     type(st_HACApK_leafmtx),pointer :: st_lf(:)=>null()
+    type(st_HACApK_leafmtx3),allocatable,dimension(:) :: st_lf_ft(:)
+    type(st_HACApK_leafmtx2) :: st_lf2
     !!!
     integer*8,pointer :: lnlfl2g(:,:)=>null()
     !
@@ -132,6 +168,8 @@ module m_HACApK_base
     integer*4 nlfl, nlft    ! number of lattice blocks in row and column in the MPI process
     integer*4 ndlfs, ndtfs  ! vector sizes in the MPI process
     type(st_HACApK_lf9lttc),pointer :: st_lfp(:,:)=>null()
+    type(st_HACApK_leafmtxp),pointer :: st_lfpp(:,:)=>null()
+    type(st_HACApK_lcontrol),pointer :: st_ctlp(:,:)=>null()
     integer*8,pointer :: lnlfl2g(:,:)=>null()
     integer*4,pointer :: lbstrtl(:)=>null() ! Start points of lattice block in row in the whole matrix
     integer*4,pointer :: lbstrtt(:)=>null() ! Start points of lattice block in column in the whole matrix
@@ -247,7 +285,7 @@ integer function HACApK_init(nd,st_ctl,st_bemv,icomma)
  st_ctl%param(43)=4;       ! > BLR, LH : Number of rows in each lattice, used only if param(42)=0
  if(nrank==1) st_ctl%param(43)=1
  st_ctl%param(51)=2.0;      ! H-matrix : decision param of distance 2.0
- st_ctl%param(52)=0;        ! H-matrix : 0:weak admissibility 1:strong
+ st_ctl%param(52)=1;        ! H-matrix : 0:weak admissibility 1:strong
  st_ctl%param(53)=100;      ! H-matrix : maximun depth of block cluster tree 100
  st_ctl%param(54)=0;        ! H-matrix : 0: quad(Ver1.2), 1:BLR, 2: quad or bi
  st_ctl%param(60)=2         ! 1:ACA,  2:ACA+
@@ -293,6 +331,7 @@ integer function HACApK_init(nd,st_ctl,st_bemv,icomma)
  if(st_ctl%param(1)>1)then
    write(logfile,'(a,i4.4,a)') 'log',irank,'.txt'
    open(st_ctl%lpmd(4),file=logfile)
+   write(st_ctl%lpmd(4),*) 'File open'
  else
    st_ctl%lpmd(4)=0
  endif
@@ -3041,15 +3080,18 @@ endfunction
 !***HACApK_free_leafmtxp
  integer function HACApK_free_leafmtxp(st_leafmtxp)
  type(st_HACApK_leafmtxp) :: st_leafmtxp
+  return
+  if(associated(st_leafmtxp%st_lf))then
    do il=1,st_leafmtxp%nlf
      if(st_leafmtxp%st_lf(il)%ltmtx==1)then
-       deallocate(st_leafmtxp%st_lf(il)%a1)
-       deallocate(st_leafmtxp%st_lf(il)%a2)
+       if(associated(st_leafmtxp%st_lf(il)%a1)) deallocate(st_leafmtxp%st_lf(il)%a1)
+       if(associated(st_leafmtxp%st_lf(il)%a2)) deallocate(st_leafmtxp%st_lf(il)%a2)
      elseif(st_leafmtxp%st_lf(il)%ltmtx==2)then
-       deallocate(st_leafmtxp%st_lf(il)%a1)
+       if(associated(st_leafmtxp%st_lf(il)%a1)) deallocate(st_leafmtxp%st_lf(il)%a1)
      endif
    enddo
-   if(associated(st_leafmtxp%st_lf)) deallocate(st_leafmtxp%st_lf)
+   deallocate(st_leafmtxp%st_lf)
+  endif
    HACApK_free_leafmtxp=0
  end function HACApK_free_leafmtxp
 
@@ -3452,5 +3494,245 @@ endfunction
 ! stop
  HACApK_gen_lattice_vector=lrtrn
 endfunction
+
+!*** *HACApK_gen_lattice_vectort
+integer function HACApK_gen_lattice_vectort(st_vec,st_leafmtxp,st_ctl)
+  type(st_HACApK_leafmtxp) :: st_leafmtxp
+  type(st_HACApK_lcontrol) :: st_ctl
+  type(st_HACApK_latticevec) :: st_vec
+1000 format(5(a,i10)/)
+2000 format(5(a,f10.4)/)
+  
+  lrtrn=0
+  mpinr=st_ctl%lpmd(3); mpilog=st_ctl%lpmd(4); nrank=st_ctl%lpmd(2); icomm=st_ctl%lpmd(1); nthr=st_ctl%lpmd(20)
+  if(st_ctl%param(8)/=10.and.st_ctl%param(8)/=20)then
+     if(mpinr==0) then
+        print*,'ERROR!; sub HACApK_gen_lattice_vector; param(8)=',st_ctl%param(8)
+        print*,'ERROR!; param(8) must be 10(BLR) or 20(Lattic H)'
+     endif
+     stop
+  endif
+!!! ndc=st_leafmtxp%ndlfs; nlfc=st_leafmtxp%nlft
+  ndc=st_leafmtxp%ndtfs
+  nlfc=st_leafmtxp%nlft
+  st_vec%ndc=ndc
+  st_vec%nlfc=nlfc
+  ! allocate(st_vec%lbstrtc(nlfc),st_vec%lbndc(nlfc),st_vec%lodc(ndc),st_vec%vs(ndc))
+  allocate(st_vec%lbstrtc(nlfc),st_vec%lbndc(nlfc),st_vec%lodc(ndc),st_vec%vs(ndc+8))
+  st_vec%vs(:)=0.0d0
+  nlfalt=st_leafmtxp%nlfalt
+  ip=1
+  do it=1,nlfc
+     ibl=st_leafmtxp%lnlfl2g(it,1)
+     ibl=mod((ibl-1),nlfalt)+1
+     ndilb=st_leafmtxp%lbndt(ibl)
+     lstrtlibl=st_leafmtxp%lbstrtt(ibl)
+     st_vec%lbndc(it)=ndilb
+     st_vec%lbstrtc(it)=lstrtlibl
+     st_vec%lodc(ip:ip+ndilb-1)=st_ctl%lod(lstrtlibl:lstrtlibl+ndilb-1)
+  !!!   print *, "lstrtlibt",mpinr,it,st_leafmtxp%lnlfl2g(it,1),ibl,lstrtlibl
+     ip=ip+ndilb
+  enddo
+  
+  
+  if(st_ctl%param(1)>1) then
+     write(mpilog,1000) 'local vec size; ndc=',ndc,'; #lattice blocks=',nlfc
+     write(mpilog,*) 'st_vec%lbstrtc='
+     write(mpilog,'(10(i9))') st_vec%lbstrtc(:)
+     write(mpilog,*) 'st_vec%lbndc='
+     write(mpilog,'(10(i9))') st_vec%lbndc(:)
+     !   write(mpilog,*) 'st_vec%lodc='
+     !   write(mpilog,'(10(i9))') st_vec%lodc(:)
+  endif
+  ! stop
+  HACApK_gen_lattice_vectort=lrtrn
+end function HACApK_gen_lattice_vectort
+
+!*** *HACApK_gen_lattice_vectorl
+integer function HACApK_gen_lattice_vectorl(st_vec,st_leafmtxp,st_ctl)
+  type(st_HACApK_leafmtxp) :: st_leafmtxp
+  type(st_HACApK_lcontrol) :: st_ctl
+  type(st_HACApK_latticevec) :: st_vec
+1000 format(5(a,i10)/)
+2000 format(5(a,f10.4)/)
+  
+  lrtrn=0
+  mpinr=st_ctl%lpmd(3); mpilog=st_ctl%lpmd(4); nrank=st_ctl%lpmd(2); icomm=st_ctl%lpmd(1); nthr=st_ctl%lpmd(20)
+  if(st_ctl%param(8)/=10.and.st_ctl%param(8)/=20)then
+     if(mpinr==0) then
+        print*,'ERROR!; sub HACApK_gen_lattice_vector; param(8)=',st_ctl%param(8)
+        print*,'ERROR!; param(8) must be 10(BLR) or 20(Lattic H)'
+     endif
+     stop
+  endif
+!!! ndc=st_leafmtxp%ndlfs; nlfc=st_leafmtxp%nlft
+  ndc=st_leafmtxp%ndlfs
+  nlfc=st_leafmtxp%nlfl
+  st_vec%ndc=ndc
+  st_vec%nlfc=nlfc
+  ! allocate(st_vec%lbstrtc(nlfc),st_vec%lbndc(nlfc),st_vec%lodc(ndc),st_vec%vs(ndc))
+  allocate(st_vec%lbstrtc(nlfc),st_vec%lbndc(nlfc),st_vec%lodc(ndc),st_vec%vs(ndc+8))
+  st_vec%vs(:)=0.0d0
+  nlfalt=st_leafmtxp%nlfalt
+  ip=1
+  do il=1,nlfc
+     ibl=st_leafmtxp%lnlfl2g(1,il)
+     ibl=(ibl-1)/nlfalt+1
+     ndilb=st_leafmtxp%lbndl(ibl)
+     lstrtlibl=st_leafmtxp%lbstrtl(ibl)
+     st_vec%lbndc(il)=ndilb
+     st_vec%lbstrtc(il)=lstrtlibl
+     st_vec%lodc(ip:ip+ndilb-1)=st_ctl%lod(lstrtlibl:lstrtlibl+ndilb-1)
+!!!     print *, "lstrtlibl",mpinr,il,st_leafmtxp%lnlfl2g(1,il),ibl,lstrtlibl
+     ip=ip+ndilb
+  enddo
+  
+  
+  if(st_ctl%param(1)>1) then
+     write(mpilog,1000) 'local vec size; ndc=',ndc,'; #lattice blocks=',nlfc
+     write(mpilog,*) 'st_vec%lbstrtc='
+     write(mpilog,'(10(i9))') st_vec%lbstrtc(:)
+     write(mpilog,*) 'st_vec%lbndc='
+     write(mpilog,'(10(i9))') st_vec%lbndc(:)
+     !   write(mpilog,*) 'st_vec%lodc='
+     !   write(mpilog,'(10(i9))') st_vec%lodc(:)
+  endif
+  ! stop
+  HACApK_gen_lattice_vectorl=lrtrn
+end function HACApK_gen_lattice_vectorl
+
+!*** *HACApK_first_touch
+  subroutine HACApK_first_touch(st_leafmtxp,st_ctl)
+    use mpi
+    implicit none
+    type(st_HACApK_leafmtxp) :: st_leafmtxp
+    type(st_HACApK_lcontrol) :: st_ctl
+    integer*4 :: nlf,ith,nths,nthe,ip,ith1,ndl,ndt,kt
+
+    nlf = st_leafmtxp%nlf
+    allocate(st_leafmtxp%st_lf_ft(nlf))
+
+    ! !$omp parallel private(ith,nths,nthe,ip,ith1,ndl,ndt,kt)
+    ! ith = omp_get_thread_num(); ith1 = ith+1
+    ! ! nths=ltmp(ith); nthe=ltmp(ith1)-1
+    ! nths=st_ctl%lthr(ith+1); nthe=st_ctl%lthr(ith1+1)-1
+
+    ! do ip = nths, nthe
+    do ip = 1, nlf
+       ndl = st_leafmtxp%st_lf(ip)%ndl
+       ndt = st_leafmtxp%st_lf(ip)%ndt
+       kt = 0
+       if(st_leafmtxp%st_lf(ip)%ltmtx==1) then
+          kt = st_leafmtxp%st_lf(ip)%kt
+          allocate(st_leafmtxp%st_lf_ft(ip)%a1(ndt,kt))
+          allocate(st_leafmtxp%st_lf_ft(ip)%a2(ndl,kt))
+          st_leafmtxp%st_lf_ft(ip)%a1(:,:) = st_leafmtxp%st_lf(ip)%a1(:,:) 
+          st_leafmtxp%st_lf_ft(ip)%a2(:,:) = st_leafmtxp%st_lf(ip)%a2(:,:) 
+       elseif(st_leafmtxp%st_lf(ip)%ltmtx==2) then
+          allocate(st_leafmtxp%st_lf_ft(ip)%a1(ndt,ndl))
+          st_leafmtxp%st_lf_ft(ip)%a1(:,:) = st_leafmtxp%st_lf(ip)%a1(:,:) 
+       end if
+       st_leafmtxp%st_lf_ft(ip)%nlf = st_leafmtxp%st_lf(ip)%nlf
+       st_leafmtxp%st_lf_ft(ip)%ndl = st_leafmtxp%st_lf(ip)%ndl
+       st_leafmtxp%st_lf_ft(ip)%ndt = st_leafmtxp%st_lf(ip)%ndt
+       st_leafmtxp%st_lf_ft(ip)%kt = st_leafmtxp%st_lf(ip)%kt
+       st_leafmtxp%st_lf_ft(ip)%nstrtt = st_leafmtxp%st_lf(ip)%nstrtt
+       st_leafmtxp%st_lf_ft(ip)%nstrtl = st_leafmtxp%st_lf(ip)%nstrtl
+       st_leafmtxp%st_lf_ft(ip)%ltmtx = st_leafmtxp%st_lf(ip)%ltmtx
+    end do
+!    !$omp end parallel
+    
+  end subroutine HACApK_first_touch
+
+!*** *HACApK_contiguous
+  subroutine HACApK_contiguous(st_leafmtxp,st_ctl)
+    use mpi
+    implicit none
+    type(st_HACApK_leafmtxp) :: st_leafmtxp
+    type(st_HACApK_lcontrol) :: st_ctl
+    integer*4 :: nlf,ith,nths,nthe,ip,ith1,ndl,ndt,kt,nth,idx,it,il
+
+    nlf = st_leafmtxp%nlf
+
+    !$omp parallel
+    !$omp master
+    nth = omp_get_num_threads()
+!    print*,'HACApK_contiguous is called' 
+    !$omp end master
+    !$omp end parallel
+
+    allocate(st_leafmtxp%st_lf2%body_str(0:nth))
+    st_leafmtxp%st_lf2%body_str(:) = 0
+    allocate(st_leafmtxp%st_lf2%ltmtx(nlf))
+    allocate(st_leafmtxp%st_lf2%kt(nlf))
+    allocate(st_leafmtxp%st_lf2%nstrtl(nlf))
+    allocate(st_leafmtxp%st_lf2%ndl(nlf))
+    allocate(st_leafmtxp%st_lf2%nstrtt(nlf))
+    allocate(st_leafmtxp%st_lf2%ndt(nlf))
+
+    idx = 1
+    do ith = 0, nth-1
+       ith1 = ith+1
+       nths=st_ctl%lthr(ith+1); nthe=st_ctl%lthr(ith1+1)-1
+       st_leafmtxp%st_lf2%body_str(ith) = idx
+       do ip = nths, nthe
+          ndl = st_leafmtxp%st_lf(ip)%ndl
+          ndt = st_leafmtxp%st_lf(ip)%ndt
+          if(st_leafmtxp%st_lf(ip)%ltmtx==1) then
+             kt = st_leafmtxp%st_lf(ip)%kt
+             idx = idx + kt*(ndl+ndt)
+          elseif(st_leafmtxp%st_lf(ip)%ltmtx==2) then
+             idx = idx + ndl*ndt
+          end if
+       end do
+    end do
+    st_leafmtxp%st_lf2%body_str(nth) = idx + 1
+
+    allocate(st_leafmtxp%st_lf2%body(idx))
+    
+    !$omp parallel private(ith,nths,nthe,ip,ith1,ndl,ndt,kt,idx,it,il)
+    ith = omp_get_thread_num()
+    ith1 = ith +1
+    nths=st_ctl%lthr(ith+1); nthe=st_ctl%lthr(ith1+1)-1
+    idx = st_leafmtxp%st_lf2%body_str(ith) 
+    do ip = nths, nthe
+       ndl = st_leafmtxp%st_lf(ip)%ndl
+       ndt = st_leafmtxp%st_lf(ip)%ndt
+       if(st_leafmtxp%st_lf(ip)%ltmtx==1) then
+          kt = st_leafmtxp%st_lf(ip)%kt
+          do il = 1, kt
+             do it = 1, ndt
+                st_leafmtxp%st_lf2%body(idx+it-1) = st_leafmtxp%st_lf(ip)%a1(it,il) 
+             end do
+             idx = idx + ndt
+          end do
+          deallocate(st_leafmtxp%st_lf(ip)%a1)
+          do il = 1, kt
+             do it = 1, ndl
+                st_leafmtxp%st_lf2%body(idx+it-1) = st_leafmtxp%st_lf(ip)%a2(it,il) 
+             end do
+             idx = idx + ndl
+          end do
+          deallocate(st_leafmtxp%st_lf(ip)%a2)
+       elseif(st_leafmtxp%st_lf(ip)%ltmtx==2) then
+          do il = 1, ndl
+             do it = 1, ndt
+                st_leafmtxp%st_lf2%body(idx+it-1) = st_leafmtxp%st_lf(ip)%a1(it,il) 
+             end do
+             idx = idx + ndt
+          end do
+          deallocate(st_leafmtxp%st_lf(ip)%a1)
+       end if
+       st_leafmtxp%st_lf2%ndl(ip) = st_leafmtxp%st_lf(ip)%ndl
+       st_leafmtxp%st_lf2%ndt(ip) = st_leafmtxp%st_lf(ip)%ndt
+       st_leafmtxp%st_lf2%kt(ip) = st_leafmtxp%st_lf(ip)%kt
+       st_leafmtxp%st_lf2%nstrtt(ip) = st_leafmtxp%st_lf(ip)%nstrtt
+       st_leafmtxp%st_lf2%nstrtl(ip) = st_leafmtxp%st_lf(ip)%nstrtl
+       st_leafmtxp%st_lf2%ltmtx(ip) = st_leafmtxp%st_lf(ip)%ltmtx
+    end do
+    !$omp end parallel
+    deallocate(st_leafmtxp%st_lf)    
+    
+  end subroutine HACApK_contiguous
 
 endmodule m_HACApK_base

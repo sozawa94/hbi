@@ -1,7 +1,7 @@
 !=====================================================================*
 !                                                                     *
 !   Software Name : HACApK                                            *
-!         Version : 1.0.0                                             *
+!         Version : 4.0.0                                             *
 !                                                                     *
 !   License                                                           *
 !     This file is part of HACApK.                                    *
@@ -27,7 +27,8 @@
 !C  linear system with an H-matrix as the coefficient matrix and 
 !C  multiplying an H-matrix and a vector,
 !C  created by Akihiro Ida at Kyoto University on May 2012,
-!C  last modified by Akihiro Ida on Sep 2014,
+!C  added functions related to thread tarallelized HMVM to HACApK3.0.0 on May 2022
+!C  last modified by Akihiro Ida on May 2022
 !C***********************************************************************
 module m_HACApK_solve
  use m_HACApK_base
@@ -217,6 +218,126 @@ contains
 
 !***HACApK_adot_lattice_hyp
  subroutine HACApK_adot_lattice_hyp(st_au,st_LHp,st_ctl,wws,st_u)
+ include 'mpif.h'
+ integer ISTATUS(MPI_STATUS_SIZE)
+ type(st_HACApK_LHp) :: st_LHp
+ type(st_HACApK_lcontrol) :: st_ctl
+ type(st_HACApK_latticevec) :: st_au,st_u
+ real*8 wws(:)
+ real*8,allocatable :: zww
+ integer*4,pointer :: lpmd(:)
+ real*8,pointer :: time(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+!!! print*,'HACApK_adot_lattice_hyp is called'
+
+ lpmd => st_ctl%lpmd(:); time => st_ctl%time(:)
+ mpilog=lpmd(4); nrank=lpmd(2); mpinrl=lpmd(37); mpinrt=lpmd(33)
+ icommt=lpmd(31); icomml=lpmd(35); icomm=lpmd(1)
+ ndlfs=st_LHp%ndlfs; ndtfs=st_LHp%ndtfs
+ nlfl=st_LHp%nlfl; nlft=st_LHp%nlft
+
+!!! write(mpilog,1000) 'adot_lattice_hyp; ndlfs=',ndlfs,'; ndtfs=',ndtfs
+!!! write(mpilog,1000) '  mpinrl=',mpinrl,'; mpinrt=',mpinrt
+
+!$omp master
+ st_time=MPI_Wtime()
+!$omp end master
+
+ if(nrank==1)then
+   st_au%vs(:)=0.0d0
+
+!!!  write(mpilog,*) st_u%vs(1:10),st_u%vs(490:500)
+
+   do itb=1,nlft
+     nbndst=st_LHp%lbndcst(itb)
+     do ilb=1,nlfl
+       nbndsl=st_LHp%lbndcsl(ilb)
+!!! write(mpilog,*) itb,ilb,nbndst,nbndsl,st_au%ndc
+!       st_LHp%st_lfpp(ilb,itb)%st_lf => st_LHp%st_lfp(ilb,itb)%st_lf
+!       print*, st_ctlp(ilb,itb)%lthr
+!$omp parallel
+!       call HACApK_adot_body_lfmtx_hyp_nopointer(st_au%vs(nbndsl:),st_LHp%st_lfpp(ilb,itb),st_LHp%st_ctlp(ilb,itb),st_u%vs(nbndst:),ndlfs)
+       call HACApK_adot_body_lfmtx_hyp_contiguous(st_au%vs(nbndsl:),st_LHp%st_lfpp(ilb,itb),st_LHp%st_ctlp(ilb,itb),st_u%vs(nbndst:),ndlfs)
+!!!       call HACApK_adot_body_lfmtx_hyp_transform(st_au%vs(nbndsl:),st_LHp%st_lfpp(ilb,itb)%st_lf2,st_LHp%st_ctlp(ilb,itb),st_u%vs(nbndst:),ndlfs,st_LHp%st_lfpp(ilb,itb)%ktmax)
+!$omp end parallel
+     enddo
+   enddo
+ 
+!!!  write(mpilog,*) st_au%vs(1:10),st_au%vs(490:500)
+!!!  write(mpilog,*) st_au%vs(:)
+ 
+!!!!$omp parallel
+!!!   call HACApK_adot_body_lattice_hyp_tmp(st_au%vs,st_LHp,st_ctl,st_u)
+!!!!$omp end parallel
+ else
+!$omp barrier
+   wws(:)=0.0d0
+
+   do itb=1,nlft
+     nbndst=st_LHp%lbndcst(itb)
+     do ilb=1,nlfl
+       nbndsl=st_LHp%lbndcsl(ilb)
+!     write(mpilog,*) itb,ilb,nbndst,nbndsl,st_au%ndc
+!       st_LHp%st_lfpp(ilb,itb)%st_lf => st_LHp%st_lfp(ilb,itb)%st_lf
+!       print*, st_ctlp(ilb,itb)%lthr
+!$omp parallel
+!       call HACApK_adot_body_lfmtx_hyp_nopointer(wws(nbndsl:),st_LHp%st_lfpp(ilb,itb),st_LHp%st_ctlp(ilb,itb),st_u%vs(nbndst:),ndlfs)
+       call HACApK_adot_body_lfmtx_hyp_contiguous(wws(nbndsl:),st_LHp%st_lfpp(ilb,itb),st_LHp%st_ctlp(ilb,itb),st_u%vs(nbndst:),ndlfs)
+!!!       call HACApK_adot_body_lfmtx_hyp_transform(wws(nbndsl:),st_LHp%st_lfpp(ilb,itb)%st_lf2,st_LHp%st_ctlp(ilb,itb),st_u%vs(nbndst:),ndlfs,st_LHp%st_lfpp(ilb,itb)%ktmax)
+!$omp end parallel
+     enddo
+   enddo
+
+!!!  write(mpilog,*) wws(1:10),wws(490:500)
+
+!!!$omp parallel
+!!   call HACApK_adot_body_lattice_hyp_tmp(wws,st_LHp,st_ctl,st_u)
+!!!$omp end parallel
+!$omp barrier
+
+!!! call MPI_Barrier( icomm, ierr )
+
+!$omp master
+!   write(mpilog,*) 'wws=',wws(1:3)
+   en_time=MPI_Wtime()
+   time(1)=time(1)+en_time-st_time
+   st_time=MPI_Wtime()
+   call MPI_reduce(wws,st_au%vs,ndlfs,MPI_REAL8,MPI_SUM,mpinrl,icommt,ierr) ! The mpinrl coincides with the rank of diagonal in the row of process grid
+   en_time=MPI_Wtime()
+   time(2)=time(2)+en_time-st_time
+   call MPI_bcast(st_au%vs,ndtfs,MPI_REAL8,mpinrt,icomml,ierr)
+   en2_time=MPI_Wtime()
+   time(3)=time(3)+en2_time-en_time
+!   write(mpilog,*) 'st_au%vs=',st_au%vs(1:3)
+!$omp end master
+ endif
+
+ return
+
+!$omp master
+ do itb=1,st_LHp%nlft
+   nbgt=st_LHp%lbstrtt(itb)-1
+   nbndst=st_LHp%lbndcst(itb)-1
+   nditb=st_LHp%lbndcst(itb+1)-st_LHp%lbndcst(itb)
+   do i=1, nditb
+     ic=i+nbndst
+     index = st_u%lodc(ic)
+     igt=i+nbgt
+     write(mpilog,*) igt,index,st_au%vs(ic)
+   enddo
+ enddo
+!$omp end master
+
+ call MPI_Barrier( icomm, ierr )
+
+! print*,'HACApK_adot_blrmtx_hyp4 end'
+! stop
+ end subroutine
+
+!***HACApK_adot_lattice_hyp_
+ subroutine HACApK_adot_lattice_hyp_(st_au,st_LHp,st_ctl,wws,st_u)
  include 'mpif.h'
  integer ISTATUS(MPI_STATUS_SIZE)
  type(st_HACApK_LHp) :: st_LHp
@@ -1805,6 +1926,242 @@ end function HACApK_adot_pmt_lfmtx_hyp_o
  aww(st_ctl%lod(:nd))=au(:nd)
  HACApK_adot_pmt_blr_hyp=lrtrn
 end function HACApK_adot_pmt_blr_hyp
+
+!*** *HACApK_adot_lattice_hyp_nopointer
+subroutine HACApK_adot_lattice_hyp_nopointer(st_au,st_leafmtxp,st_ctl,wws,st_u)
+  include 'mpif.h'
+  integer ISTATUS(MPI_STATUS_SIZE)
+  type(st_HACApK_leafmtxp) :: st_leafmtxp
+  type(st_HACApK_lcontrol) :: st_ctl
+  type(st_HACApK_latticevec) :: st_au,st_u,wws
+  ! real*8 wws(:)
+  real*8,allocatable :: zww
+  integer*4,pointer :: lpmd(:)
+  real*8,pointer :: time(:)
+1000 format(5(a,i10)/)
+2000 format(5(a,f10.4)/)
+  
+!!! print*,'HACApK_adot_lattice_hyp is called'
+  
+  lpmd => st_ctl%lpmd(:); time => st_ctl%time(:)
+  mpilog=lpmd(4); nrank=lpmd(2); mpinrl=lpmd(37); mpinrt=lpmd(33)
+  icommt=lpmd(31); icomml=lpmd(35); icomm=lpmd(1)
+  nrankl=lpmd(36); nrankt=lpmd(32); 
+  
+!!! write(mpilog,1000) 'adot_lattice_hyp; ndlfs=',ndlfs,'; ndtfs=',ndtfs
+  ! write(mpilog,1000) '  mpinrl=',mpinrl,'; mpinrt=',mpinrt
+  
+  !$omp master
+  st_time=MPI_Wtime()
+  !$omp end master
+  
+  if(nrank==1)then
+     st_au%vs(:)=0.0d0
+     !$omp parallel
+     call HACApK_adot_body_lfmtx_hyp_nopointer(st_au%vs,st_leafmtxp,st_ctl,st_u%vs,st_au%ndc)
+     !$omp end parallel
+     en_time=MPI_Wtime()
+     time(1)=time(1)+en_time-st_time
+  else
+     !$omp barrier
+     !   wws(:)=0.0d0
+     wws%vs(:)=0.0d0
+     st_au%vs(:)=0.0d0
+     !$omp parallel
+     !   call HACApK_adot_body_lattice_hyp_tmp(wws%vs,st_LHp,st_ctl,st_u)
+     call HACApK_adot_body_lfmtx_hyp_nopointer(wws%vs,st_leafmtxp,st_ctl,st_u%vs,st_au%ndc)
+     !$omp end parallel
+     !$omp barrier
+     
+   write(mpilog,*) '  '
+   write(mpilog,*) wws%vs(1:10)
+     
+     
+!!! call MPI_Barrier( icomm, ierr )
+     
+     !$omp master
+     
+     ! print *, "wws",mpinrl,mpinrt,sum(wws%vs),st_au%lbstrtc(1),st_au%lbstrtc(2),st_au%lbndc(1),st_au%lbndc(2),size(st_au%vs),size(st_u%vs),size(wws%vs)
+     ! istrr = 1
+     ! do ibl = 1, st_au%nlfc
+     !    lengtht = wws%lbndc(ibl)
+     !    print *, "first_test_sum",ibl,mpinrl,mpinrt,istrr,lengtht,sum(wws%vs(istrr:istrr+length-1))
+     !    istrr = istrr + lengtht
+     ! end do
+     !   write(mpilog,*) 'wws=',wws(1:3)
+     en_time=MPI_Wtime()
+     time(1)=time(1)+en_time-st_time
+     st_time=MPI_Wtime()
+     !call MPI_Barrier( icomm, ierr )
+     istrs = 1
+     istrr = 1
+     do ibl = 1, mpinrl
+        istrr = istrr + st_au%lbndc(ibl)
+     end do
+     do ibl = 1, nrankt
+        iroot = ibl-1
+        lengthl = wws%lbndc(ibl)
+        !      lengtht = st_au%lbndc(ibl)
+        !      print *, "mpi_reduce",ibl,mpinrl,mpinrt,istrs,istrr,lengthl,iroot
+        call MPI_reduce(wws%vs(istrs),st_au%vs(istrr),lengthl,MPI_REAL8,MPI_SUM,iroot,icommt,ierr) ! The mpinrl coincides with the rank of diagonal in the row of process grid
+        istrs = istrs + lengthl
+        !      istrr = istrr + lengtht
+     end do
+     en_time=MPI_Wtime()
+     time(2)=time(2)+en_time-st_time
+     
+     ! istrr = 1
+     ! do ibl = 1, st_au%nlfc
+     !    lengtht = st_au%lbndc(ibl)
+     !    print *, "mpi_reduce_test_sum",ibl,mpinrl,mpinrt,istrr,lengtht,sum(st_au%vs(istrr:istrr+length-1))
+     !    istrr = istrr + lengtht
+     ! end do
+     
+     !   st_u%vs(st_u%lbstrtc(mpinrl+1):st_u%lbstrtc(mpinrl+1)+st_u%lbndc(mpinrl+1)-1) = st_au%vs(st_au%lbstrtc(mpinrt+1):st_au%lbstrtc(mpinrt+1)+st_au%lbndc(mpinrt+1)-1)
+     istr = 1
+     do ibl = 1, nrankl
+        iroot = ibl-1
+        length = st_au%lbndc(ibl)
+        !      print *, "mpi_bcast",ibl,mpinrl,mpinrt,istr,length,iroot
+        call MPI_bcast(st_au%vs(istr),length,MPI_REAL8,iroot,icomml,ierr)
+        istr = istr + length
+     end do
+     !call MPI_Barrier( icomm, ierr )
+     en2_time=MPI_Wtime()
+     time(3)=time(3)+en2_time-en_time
+     
+     ! istrr = 1
+     ! do ibl = 1, st_au%nlfc
+     !    lengtht = st_au%lbndc(ibl)
+     !    print *, "mpi_bcast_test_sum",ibl,mpinrl,mpinrt,istrr,lengtht,sum(st_au%vs(istrr:istrr+length-1))
+     !    istrr = istrr + lengtht
+     ! end do
+     
+     !   write(mpilog,*) 'st_au%vs=',st_au%vs(1:3)
+     !$omp end master
+  endif
+  
+  return
+  
+end subroutine HACApK_adot_lattice_hyp_nopointer
+
+
+!*** *HACApK_adot_body_lfmtx_hyp_nopointer
+ subroutine HACApK_adot_body_lfmtx_hyp_nopointer(zau,st_leafmtxp,st_ctl,zu,nd)
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8,dimension(:),contiguous :: zau(:),zu(:)
+ real*8,dimension(:),allocatable :: zbut
+ real*8,dimension(:),allocatable :: zaut
+ integer*4,pointer :: lpmd(:),lnp(:),lsp(:),ltmp(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+! lpmd => st_ctl%lpmd(:); lnp(0:) => st_ctl%lnp; lsp(0:) => st_ctl%lsp;ltmp(0:) => st_ctl%lthr
+! mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); icomm=lpmd(1)
+ nlf=st_leafmtxp%nlf; ktmax=st_leafmtxp%ktmax
+ ith = omp_get_thread_num(); ith1 = ith+1
+! nths=ltmp(ith); nthe=ltmp(ith1)-1
+ nths=st_ctl%lthr(ith+1); nthe=st_ctl%lthr(ith1+1)-1
+ allocate(zaut(nd)); zaut(:)=0.0d0
+ allocate(zbut(ktmax)) 
+
+!!! print*,'mpinr=',mpinr,'ith=',ith,'; nths,nthe=',nths,nthe 
+ ls=nd; le=1
+ do ip=nths,nthe
+   ndl   =st_leafmtxp%st_lf(ip)%ndl   ; ndt   =st_leafmtxp%st_lf(ip)%ndt   ; ns=ndl*ndt
+   nstrtl=st_leafmtxp%st_lf(ip)%nstrtl; nstrtt=st_leafmtxp%st_lf(ip)%nstrtt
+!!!   nstrtl=1; nstrtt=1
+   if(nstrtl<ls) ls=nstrtl; if(nstrtl+ndl-1>le) le=nstrtl+ndl-1
+   if(st_leafmtxp%st_lf(ip)%ltmtx==1)then
+     kt=st_leafmtxp%st_lf(ip)%kt
+     zbut(1:kt)=0.0d0
+     do il=1,kt
+       do it=1,ndt; itt=it+nstrtt-1
+         zbut(il)=zbut(il)+st_leafmtxp%st_lf(ip)%a1(it,il)*zu(itt)
+       enddo
+     enddo
+     do il=1,kt
+       do it=1,ndl; ill=it+nstrtl-1
+         zaut(ill)=zaut(ill)+st_leafmtxp%st_lf(ip)%a2(it,il)*zbut(il)
+       enddo
+     enddo
+   elseif(st_leafmtxp%st_lf(ip)%ltmtx==2)then
+     do il=1,ndl; ill=il+nstrtl-1
+       do it=1,ndt; itt=it+nstrtt-1
+         zaut(ill)=zaut(ill)+st_leafmtxp%st_lf(ip)%a1(it,il)*zu(itt)
+       enddo
+     enddo
+   endif
+ enddo
+ deallocate(zbut)
+ 
+! print*,'mpinr=',mpinr,zu(1:3)
+ 
+ do il=ls,le
+!$omp atomic
+   zau(il)=zau(il)+zaut(il)
+ enddo
+ end subroutine HACApK_adot_body_lfmtx_hyp_nopointer
+ 
+!*** *HACApK_adot_body_lfmtx_hyp_contiguous
+  subroutine HACApK_adot_body_lfmtx_hyp_contiguous(zau,st_leafmtxp,st_ctl,zu,nd)
+ type(st_HACApK_leafmtxp) :: st_leafmtxp
+ type(st_HACApK_lcontrol) :: st_ctl
+ real*8,dimension(:),contiguous :: zau(:),zu(:)
+ real*8,dimension(:),allocatable :: zbut
+ real*8,dimension(:),allocatable :: zaut
+ integer*4,pointer :: lpmd(:),lnp(:),lsp(:),ltmp(:)
+ 1000 format(5(a,i10)/)
+ 2000 format(5(a,f10.4)/)
+
+! lpmd => st_ctl%lpmd(:); lnp(0:) => st_ctl%lnp; lsp(0:) => st_ctl%lsp;ltmp(0:) => st_ctl%lthr
+! mpinr=lpmd(3); mpilog=lpmd(4); nrank=lpmd(2); icomm=lpmd(1)
+ nlf=st_leafmtxp%nlf; ktmax=st_leafmtxp%ktmax
+ ith = omp_get_thread_num(); ith1 = ith+1
+! nths=ltmp(ith); nthe=ltmp(ith1)-1
+ nths=st_ctl%lthr(ith+1); nthe=st_ctl%lthr(ith1+1)-1
+ allocate(zaut(nd)); zaut(:)=0.0d0
+ allocate(zbut(ktmax))
+ idx = st_leafmtxp%st_lf2%body_str(ith) -1
+
+! print*,'mpinr=',mpinr,'ith=',ith,'; nths,nthe=',nths,nthe 
+ ls=nd; le=1
+ do ip=nths,nthe
+   ndl   =st_leafmtxp%st_lf2%ndl(ip)   ; ndt   =st_leafmtxp%st_lf2%ndt(ip)   ; ns=ndl*ndt
+   nstrtl=st_leafmtxp%st_lf2%nstrtl(ip); nstrtt=st_leafmtxp%st_lf2%nstrtt(ip)
+   if(nstrtl<ls) ls=nstrtl; if(nstrtl+ndl-1>le) le=nstrtl+ndl-1
+   if(st_leafmtxp%st_lf2%ltmtx(ip)==1)then
+     kt=st_leafmtxp%st_lf2%kt(ip)
+     zbut(1:kt)=0.0d0
+     do il=1,kt
+       do it=1,ndt; itt=it+nstrtt-1
+          zbut(il)=zbut(il)+st_leafmtxp%st_lf2%body(idx+it)*zu(itt)
+       end do
+       idx = idx + ndt
+     enddo
+     do il=1,kt
+       do it=1,ndl; ill=it+nstrtl-1
+         zaut(ill)=zaut(ill)+st_leafmtxp%st_lf2%body(idx+it)*zbut(il)
+       enddo
+       idx = idx + ndl
+     enddo
+
+   elseif(st_leafmtxp%st_lf2%ltmtx(ip)==2)then
+     do il=1,ndl; ill=il+nstrtl-1
+       do it=1,ndt; itt=it+nstrtt-1
+         zaut(ill)=zaut(ill)+st_leafmtxp%st_lf2%body(idx+it)*zu(itt)
+       enddo
+       idx = idx + ndt
+     enddo
+   endif
+ enddo
+ 
+ do il=ls,le
+!$omp atomic
+   zau(il)=zau(il)+zaut(il)
+ enddo
+end subroutine HACApK_adot_body_lfmtx_hyp_contiguous
 
 endmodule m_HACApK_solve
 

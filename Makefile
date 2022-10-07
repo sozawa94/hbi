@@ -1,25 +1,23 @@
-#eqrupt03
+#gnu compiler
+#F90= mpifort -fallow-argument-mismatch -ffree-form -ffree-line-length-none -O3 -march=native -fopenmp
+
+#eqrupt03 (intel MPI)
 #OPTFLAGS =  -O3 -qopenmp -xCORE-AVX2 -ip -g -traceback
 #F90= mpiifort
 
-#ofp
-#OPTFLAGS=-O3 -axMIC-AVX512 -g -traceback
-#F90= mpiifort
-
-#wisteria
-OPTFLAGS = -Kfast -Kopenmp
+#wisteria (Fujitsu compiler)
+#OPTFLAGS = -Kfast -Kopenmp
 F90=mpifrtpx -Kfast -Kopenmp
 
 F90FLAGS = $(OPTFLAG)
-LDFLAGS = -mkl=parallel
+#LDFLAGS = -mkl=parallel
 
 LINK=$(F90)
 
-#Lattice H rectangle
-#OBJS= m_const.o TDstressFS.o HACApK_lib.o m_HACApK_calc_entry_ij.o m_HACApK_base_LH.o m_HACApK_solve_LH.o m_HACApK_use_LH.o main_new.o \
 
 #Lattice H square
 OBJS= m_const.o okada.o TDstressFS.o HACApK_lib.o m_HACApK_calc_entry_ij.o m_HACApK_base.o m_HACApK_solve.o m_HACApK_use.o main_LH.o \
+
 
 TARGET=lhbiem
 
