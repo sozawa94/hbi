@@ -1,17 +1,17 @@
 # HBI
-Multi-dimensional earthquake cycle simulation code with HACApK.
+Multi-dimensional earthquake cycle simulation code based on Boundary Element Method with H-matrices.
 
 Features
 
 - 2D and 3D planar/nonplanar faults in a full/half space
 
-- Rectaugular and Triangular meshes for 3D problems
+- Rectangular and triangular meshes for 3D problems (require .stl mesh file for triangular mesh)
 
 - Rate-State friction law
 
 - Quasi-dynamic approximation using radiation-damping term
 
-- Hybrid MPI/opem-MP parallelization
+- Hybrid MPI/open-MP parallelization
 
 See Documentation_for_HBI.pdf for more information.
 
