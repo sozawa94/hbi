@@ -1,8 +1,8 @@
 #gnu compiler
 #F90= mpifort -fallow-argument-mismatch -ffree-form -ffree-line-length-none -O3 -march=native -fopenmp
-
+#F90 = mpifort -Wno-argument-mismatch -ffree-form -ffree-line-length-none -O3 -march=native -fopenmp
 #eqrupt03 (intel MPI)
-#OPTFLAGS =  -O3 -qopenmp -xCORE-AVX2 -ip -g -traceback
+#OPTFLAGS =  -O3 -qopenmp -ip -g -traceback
 #F90= mpiifort
 
 #wisteria (Fujitsu compiler)
