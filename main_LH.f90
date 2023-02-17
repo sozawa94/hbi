@@ -35,7 +35,7 @@ program main
   type(st_HACApK_LHp) :: st_LHp_s2,st_LHp_d2,st_LHp_n2
 
   !for MPI communication and time
-  integer::counts2,icomm,np,npd,ierr,my_rank,npgl
+  integer::counts2,icomm,np,npd,ierr,my_rank,npgl,loc,rankloc,loc_
   integer,allocatable::displs(:),rcounts(:),vars(:)
   integer:: date_time(8)
   character(len=10):: sys_time(3)
@@ -58,18 +58,18 @@ program main
   real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:)
 
   real(8),allocatable::rdata(:)
-  integer::lp,i,i_,j,k,kstart,kend,m,counts,interval,lrtrn,nl,ios,nmain,rk,nout,nout2,nout3,nout4,file_size
+  integer::lp,i,i_,j,k,kstart,kend,m,counts,interval,lrtrn,nl,ios,nmain,rk,nout,nout2,nout3,nout4,file_size,nrjct
   integer,allocatable::locid(:)
   integer::hypoloc(1),load,eventcount,thec,inloc,sw
 
   !controls
   logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal,outpertime
   logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,foward,inverse,geofromfile,restart,latticeh
-  character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command
+  character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dummy(10)
-  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg
+  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold
 
   !temporal variable
 
@@ -82,7 +82,7 @@ program main
   real(8),allocatable::y(:),yscal(:),dydx(:),yg(:)
   real(8)::eps_r,errmax_gb,dtinit,dtnxt,dttry,dtdid,dtmin,tp,fwid
 
-  integer::r1,r2,r3,NVER,amari,out,kmax,loci,locj,loc,stat,nth
+  integer::r1,r2,r3,NVER,amari,out,kmax,loci,locj,stat,nth
   integer,allocatable::rupsG(:)
 
   !initialize
@@ -109,6 +109,12 @@ program main
   number=0
   if(input_file(1:2)=='in') then
     input_file=adjustl(input_file(7:))
+    write(*,*) input_file
+    read(input_file,*) number
+    write(*,*) number
+  end if
+  if(input_file(1:11)=='examples/in') then
+    input_file=adjustl(input_file(12:))
     write(*,*) input_file
     read(input_file,*) number
     write(*,*) number
@@ -149,6 +155,8 @@ program main
   project="none"
   initcondfromfile=.false.
   parameterfromfile=.false.
+  errold=1.0
+  evlaw='aging'
   !number=0
 
 
@@ -240,6 +248,10 @@ program main
       read(pvalue,*) parameterfromfile
     case('parameter_file')
       read(pvalue,'(a)') parameter_file
+    case('evlaw')
+      read(pvalue,'(a)') evlaw
+    case('loc')
+      read(pvalue,*) loc
     end select
   end do
   close(33)
@@ -698,8 +710,11 @@ program main
     if(my_rank<npd) then
       write(fname,'("output/ind",i0,"_",i0,".dat")') number,my_rank
       nout=my_rank+100
-      open(nout,file=fname,form='unformatted',access='stream')
-      write(nout)st_sum%lodc(1:NCELL)
+      open(nout,file=fname)
+      !write(nout)st_sum%lodc(1:NCELL)
+      do i=1,ncell
+        write(nout,'(i0)') st_sum%lodc(i)
+      end do
       close(nout)
 
       write(fname,'("output/xyz",i0,"_",i0,".dat")') number,my_rank
@@ -732,7 +747,7 @@ program main
     if(my_rank.eq.0) then
       write(fname,'("output/monitor",i0,".dat")') number
       open(52,file=fname)
-      !write(fname,'("output/out",i0,".dat")') number
+
       !open(53,file=fname)
       !write(fname,'("output/vel",i0,".dat")') number
       !open(47,file=fname,form='unformatted',access='stream')
@@ -742,7 +757,26 @@ program main
       call date_and_time(sys_time(1), sys_time(2), sys_time(3), date_time)
       write(19,'(a20,i0,a6,a12,a6,a12,a4,i0)') 'Starting job number=',number,'date',sys_time(1),'time',sys_time(2),'np',np
       close(19)
+    end if
 
+
+    rankloc=-1
+    if(my_rank<npd) then
+      do i=1,ncell
+        if(st_sum%lodc(i)==loc) then
+          rankloc=my_rank
+          loc_=i
+          write(*,*) rankloc,loc_
+          write(*,*)  xcol(loc),ycol(loc),zcol(loc)
+          exit
+        end if
+      end do
+    end if
+
+    if(my_rank==rankloc) then
+      write(fname,'("output/local",i0,"-",i0,".dat")') number,loc
+      open(53,file=fname)
+      write(*,*) my_rank,loc
     end if
 
     s=0d0
@@ -841,6 +875,7 @@ program main
     y(3*i)=sigma(i)
     !if(my_rank==53)write(*,*) phi(i),tau(i),sigma(i)
   end do
+  !$omp end parallel do
   !stop
 
 
@@ -848,7 +883,8 @@ program main
     !parallel computing for Runge-Kutta
     dttry = dtnxt
     !time3=MPI_Wtime()
-    call rkqs(y,dydx,x,dttry,eps_r,dtdid,dtnxt,errmax_gb)
+    call rkqs(y,dydx,x,dttry,eps_r,dtdid,dtnxt,errmax_gb,nrjct)
+    !call rkqs2(y,dydx,x,dttry,eps_r,errold,dtdid,dtnxt,errmax_gb,nrjct)
     !time4=MPI_Wtime()
     !timer=timer+time4-time3
 
@@ -871,6 +907,7 @@ program main
       disp(i)=disp(i)+vel(i)*dtdid*0.5d0
       mu(i)=tau(i)/sigma(i)
     end do
+    !$omp end parallel do
 
     call MPI_BARRIER(MPI_COMM_WORLD,ierr); time3=MPI_Wtime()
 
@@ -917,11 +954,11 @@ program main
     if(mod(k,interval)==0) outfield=.true.
     if(outpertime.and.x>tout) then
       outfield=.true.
-      if(slipping) then
-        tout=tout+5d0
-      else
-        tout=tout+20*365*24*60*60
-      end if
+      !if(slipping) then
+      !  tout=tout+5d0
+      !else
+        tout=tout+1*365*24*60*60
+      !end if
     end if
 
     if(outfield) then
@@ -945,7 +982,12 @@ program main
       end if
     end if
 
-    if(my_rank==0.and.k>kend) call output_monitor()
+    if(my_rank==0.and.k>kend) then
+      call output_monitor()
+    end if
+    if(my_rank==rankloc.and.k>kend) then
+      call output_local(loc_)
+    end if
     time4=MPI_Wtime()
     timer=timer+time4-time3
 
@@ -1049,7 +1091,13 @@ contains
   subroutine output_monitor()
     implicit none
     time2=MPi_Wtime()
-    write(52,'(i7,f19.4,7e16.5,f16.4)')k,x,log10(mvelG),meandispG,meanmuG,maxnormG,minnormG,errmax_gb,dtdid,time2-time1
+    write(52,'(i7,f19.4,7e16.5,i4,f16.4)')k,x,log10(mvelG),meandispG,meanmuG,maxnormG,minnormG,errmax_gb,dtdid,nrjct,time2-time1
+  end subroutine
+
+  subroutine output_local(loc_)
+    implicit none
+    integer,intent(in)::loc_
+    write(53,'(i7,f19.4,6e16.5)')k,x,log10(vel(loc_)),disp(loc_),tau(loc_),sigma(loc_),mu(loc_),phi(loc_)
   end subroutine
 
   subroutine output_field()
@@ -1278,6 +1326,7 @@ contains
       veltmp(i) = 2*vref*dexp(-phitmp(i)/a(i))*dsinh(tautmp(i)/sigmatmp(i)/a(i))
       !if(my_rank==0)write(*,*) veltmp(i)
     enddo
+    !$omp end parallel do
 
     !matrix-vector mutiplation
     if(backslip) then
@@ -1312,6 +1361,7 @@ contains
       sum_gn(i)=sum_gn(i)+sigdot(i)
       call deriv_d(sum_gs(i),sum_gn(i),phitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
     enddo
+    !$omp end parallel do
     return
   end subroutine
 
@@ -1328,8 +1378,16 @@ contains
     !fss=fw(i_)+(fss-fw(i_))/(1.d0+(veltmp(i)/vw(i_))**8)**0.125d0 !flash heating
     !dphidt(i)=-abs(veltmp(i))/dc(i_)*(abs(tautmp(i))/sigmatmp(i)-fss)
 
+    select case(evlaw)
+    case('aging')
+      dphidt=b/dc*vref*dexp((f0-phitmp)/b)-b*abs(veltmp)/dc    !slip law
+    case('slip')
+      fss=f0+(a-b)*dlog(abs(veltmp)/vref)
+      dphidt=-abs(veltmp)/dc*(abs(tautmp)/sigmatmp-fss)
+    end select
+
     !regularized aing law
-    dphidt=b/dc*vref*dexp((f0-phitmp)/b)-b*abs(veltmp)/dc
+    !dphidt=b/dc*vref*dexp((f0-phitmp)/b)-b*abs(veltmp)/dc
 
     !regularized aging law with cutoff velocity for evolution
     !dphidt(i)=b(i_)/dc(i_)*vref*dexp((f0(i_)-phitmp(i))/b(i_))*(1d0-abs(veltmp(i))/vref*(exp((phitmp(i)-f0(i_))/b(i_))-vref/vc(i_)))
@@ -1380,7 +1438,7 @@ contains
   end subroutine
 
   !---------------------------------------------------------------------
-  subroutine rkqs(y,dydx,x,htry,eps,hdid,hnext,errmax_gb)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+  subroutine rkqs(y,dydx,x,htry,eps,hdid,hnext,errmax_gb,nrjct)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
     !---------------------------------------------------------------------
     use m_HACApK_solve
     use m_HACApK_base
@@ -1391,14 +1449,16 @@ contains
     real(8),intent(in)::htry,eps
     real(8),intent(inout)::y(:),x,dydx(:)
     real(8),intent(out)::hdid,hnext,errmax_gb !hdid: resulatant dt hnext: htry for the next
+    integer,intent(out)::nrjct
     !type(st_HACApK_lcontrol),intent(in) :: st_ctl
     !type(st_HACApK_leafmtxp),intent(in) :: st_leafmtxp
     !type(st_HACApK_calc_entry) :: st_bemv
     integer :: i,ierr,loc
     real(8) :: errmax,h,xnew,htemp,dtmin
     real(8),dimension(size(y))::yerr,ytemp
-    real(8),parameter::SAFETY=0.9,PGROW=-0.2,PSHRNK=-0.25,ERRCON=1.89d-4
+    real(8),parameter::SAFETY=0.9,PGROW=-0.2,PSHRNK=-0.25,ERRCON=1.89d-4,kp=0.08
 
+    nrjct=0
     h=htry
     !dtmin=0.5d0*minval(ds)/vs
     !call derivs(x,y,dydx)
@@ -1445,6 +1505,7 @@ contains
         exit
       end if
 
+      nrjct=nrjct+1
       if(errmax_gb>1d-15) then
         h=max(0.5d0*h,SAFETY*h*(errmax_gb**PSHRNK))
       else
@@ -1462,6 +1523,105 @@ contains
     end do
 
     hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW))
+    !if(load==0)hnext=min(hnext,dtmax)
+    !hnext=max(0.249d0*ds0/vs,SAFETY*h*(errmax_gb**PGROW))
+
+    !hnext=min(,1d9)
+
+    hdid=h
+    x=x+h
+    y(:)=ytemp(:)
+
+  end subroutine
+  !---------------------------------------------------------------------
+  subroutine rkqs2(y,dydx,x,htry,eps,errold,hdid,hnext,errmax_gb,nrjct)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+    !---------------------------------------------------------------------
+    use m_HACApK_solve
+    use m_HACApK_base
+    use m_HACApK_use
+    implicit none
+    !include 'mpif.h'
+    !integer::NCELL,NCELLg,rcounts(:),displs(:)
+    real(8),intent(in)::htry,eps,errold
+    real(8),intent(inout)::y(:),x,dydx(:)
+    real(8),intent(out)::hdid,hnext,errmax_gb !hdid: resulatant dt hnext: htry for the next
+    integer,intent(out)::nrjct
+    !type(st_HACApK_lcontrol),intent(in) :: st_ctl
+    !type(st_HACApK_leafmtxp),intent(in) :: st_leafmtxp
+    !type(st_HACApK_calc_entry) :: st_bemv
+    integer :: i,ierr,loc
+    real(8) :: errmax,h,xnew,htemp,dtmin,tmp
+    real(8),dimension(size(y))::yerr,ytemp
+    real(8),parameter::SAFETY=0.9,PGROW=-0.2,PSHRNK=-0.25,ERRCON=1.89d-4,kp=-0.08
+
+    nrjct=0
+    h=htry
+    !dtmin=0.5d0*minval(ds)/vs
+    !call derivs(x,y,dydx)
+    do while(.true.)
+
+      call MPI_BARRIER(MPI_COMM_WORLD,ierr);time3=MPI_Wtime()
+      call rkck(y,x,h,ytemp,yerr)
+      !call rk2(y,x,h,ytemp,yerr)
+      time4=MPI_Wtime()
+      timeH=timeH+time4-time3
+
+      errmax=0d0
+      !do i=1,NCELL
+      !  if(abs(yerr(3*i-2)/ytemp(3*i-2))/eps>errmax) errmax=abs(yerr(3*i-2)/ytemp(3*i-2))/eps
+        !errmax=errmax+yerr(3*i-2)**2
+      !end do
+
+      do i=1,3*NCELL
+        if(abs(yerr(i)/ytemp(i))/eps>errmax) errmax=abs(yerr(i)/ytemp(i))/eps
+        !errmax=errmax+yerr(3*i-2)**2
+      end do
+      !call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+      !call MPI_ALLREDUCE(errmax,errmax_gb,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
+      !call MPI_ALLREDUCE(errmax,errmax_gb,1,MPI_REAL8,MPI_SUM,MPI_COMM_WORLD,ierr)
+      !errmax_gb=sqrt(errmax_gb/NCELLg)/eps
+      call MPI_BARRIER(MPI_COMM_WORLD,ierr); time3=MPI_Wtime()
+      call MPI_reduce(errmax,errmax_gb,1,MPI_REAL8,MPI_MAX,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+      call MPI_bcast(errmax_gb,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
+      time4=MPI_Wtime()
+      timer=timer+time4-time3
+      !if(my_rank==0)write(*,*) h,errmax,errmax_gb
+
+
+
+      ! call MPI_reduce(errmax,errmax_gb,1,MPI_REAL8,MPI_SUM,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+      ! errmax_gb=sqrt(errmax_gb/NCELLg)/eps
+      ! call MPI_bcast(errmax_gb,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
+
+
+
+      !if(my_rank==0)write(*,*) h,errmax_gb
+      !if(h<0.25d0*ds0/vs)exit
+      if((errmax_gb<1.d0).and.(errmax_gb>1d-15)) then
+        exit
+      end if
+
+      nrjct=nrjct+1
+      if(errmax_gb>1d-15) then
+        h=max(0.5d0*h,SAFETY*h*(errmax_gb**PSHRNK))
+      else
+        h=0.5*h
+      end if
+
+
+
+      xnew=x+h
+      if(xnew-x<1.d-15) then
+        if(my_rank.eq.0)write(*,*)'error: dt is too small'
+        stop
+      end if
+
+    end do
+    if(nrjct>0) then
+      tmp=h**2/htry
+    end if
+    tmp=h
+    hnext=min(2*h,tmp*(errmax_gb**PGROW)*(errold**kp))
     !if(load==0)hnext=min(hnext,dtmax)
     !hnext=max(0.249d0*ds0/vs,SAFETY*h*(errmax_gb**PGROW))
 
@@ -1506,6 +1666,7 @@ contains
     do i=1,size(y)
       ytemp(i)=y(i)+B21*h*ak1(i)
     end do
+    !$omp end parallel do
 
     !    -- 2nd step --
     call derivs(x+a2*h, ytemp, ak2)!,,st_leafmtxp,st_bemv,st_ctl)
@@ -1513,6 +1674,7 @@ contains
     do i=1,size(y)
       ytemp(i)=y(i)+h*(B31*ak1(i)+B32*ak2(i))
     end do
+    !$omp end parallel do
 
     !     -- 3rd step --
     call derivs(x+a3*h, ytemp, ak3)!,,st_leafmtxp,st_bemv,st_ctl)
@@ -1520,6 +1682,7 @@ contains
     do i=1,size(y)
       ytemp(i)=y(i)+h*(B41*ak1(i)+B42*ak2(i)+B43*ak3(i))
     end do
+    !$omp end parallel do
 
     !     -- 4th step --
     call derivs(x+a4*h, ytemp, ak4)!,,st_leafmtxp,st_bemv,st_ctl)
@@ -1527,6 +1690,7 @@ contains
     do i=1,size(y)
       ytemp(i)=y(i)+h*(B51*ak1(i)+B52*ak2(i)+B53*ak3(i)+ B54*ak4(i))
     end do
+    !$omp end parallel do
 
     !     -- 5th step --
     call derivs(x+a5*h, ytemp, ak5)!,,st_leafmtxp,st_bemv,st_ctl)
@@ -1534,6 +1698,7 @@ contains
     do i=1,size(y)
       ytemp(i)=y(i)+h*(B61*ak1(i)+B62*ak2(i)+B63*ak3(i)+B64*ak4(i)+B65*ak5(i))
     end do
+    !$omp end parallel do
 
     !     -- 6th step --
     call derivs(x+a6*h, ytemp, ak6)!,,st_leafmtxp,st_bemv,st_ctl)
@@ -1541,6 +1706,7 @@ contains
     do i=1,size(y)
       yout(i)=y(i)+h*(C1*ak1(i)+C3*ak3(i)+C4*ak4(i)+ C6*ak6(i))
     end do
+    !$omp end parallel do
 
 
     !$omp parallel do
@@ -1548,6 +1714,7 @@ contains
       yerr(i)=h*(DC1*ak1(i)+DC3*ak3(i)+DC4*ak4(i)+DC5*ak5(i)+DC6*ak6(i))
       !if(abs(yerr(i))>=1d6)ierr=1
     end do
+    !$omp end parallel do
     return
   end subroutine
 
@@ -1586,11 +1753,11 @@ contains
     real(8)::rr,lc,ret1(NCELLg),ret2(NCELLg),vec(NCELLg)
     integer::p
 
-    vec=0d0
-    do i=1,NCELL
-      i_=st_sum%lodc(i)
-      if(ycol(i_)>5d0) vec(i)=1d0
-    end do
+    vec=1d0
+    !do i=1,NCELL
+    !  i_=st_sum%lodc(i)
+    !  if(ycol(i_)>5d0) vec(i)=1d0
+    !end do
     write(fname,'("output/stress",i0)') number
     open(29,file=fname)
 
