@@ -527,18 +527,18 @@ program main
   st_bemv%md='s'
   st_bemv%v='s'
   lrtrn=HACApK_generate(st_leafmtxp_s,st_bemv,st_ctl,coord,eps_h)
-  if(.not.sigmaconst) then
-    st_bemv%v='n'
-    lrtrn=HACApK_generate(st_leafmtxp_n,st_bemv,st_ctl,coord,eps_h)
-  end if
   !if(latticeh) then
   lrtrn=HACApK_construct_LH(st_LHp_s,st_leafmtxp_s,st_bemv,st_ctl,coord,eps_h)
   allocate(wws(st_leafmtxp_s%ndlfs))
   lrtrn=HACApK_gen_lattice_vector(st_vel,st_leafmtxp_s,st_ctl)
   lrtrn=HACApK_gen_lattice_vector(st_sum,st_leafmtxp_s,st_ctl)
   NCELL=st_vel%ndc
-  if(.not.sigmaconst) lrtrn=HACApK_construct_LH(st_LHp_n,st_leafmtxp_n,st_bemv,st_ctl,coord,eps_h)
-  !end if
+  if(.not.sigmaconst) then
+    lrtrn=HACApK_init(NCELLg,st_ctl2,st_bemv,icomm)
+    st_bemv%v='n'
+    lrtrn=HACApK_generate(st_leafmtxp_n,st_bemv,st_ctl2,coord,eps_h)
+    lrtrn=HACApK_construct_LH(st_LHp_n,st_leafmtxp_n,st_bemv,st_ctl2,coord,eps_h)
+  end if
   !write(*,*) my_rank,st_ctl%lpmd(33),st_ctl%lpmd(37)
   allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL))
   allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL))
