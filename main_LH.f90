@@ -35,7 +35,7 @@ program main
   type(st_HACApK_LHp) :: st_LHp_s2,st_LHp_d2,st_LHp_n2
 
   !for MPI communication and time
-  integer::counts2,icomm,np,npd,ierr,my_rank,npgl,loc,rankloc,loc_
+  integer::counts2,icomm,np,npd,ierr,my_rank,npgl,loc,rankloc,loc_,rank_mvel,mvel_loc(1),mvel_loc_
   integer,allocatable::displs(:),rcounts(:),vars(:)
   integer:: date_time(8)
   character(len=10):: sys_time(3)
@@ -54,11 +54,11 @@ program main
   real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:)
 
   !variables
-  real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:)
+  real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:),cslip(:)
   real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:)
 
   real(8),allocatable::rdata(:)
-  integer::lp,i,i_,j,k,kstart,kend,m,counts,interval,lrtrn,nl,ios,nmain,rk,nout,nout2,nout3,nout4,file_size,nrjct
+  integer::lp,i,i_,j,k,kstart,kend,m,counts,interval,lrtrn,nl,ios,nmain,rk,nout,nout2,nout3,nout4,nout5,file_size,nrjct
   integer,allocatable::locid(:)
   integer::hypoloc(1),load,eventcount,thec,inloc,sw
 
@@ -68,8 +68,8 @@ program main
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
-  real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dummy(10)
-  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold
+  real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dummy(10)
+  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo
 
   !temporal variable
 
@@ -109,15 +109,15 @@ program main
   number=0
   if(input_file(1:2)=='in') then
     input_file=adjustl(input_file(7:))
-    write(*,*) input_file
+    !write(*,*) input_file
     read(input_file,*) number
-    write(*,*) number
+    !write(*,*) number
   end if
   if(input_file(1:11)=='examples/in') then
     input_file=adjustl(input_file(12:))
-    write(*,*) input_file
+    !write(*,*) input_file
     read(input_file,*) number
-    write(*,*) number
+    !write(*,*) number
   end if
 
   if(my_rank==0) then
@@ -146,9 +146,11 @@ program main
   restart=.false.
   latticeh=.false.
   outpertime=.false.
+  limitsigma=.false.
   maxsig=300d0
   minsig=10d0
   amp=0d0
+  dtout=365*24*3600
   dtinit=1d0
   tp=86400d0
   trelax=1d18
@@ -212,6 +214,8 @@ program main
       read (pvalue,*) sparam
     case('tmax')
       read (pvalue,*) tmax
+    case('dtout')
+      read (pvalue,*) dtout
     case('eps_r')
       read (pvalue,*) eps_r
     case('eps_h')
@@ -262,7 +266,6 @@ program main
   !call varscalc(NCELL,displs,vars)
   if(my_rank==0) then
     write(*,*) 'job number',number
-    write(*,*) 'project',project
   end if
 
   select case(problem)
@@ -345,8 +348,10 @@ program main
   select case(problem)
   case('2dp')
     call coordinate2dp(NCELLg,ds0,xel,xer,xcol)
+
   case('2dph')
     call coordinate2dph()
+  
   case('2dn')
     open(20,file=geofile,status='old',iostat=ios)
     if(ios /= 0) then
@@ -358,9 +363,11 @@ program main
     end do
     close(20)
     call coordinate2dn()
+
   case('3dp')
     call coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
     ds=ds0*ds0
+
   case('3dnr','3dhr')
     open(20,file=geofile,status='old',iostat=ios)
     if(ios /= 0) then
@@ -372,9 +379,11 @@ program main
      ds(i)=ds0*ds0
     end do
     close(20)
+
   case('3dph')
     call coordinate3ddip(imax,jmax,ds0,dipangle)
     ds=ds0*ds0
+
   case('3dnt','3dht')
     !.stl format
     open(12,file=geofile,iostat=ios)
@@ -541,12 +550,12 @@ program main
   end if
   !write(*,*) my_rank,st_ctl%lpmd(33),st_ctl%lpmd(37)
   allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL))
-  allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL))
+  allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL),cslip(NCELL))
   phi=0d0;vel=0d0;tau=0d0;sigma=0d0;disp=0d0
   allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL))
   taudot=0d0;sigdot=0d0
 
-  !uniform
+  !uniform frictional parameters
   a=a0
   b=b0
   dc=dc0
@@ -556,6 +565,7 @@ program main
     taudot=sr
     sigdot=0d0
   end if
+
 
   if(parameterfromfile) then
     do i=1,NCELL
@@ -569,7 +579,6 @@ program main
     end do
   end if
 
-  !setting frictional parameters
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
   !stop
   !max time step
@@ -657,6 +666,29 @@ program main
       write(fname,'("output/tau",i0,"_",i0,".dat")') number,my_rank
       open(nout4,file=fname,form='unformatted',access='stream',status='old',position='append')
 
+      nout5=nout4+np
+      write(fname,'("output/EQslip",i0,"_",i0,".dat")') number,my_rank
+      open(nout5,file=fname,form='unformatted',access='stream',status='replace')
+
+      rankloc=-1
+    if(my_rank<npd) then
+      do i=1,ncell
+        if(st_sum%lodc(i)==loc) then
+          rankloc=my_rank
+          loc_=i
+          write(*,*) rankloc,loc_
+          write(*,*)  xcol(loc),ycol(loc),zcol(loc)
+          exit
+        end if
+      end do
+    end if
+
+    if(my_rank==rankloc) then
+      write(fname,'("output/local",i0,"-",i0,".dat")') number,loc
+      open(53,file=fname)
+      write(*,*) my_rank,loc
+    end if
+
     end if
 
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -678,8 +710,9 @@ program main
     call MPI_BARRIER(MPI_COMM_WORLD,ierr); time2=MPI_Wtime()
     if(my_rank==0) write(*,*) 'Finished all initial processing, time(s)=',time2-time1
     time1=MPI_Wtime()
+  
   !no restart
-  else
+  else 
 
     !setting initial condition
 
@@ -743,6 +776,10 @@ program main
       nout4=nout3+np
       write(fname,'("output/tau",i0,"_",i0,".dat")') number,my_rank
       open(nout4,file=fname,form='unformatted',access='stream',status='replace')
+      
+      nout5=nout4+np
+      write(fname,'("output/EQslip",i0,"_",i0,".dat")') number,my_rank
+      open(nout5,file=fname,form='unformatted',access='stream',status='replace')
     end if
     if(my_rank.eq.0) then
       write(fname,'("output/monitor",i0,".dat")') number
@@ -850,7 +887,8 @@ program main
     end if
     dtnxt = dtinit
   end if
-  tout=20*365*24*60*60
+  tout=dtout
+  !tout=20*365*24*60*60
   rk=0
 
   !outv=1d-6
@@ -888,7 +926,7 @@ program main
     !time4=MPI_Wtime()
     !timer=timer+time4-time3
 
-    !limitsigma
+    !if normal stress is bounded
     if(limitsigma) then
       do i=1,NCELL
         if(y(3*i)<minsig) y(3*i)=minsig
@@ -914,7 +952,17 @@ program main
     mvel=maxval(abs(vel))
     !call MPI_ALLREDUCE(mvel,mvelG,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
     call MPI_reduce(mvel,mvelG,1,MPI_REAL8,MPI_MAX,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    !call MPI_reduce(mvel,rank_mvel,1,MPI_REAL8_INT,MPI_MAXLOC,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
     call MPI_bcast(mvelG,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
+    !call MPI_bcast(rank_mvel,1,MPI_INTEGER,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
+    !if(my_rank==0) write(*,*) rank_mvel
+    !if(my_rank==rank_mvel) then
+    !  mvel_loc=maxloc(abs(vel))
+    !  mvel_loc_=st_sum%lodc(mvel_loc(1))
+    !end if
+    !call MPI_BCAST(mvel_loc_,1,MPI_INTEGER,rank_mvel,MPI_COMM_WORLD,ierr)
+    !if(my_rank==0) write(*,*) mvel_loc_
+
 
     maxnorm=maxval(sigma)
     !call MPI_ALLREDUCE(mvel,mvelG,1,MPI_REAL8,MPI_MAX,MPI_COMM_WORLD,ierr)
@@ -957,7 +1005,7 @@ program main
       !if(slipping) then
       !  tout=tout+5d0
       !else
-        tout=tout+1*365*24*60*60
+        tout=tout+dtout*365*24*60*60
       !end if
     end if
 
@@ -997,17 +1045,18 @@ program main
         slipping=.true.
         eventcount=eventcount+1
         moment0=meandispG
+        idisp=disp
         !hypoloc=maxloc(abs(vel))
         onset_time=x
         tout=onset_time
 
         !onset save
-        if(slipevery.and.(my_rank<npd)) then
-          write(nout) vel
-          write(nout2) disp
-          write(nout3) sigma
-          write(nout4) tau
-        end if
+        ! if(slipevery.and.(my_rank<npd)) then
+        !   write(nout) vel
+        !   write(nout2) disp
+        !   write(nout3) sigma
+        !   write(nout4) tau
+        ! end if
 
       end if
     end if
@@ -1022,12 +1071,16 @@ program main
         if(my_rank==0) then
           write(44,'(i0,i7,f17.2,f14.4)') eventcount,k,onset_time,(log10(moment*rigid*sg)+5.9)/1.5
         end if
-        if(slipevery.and.(my_rank<npd)) then
-          write(nout) vel
-          write(nout2) disp
-          write(nout3) sigma
-          write(nout4) tau
+        cslip=disp-idisp
+        if(my_rank<npd) then
+          write(nout5) cslip
         end if
+        ! if(slipevery.and.(my_rank<npd)) then
+        !   write(nout) vel
+        !   write(nout2) disp
+        !   write(nout3) sigma
+        !   write(nout4) tau
+        ! end if
 
       end if
       !   vmaxevent=max(vmaxevent,maxval(vel))
@@ -1199,7 +1252,7 @@ contains
       !real(8),intent(out)::xcol(:),ycol(:),zcol(:)
       !real(8),intent(out)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
       integer::i,j,k
-      real(8)::xc,yc,zc,amp,yr(0:imax),zr(0:imax),stangle
+      real(8)::xc,yc,zc,amp,yr(0:jmax),zr(0:jmax),stangle
 
 
         !dipangle=dipangle*pi/180d0
