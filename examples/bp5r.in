@@ -1,3 +1,4 @@
+loc 777
 foward F
 problem      3dph
 imax 100 !number of elements
@@ -11,6 +12,7 @@ vpl          1d-9 !backslip rate
 dtinit      1d-1 !initial time step
 parameterfromfile T !nonuniform parameters
 parameter_file "examples/bp5rparam.dat"
+sigmaconst T
 restart F !no restart
 ds 1.0
 dipangle 90.0

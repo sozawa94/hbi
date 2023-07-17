@@ -1,0 +1,17 @@
+loc 777
+foward F
+problem      3dp
+imax 80 !number of elements
+jmax 80
+filenumber    701 !id of output files
+interval     100 !output and checkpointing every 100 steps
+nstep     100000 !time steps
+tmax   315360000 !maximum time (s)
+!tmax 10.0
+backslip T !loading with backslip 
+vpl          1d-9 !backslip rate
+dtinit      1d-2 !initial time step
+parameterfromfile T !nonuniform parameters
+parameter_file "examples/bp7aparam.dat"
+restart F !no restart
+ds 0.01
