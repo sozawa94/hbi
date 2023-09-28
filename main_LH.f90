@@ -137,6 +137,7 @@ program main
   velmin=1d-16
   law='d'
   tmax=1d12
+  interval=0
   nuclei=.false.
   slipevery=.false.
   sigmaconst=.false.
@@ -259,6 +260,7 @@ program main
     end select
   end do
   close(33)
+  if(interval==0) interval=Nstep
 
   !limitsigma=.true.
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -887,7 +889,7 @@ program main
     end if
     dtnxt = dtinit
   end if
-  tout=dtout
+  tout=dtout*365*24*60*60
   !tout=20*365*24*60*60
   rk=0
 
@@ -999,14 +1001,13 @@ program main
 
     !output distribution control
     outfield=.false.
-    if(mod(k,interval)==0) outfield=.true.
-    if(outpertime.and.x>tout) then
-      outfield=.true.
-      !if(slipping) then
-      !  tout=tout+5d0
-      !else
+    if(outpertime) then
+      if(x>tout) then
+        outfield=.true.
         tout=tout+dtout*365*24*60*60
-      !end if
+      end if
+    else if(mod(k,interval)==0) then
+      outfield=.true.
     end if
 
     if(outfield) then
@@ -1048,7 +1049,7 @@ program main
         idisp=disp
         !hypoloc=maxloc(abs(vel))
         onset_time=x
-        tout=onset_time
+        !tout=onset_time
 
         !onset save
         ! if(slipevery.and.(my_rank<npd)) then
@@ -1064,7 +1065,7 @@ program main
     if(slipping) then
       if(mvelG<1d-3) then
         slipping=.false.
-        tout=x
+        !tout=x
         moment=meandispG-moment0
         !eventcount=eventcount+1
         !end of an event
@@ -1420,8 +1421,8 @@ contains
 
   subroutine deriv_d(sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,dphidt,dtaudt,dsigdt)
     implicit none
-    real(8)::fss,dvdtau,dvdsig,dvdphi,mu
-    !real(8),parameter::fw=0.2
+    real(8)::fss,dvdtau,dvdsig,dvdphi,mu,phiss,dcv
+    real(8),parameter::fw=0.2,vw=0.1
     !type(t_deriv),intent(in) ::
     real(8),intent(in)::sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0
     real(8),intent(out)::dphidt,dtaudt,dsigdt
@@ -1437,6 +1438,13 @@ contains
     case('slip')
       fss=f0+(a-b)*dlog(abs(veltmp)/vref)
       dphidt=-abs(veltmp)/dc*(abs(tautmp)/sigmatmp-fss)
+    case('dynamic')
+      fss=f0+(a-b)*dlog(abs(veltmp)/vref)
+      fss=fw+(fss-fw)/(1.d0+(veltmp/vw)**8)**0.125d0 !flash heating
+      phiss=a*dlog(2*vref/veltmp*sinh(fss/a))
+      !dcv=dc*(1+(veltmp/vref)**2)**(0.5)
+      dcv=dc*(1+log((veltmp/vref)+1))
+      dphidt=-veltmp/dcv*(phitmp-phiss)
     end select
 
     !regularized aing law
@@ -1576,6 +1584,9 @@ contains
     end do
 
     hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW))
+    if(outpertime) then
+      hnext=min(hnext,dtout*365*24*3600)
+    end if
     !if(load==0)hnext=min(hnext,dtmax)
     !hnext=max(0.249d0*ds0/vs,SAFETY*h*(errmax_gb**PGROW))
 
