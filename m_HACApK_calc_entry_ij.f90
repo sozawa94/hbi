@@ -547,7 +547,11 @@ contains
     !real(8),intent(in)::rigid,pois
     real(8)::factor
 
+    !inplane shear
     factor=rigid/(2.d0*pi*(1.d0-pois))
+    !antiplane shear
+    !factor=rigid/(2.d0*pi)
+
     matels2dp_ij=factor*(1.d0/(xcol(i)-xer(j))-1.d0/(xcol(i)-xel(j)))
   end function matels2dp_ij
 
@@ -737,7 +741,7 @@ contains
     ! case('d')
     !   matel3dh_ij=p(6)
     case('n')
-      matel3dh_ij=p(3)
+      matel3dh_ij=-p(3)
     case('s','o')
       matel3dh_ij=p(5)*cos(st_bemv%rake(i))+p(6)*sin(st_bemv%rake(i))
     ! case('c')
@@ -977,7 +981,7 @@ contains
    !write(*,*)st_bemv%v
     select case(v)
       case('n')
-        okada_ij=-p(3)
+        okada_ij=p(3)
       case('s','o')
         okada_ij=p(5)*cos(rake(i))+p(6)*sin(rake(i))
     end select
