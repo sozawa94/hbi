@@ -413,7 +413,7 @@ program main
     !  write(*,*)ios
       !if(my_rank==0)write(*,'(9e17.8)') xs1(k),ys1(k),zs1(k),xs2(k),ys2(k),zs2(k),xs3(k),ys3(k),zs3(k)
     end do
-
+    !coordinate3dns(NCELLg,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3)
 
     !mesh format created by .msh => mkelm.c
     ! open(20,file=geofile,status='old',iostat=ios)
@@ -784,12 +784,10 @@ program main
       open(nout5,file=fname,form='unformatted',access='stream',status='replace')
     end if
     if(my_rank.eq.0) then
+      write(fname,'("output/time",i0,".dat")') number
+      open(50,file=fname)
       write(fname,'("output/monitor",i0,".dat")') number
       open(52,file=fname)
-
-      !open(53,file=fname)
-      !write(fname,'("output/vel",i0,".dat")') number
-      !open(47,file=fname,form='unformatted',access='stream')
       write(fname,'("output/event",i0,".dat")') number
       open(44,file=fname)
       open(19,file='job.log',position='append')
@@ -998,21 +996,21 @@ program main
     call MPI_bcast(meanmuG,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
     meanmuG=meanmuG/sg
     !if(outfield.and.(my_rank.lt.npd)) call output_field()
-
+ 
     !output distribution control
     outfield=.false.
-    if(outpertime) then
-      if(x>tout) then
-        outfield=.true.
-        tout=tout+dtout*365*24*60*60
-      end if
-    else if(mod(k,interval)==0) then
+    if(mod(k,interval)==0) then
       outfield=.true.
+    end if
+    if(x>tout) then
+      outfield=.true.
+      tout=x+dtout*365*24*60*60
     end if
 
     if(outfield) then
       if(my_rank==0) then
         write(*,'(a,i0,f17.8,a)') 'time step=' ,k,x/365/24/60/60, ' yr'
+        write(50,*) k,x
         !if(slipping) then
         !  write(53,*) k,x/365/24/60/60,1
         !else
@@ -1300,6 +1298,81 @@ contains
 
       return
     end subroutine coordinate3ddip
+
+    subroutine coordinate3dns(NCELLg,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3)
+      implicit none
+      integer,intent(in)::NCELLg
+      real(8),intent(out)::xcol(:),ycol(:),zcol(:)
+      real(8),intent(out)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
+      integer::i,j,k,imax,jmax
+      real(8)::dipangle,xc,yc,zc,amp
+      real(4)::xl(0:2048,0:2048)
+
+      dipangle=30d0*pi/180d0
+      do i=1,imax
+        do j=1,jmax
+          k=(i-1)*jmax+j
+          !xcol(k)=(i-imax/2-0.5d0)*ds0
+          !zcol(k)=-(j-0.5d0)*ds0-0.001d0
+          xc=(i-imax/2-0.5)*ds0
+          yc=-(j-0.5d0)*ds0*cos(dipangle)
+          zc=-(j-0.5d0)*ds0*sin(dipangle)-1d-3!-100d0
+  
+          xs1(2*k-1)=xc-0.5d0*ds0
+          xs2(2*k-1)=xc+0.5d0*ds0
+          xs3(2*k-1)=xc-0.5d0*ds0
+          zs1(2*k-1)=zc+0.5d0*ds0*sin(dipangle)
+          zs2(2*k-1)=zc+0.5d0*ds0*sin(dipangle)
+          zs3(2*k-1)=zc-0.5d0*ds0*sin(dipangle)
+          ys1(2*k-1)=yc+0.5d0*ds0*cos(dipangle)
+          ys2(2*k-1)=yc+0.5d0*ds0*cos(dipangle)
+          ys3(2*k-1)=yc-0.5d0*ds0*cos(dipangle)
+  
+          xs2(2*k)=xc+0.5d0*ds0
+          xs1(2*k)=xc+0.5d0*ds0
+          xs3(2*k)=xc-0.5d0*ds0
+          zs2(2*k)=zc-0.5d0*ds0*sin(dipangle)
+          zs1(2*k)=zc+0.5d0*ds0*sin(dipangle)
+          zs3(2*k)=zc-0.5d0*ds0*sin(dipangle)
+          ys2(2*k)=yc-0.5d0*ds0*cos(dipangle)
+          ys1(2*k)=yc+0.5d0*ds0*cos(dipangle)
+          ys3(2*k)=yc-0.5d0*ds0*cos(dipangle)
+  
+        end do
+      end do
+      do k=1,ncellg
+        xcol(k)=(xs1(k)+xs2(k)+xs3(k))/3.d0
+        ycol(k)=(ys1(k)+ys2(k)+ys3(k))/3.d0
+        zcol(k)=(zs1(k)+zs2(k)+zs3(k))/3.d0
+        write(*,*) xcol(k),ycol(k),zcol(k)
+      end do
+  
+      ! open(30,file='roughsurf.txt')
+      ! do k=0,2048
+      !   read(30,*) xl(k,0:2048)
+      ! end do
+      ! close(30)
+      ! amp=0.000d0
+      ! if(my_rank.eq.0) open(32,file='tmp')
+      ! do i=1,NCELLg
+      !   xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
+      !   zcol(i)=(zs1(i)+zs2(i)+zs3(i))/3.d0
+      !
+      !   j=int((xs1(i)+10)*102.4)
+      !   k=int(-102.4*zs1(i))
+      !   ys1(i)=xl(j,k)*amp
+      !   j=int((xs2(i)+10)*102.4)
+      !   k=int(-102.4*zs2(i))
+      !   ys2(i)=xl(j,k)*amp
+      !   j=int((xs3(i)+10)*102.4)
+      !   k=int(-102.4*zs3(i))
+      !   ys3(i)=xl(j,k)*amp
+      !   ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
+      !   if(my_rank.eq.0) write(32,*) xcol(i),ycol(i),zcol(i)
+      ! end do
+  
+      return
+    end subroutine coordinate3dns
 
   subroutine evcalc(xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,ev11,ev12,ev13,ev21,ev22,ev23,ev31,ev32,ev33,ds)
     !calculate ev for each element
