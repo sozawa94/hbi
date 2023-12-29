@@ -159,6 +159,7 @@ program main
   initcondfromfile=.false.
   parameterfromfile=.false.
   errold=1.0
+  fwid=1e8
   evlaw='aging'
   !number=0
 
@@ -243,6 +244,8 @@ program main
       read(pvalue,*) crake
     case('dipangle')
       read(pvalue,*) dipangle
+    case('fwid')
+      read(pvalue,*) fwid
     case('outpertime')
       read(pvalue,*) outpertime
     case('restart')
@@ -305,7 +308,7 @@ program main
   case('2dp')
     allocate(xel(NCELLg),xer(NCELLg))
     xel=0d0;xer=0d0
-  case('2dn','2dph','2dn3')
+  case('2dn','2dph','2dn3','2dnh','25d')
     allocate(ang(NCELLg),xel(NCELLg),xer(NCELLg),yel(NCELLg),yer(NCELLg))
     ang=0d0;xel=0d0;xer=0d0;yel=0d0;yer=0d0
   case('3dp')
@@ -354,7 +357,7 @@ program main
   case('2dph')
     call coordinate2dph()
   
-  case('2dn')
+  case('2dn','2dnh','25d')
     open(20,file=geofile,status='old',iostat=ios)
     if(ios /= 0) then
       if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
@@ -454,12 +457,12 @@ program main
     st_bemv%xcol=xcol;st_bemv%xel=xel;st_bemv%xer=xer
     st_bemv%problem=problem
 
-  case('2dn','2dn3','2dph')
+  case('2dn','2dn3','2dph','2dnh','25d')
     allocate(st_bemv%xcol(NCELLg),st_bemv%xel(NCELLg),st_bemv%xer(NCELLg),st_bemv%ds(NCELLg))
     allocate(st_bemv%ycol(NCELLg),st_bemv%yel(NCELLg),st_bemv%yer(NCELLg),st_bemv%ang(NCELLg))
     st_bemv%xcol=xcol;st_bemv%xel=xel;st_bemv%xer=xer
     st_bemv%ycol=ycol;st_bemv%yel=yel;st_bemv%yer=yer
-    st_bemv%ang=ang; st_bemv%ds=ds
+    st_bemv%ang=ang; st_bemv%ds=ds; st_bemv%w=fwid
     st_bemv%problem=problem
 
   case('3dp')
@@ -580,6 +583,11 @@ program main
       sigdot(i)=sigdotg(i_)
     end do
   end if
+
+  ! dc=2e-5
+  ! f0=0.35
+  ! taudot=taudot*1e-3
+  ! sigdot=sigdot*1e-3
 
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
   !stop
@@ -1010,7 +1018,7 @@ program main
     if(outfield) then
       if(my_rank==0) then
         write(*,'(a,i0,f17.8,a)') 'time step=' ,k,x/365/24/60/60, ' yr'
-        write(50,*) k,x
+        write(50,'(i7,f19.4)') k,x
         !if(slipping) then
         !  write(53,*) k,x/365/24/60/60,1
         !else

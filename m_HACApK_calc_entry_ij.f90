@@ -39,8 +39,10 @@ contains
       HACApK_entry_ij=tensor2d_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
       & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang,st_bemv%v,st_bemv%md)
 
-    case('2dph')
-      HACApK_entry_ij=matel2dph_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%ang,st_bemv%v)
+    case('2dph','2dnh')
+      HACApK_entry_ij=matel2dph2_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
+      & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang,st_bemv%v)
+      !HACApK_entry_ij=matel2dph_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%ang,st_bemv%v)
 
     case('2dna')
       HACApK_entry_ij=tensor2d3_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
@@ -77,6 +79,56 @@ contains
     !stop
     return
   end function HACApK_entry_ij
+
+  real(8) function matel2dph2_ij(i,j,xcol,ycol,xel,xer,yel,yer,ang,v)
+  implicit none
+  real(8)::angle,dx
+  real(8),intent(in)::xcol(:),ycol(:),xel(:),xer(:),yel(:),yer(:),ang(:)
+  integer,intent(in)::i,j
+  real(8)::sxx,sxy,syy,sxxp,sxyp,syyp,sxxq,sxyq,syyq,dip,s1,s2
+  character(128)::v
+
+  dip=ang(j)
+  s1=dcos(dip)
+  s2=dsin(dip)
+  Call D2dip2(xcol(i),ycol(i),xel(j),yel(j),s1,s2,sxxp,syyp,sxyp)
+  Call D2dip2(xcol(i),ycol(i),xer(j),yer(j),s1,s2,sxxq,syyq,sxyq)
+  
+  sxx=sxxp-sxxq
+  syy=syyp-syyq
+  sxy=sxyp-sxyq
+
+  select case(v)
+  case('s')
+    matel2dph2_ij=-0.5d0*(sxx-syy)*dsin(2*ang(i))+sxy*dcos(2*ang(i))
+  case('n')
+    matel2dph2_ij=-0.5d0*(sxx+syy)+0.5d0*(sxx-syy)*dcos(2*ang(i))+sxy*dsin(2*ang(i))
+  end select
+end function
+
+Subroutine D2dip2(X,Y,xs,ys,s1,s2,sxx,syy,sxy)
+  Implicit None
+  ! input
+  Real(8),intent(in):: X,Y,xs,ys,s1,s2
+  ! output
+  Real(8),intent(out):: sxx,sxy,syy
+  real(8)::r1,r2,sxx1,sxx2,syy1,syy2,sxy1,sxy2,coef
+
+  r1=sqrt((X-xs)**2+(Y-ys)**2)
+  r2=sqrt((X-xs)**2+(Y+ys)**2)
+
+  coef=rigid/2d0/pi/(1d0-pois)
+
+  sxx1=s1*coef*((Y-ys)*((Y-ys)**2+3*(X-xs)**2)/r1**4-(Y+ys)*((Y+ys)**2+3*(X-xs)**2)/r2**4+2*ys/r2**6*(6*Y*(Y+ys)*(X-xs)**2-(Y-ys)*(Y+ys)**3-(X-xs)**4))
+  sxx2=s2*coef*((X-xs)*((Y-ys)**2-(X-xs)**2)/r1**4-(X-xs)*((Y+ys)**2-(X-xs)**2)/r2**4 + 4*ys*(X-xs)/r2**6 *((2*ys-Y)*(Y+ys)**2+(3*Y+2*ys)*(X-xs)**2))
+  syy1=s1*coef*((Y-ys)*((Y-ys)**2-(X-xs)**2)/r1**4-(Y+ys)*((Y+ys)**2-(X-xs)**2)/r2**4 - 2*ys/r2**6*(6*Y*(Y+ys)*(X-xs)**2-(3*Y+ys)*(Y+ys)**3+(X-xs)**4))
+  syy2=-s2*coef*((X-xs)*(3*(Y-ys)**2+(X-xs)**2)/r1**4-(X-xs)*(3*(Y+ys)**2+(X-xs)**2)/r2**4 - 4*ys*(X-xs)*Y/r2**6 *(3*(Y+ys)**2-(X-xs)**2))
+  sxy1=s1*coef*((X-xs)*((Y-ys)**2-(X-xs)**2)/r1**4-(X-xs)*((Y+ys)**2-(X-xs)**2)/r2**4 + 4*ys*(X-xs)*Y/r2**6*(3*(Y+ys)**2-(X-xs)**2))
+  sxy2=s2*coef*((Y-ys)*((Y-ys)**2-(X-xs)**2)/r1**4-(Y+ys)*((Y+ys)**2-(X-xs)**2)/r2**4 + 2*ys/r2**6*(6*Y*(Y+ys)*(X-xs)**2-(X-xs)**4+(ys-Y)*(Y+ys)**3))
+  sxx=sxx1+sxx2; syy=syy1+syy2; sxy=sxy1+sxy2
+
+End Subroutine D2dip2
+
   real(8) function load2dnh(xs,ys,edge,dipangle,v)
     implicit none
     real(8)::angle,dx
@@ -789,7 +841,7 @@ contains
     real(8),intent(in)::xcol(:),ycol(:),ds(:),strike(:),w
     character(128),intent(in)::v
     integer::iret
-    real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha
+    real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha,sxx2,sxy2,syy2
     real(8)::exx,eyy,ezz,exy,eyz,ezx
 
     alpha=(1d0+(0.5d0/pois-1d0))/(1d0+2d0*(0.5d0/pois-1d0))
@@ -798,15 +850,16 @@ contains
     dy=-sin(strike(j))*(xcol(i)-xcol(j))+cos(strike(j))*(ycol(i)-ycol(j))
 
     call dc3d25(alpha,dx,dy,ds(j),w,sxx,sxy,syy)
+    sxx2=cos(strike(j))*(sxx*cos(strike(j))-sxy*sin(strike(j)))-sin(strike(j))*(sxy*cos(strike(j))-syy*sin(strike(j)))
+    syy2=sin(strike(j))*(sxy*cos(strike(j))+sxx*sin(strike(j)))+cos(strike(j))*(syy*cos(strike(j))+sxy*sin(strike(j)))
+    sxy2=sin(strike(j))*(sxx*cos(strike(j))-sxy*sin(strike(j)))+cos(strike(j))*(sxy*cos(strike(j))-syy*sin(strike(j)))
 
     !rerotation
     select case(v)
-    case('xx')
-      matelrec_ij=cos(strike(j))*(sxx*cos(strike(j))-sxy*sin(strike(j)))-sin(strike(j))*(sxy*cos(strike(j))-syy*sin(strike(j)))
-    case('yy')
-      matelrec_ij=sin(strike(j))*(sxy*cos(strike(j))+sxx*sin(strike(j)))+cos(strike(j))*(syy*cos(strike(j))+sxy*sin(strike(j)))
-    case('xy')
-      matelrec_ij=sin(strike(j))*(sxx*cos(strike(j))-sxy*sin(strike(j)))+cos(strike(j))*(sxy*cos(strike(j))-syy*sin(strike(j)))
+    case('s')
+      matelrec_ij=-0.5d0*(sxx2-syy2)*dsin(2*strike(i))+sxy2*dcos(2*strike(i))
+    case('n')
+      matelrec_ij=-0.5d0*(sxx2+syy2)-0.5d0*(sxx2-syy2)*dcos(2*strike(i))-sxy2*dsin(2*strike(i))
     end select
     return
   end function matelrec_ij
@@ -822,9 +875,10 @@ contains
     xi(1)=x+0.5d0*dl
     xi(2)=x-0.5d0*dl
     q=y
+    p=0.d0
     et(1)=p+0.5*dw
     et(2)=p-0.5*dw
-    p=0.d0
+ 
 
     u=0d0
     do k=1,2
