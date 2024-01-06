@@ -891,6 +891,7 @@ program main
     errmax_gb=0d0
     dtdid=0d0
     if(my_rank==0) then
+      write(50,'(i7,f19.4)') k,x
       call output_monitor()
     end if
     dtnxt = dtinit
