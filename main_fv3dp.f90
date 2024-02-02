@@ -54,7 +54,7 @@ program main
   real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:),pfg(:),qin(:)
 
   !variables
-  real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:),pfhyd(:)
+  real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:),pfhyd(:),cslip(:)
   real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:),pf(:),sigmae(:),ks(:),qflow(:),kp(:),phi(:)
 
   real(8),allocatable::rdata(:)
@@ -66,9 +66,9 @@ program main
   logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,foward,inverse,geofromfile,restart,latticeh,pressuredependent,pfconst
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,bcl,bcr,evlaw,setting
   real(8)::a0,a1,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
-  real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
+  real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dummy(10)
-  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,cdiff,q0,qin
+  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,cdiff,q0
   real(8)::kpmax,kpmin,kp0,kT,kL,s0,ksinit,dtout,pfinit,pbcl,pbcr,lf,eta,beta,phi0,str,cc,td,cd
 
   !random_number
@@ -355,7 +355,7 @@ program main
     allocate(zs1(NCELLg),zs2(NCELLg),zs3(NCELLg),zs4(NCELLg))
     xs1=0d0; xs2=0d0; xs3=0d0; xs4=0d0
     zs1=0d0; zs2=0d0; zs3=0d0; zs4=0d0
-  allocate(psi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg),pf(NCELLg),sigmae(NCELLg),pfhyd(NCELLg))
+  allocate(psi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg),cslip(NCELLg),pf(NCELLg),sigmae(NCELLg),pfhyd(NCELLg))
   psi=0d0;vel=0d0;tau=0d0;sigma=0d0;disp=0d0
   allocate(a(NCELLg),b(NCELLg),dc(NCELLg),f0(NCELLg),taudot(NCELLg),sigdot(NCELLg),ks(NCELLg),kp(NCELLg),qflow(NCELLg),kLv(NCELLg),kTv(NCELLg),phi(NCELLg))
   taudot=0d0;sigdot=0d0;ks=0d0
@@ -590,7 +590,12 @@ program main
     nout(7)=nout(6)+np
     write(fname,'("output/qflow",i0,".dat")') number
     open(nout(7),file=fname,form='unformatted',access='stream',status='replace')
+    nout(8)=nout(7)+np
+    write(fname,'("output/EQslip",i0,".dat")') number
+    open(nout(8),file=fname,form='unformatted',access='stream',status='replace')
 
+    write(fname,'("output/time",i0,".dat")') number
+    open(50,file=fname)
     write(fname,'("output/event",i0,".dat")') number
     open(51,file=fname)
     write(fname,'("output/monitor",i0,".dat")') number
@@ -631,6 +636,7 @@ program main
   meandispG=sum(disp)/NCELLg
   
   if(my_rank==0) then
+    write(50,'(i7,f19.4)') k,x
     call output_monitor()
     write(nout(1)) vel
     write(nout(2)) disp
@@ -655,6 +661,7 @@ tout=dtout*365*24*60*60
   !outv=1d-6
   slipping=.false.
   eventcount=0
+  sg=ds0*ds0*NCELLg
    
 
     !$omp parallel do
@@ -734,6 +741,7 @@ tout=dtout*365*24*60*60
       vel(i)= 2*vref*exp(-psi(i)/a(i))*sinh(tau(i)/sigmae(i)/a(i))
       disp(i)=disp(i)+vel(i)*dtdid*0.5d0
       mu(i)=tau(i)/sigmae(i)
+      kp(i)=ks(i)
     end do
     !$omp end parallel do
     !write(*,*) vel(1489),pf(1489),sigmae(1489)
@@ -766,21 +774,21 @@ tout=dtout*365*24*60*60
       exit
     end if
 
-     !output distribution control
+    
+    !output distribution control
     outfield=.false.
-    if(mod(k,interval)==0) outfield=.true.
-    if(outpertime.and.x>tout) then
+    if(mod(k,interval)==0) then
       outfield=.true.
-      !if(slipping) then
-      !  tout=tout+5d0
-      !else
-        tout=tout+dtout*365*24*60*60
-      !end if
+    end if
+    if(x>tout) then
+      outfield=.true.
+      tout=x+dtout*365*24*60*60
     end if
 
     if(outfield) then
       if(my_rank==0) then
         write(*,'(a,i0,f17.8,a)') 'time step=' ,k,x/365/24/60/60, ' yr'
+        write(50,'(i7,f19.4)') k,x
         !if(slipping) then
         !  write(53,*) k,x/365/24/60/60,1
         !else
@@ -824,6 +832,7 @@ tout=dtout*365*24*60*60
         slipping=.true.
         eventcount=eventcount+1
         moment0=meandispG
+        idisp=disp
         hypoloc=maxloc(abs(vel))
         onset_time=x
         !tout=onset_time
@@ -848,15 +857,10 @@ tout=dtout*365*24*60*60
         !eventcount=eventcount+1
         !end of an event
         if(my_rank==0) then
-          write(51,'(i0,i7,f17.2,i5,e15.6,f14.4)') eventcount,k,onset_time,hypoloc,moment,(log10(moment*rigid*sg)+5.9)/1.5
+          write(51,'(i0,i7,f17.2,i7,e15.6,f14.4)') eventcount,k,onset_time,hypoloc,moment,(log10(moment*rigid*sg)+5.9)/1.5
         end if
-        if(slipevery.and.(my_rank<npd)) then
-          ! write(nout) vel
-          ! write(nout2) disp
-          ! write(nout3) sigmae
-          ! write(nout4) tau
-          ! write(nout5) ks
-        end if
+        cslip=disp-idisp
+        if(my_rank==0) write(nout(8)) cslip
 
       end if
       !   vmaxevent=max(vmaxevent,maxval(vel))
@@ -908,8 +912,8 @@ subroutine output_monitor()
   write(52,'(i7,f19.4,8e16.5,f16.4,i6)')k,x,log10(mvelG),meandispG,meanmuG,maxnormG,minnormG,xcol(1),errmax_gb,dtdid,time2-time1,niter
 end subroutine
 subroutine output_local(nf,loc)
-  integer,intent(in)::nf,loc
   implicit none
+  integer,intent(in)::nf,loc
   write(nf,'(i7,f19.4,8e16.6)')k,x,log10(vel(loc)),disp(loc),sigmae(loc),tau(loc),pf(loc),mu(loc),psi(loc),kp(loc)
 end subroutine
 ! subroutine output_field()
@@ -933,7 +937,7 @@ end subroutine
 subroutine initcond_injection()
   !BP6
   implicit none
-  real(8)::rr
+  real(8)::rr,rand
   phi=phi0
   kp=kpmin
   ks=kp
@@ -955,11 +959,24 @@ subroutine initcond_injection()
   ! vel=tau/abs(tau)*velinit
   mu=muinit
   psi=a*dlog(2*vref/vel*sinh(tau/sigmae/a))
+
+  !randomize initial state
+  ! do i=1,ncellg
+  !   call random_number(rand)
+  !   psi(i)=psi(i)+(rand-0.5)*0.1
+  !   vel(i)=2*vref*exp(-psi(i)/a(i))*sinh(tau(i)/sigmae(i)/a(i))
+  ! end do
+
+  !random initial shear stress
+  do i=1,ncellg
+    call random_number(rand)
+    tau(i)=sigmae(i)*(muinit+(rand-0.5)*0.0)
+  end do
+  mu=tau/sigmae
+  psi=a*dlog(2*vref/vel*sinh(tau/sigmae/a))
+
   disp=0d0
 end subroutine
-
-  
-
 
   !------------coordinate-----------------------------------------------------------!
 subroutine coordinate2dp(NCELLg,ds0,xel,xer,xcol)
@@ -1169,11 +1186,11 @@ end subroutine coordinate3dp
         dpf(l)=pfnew(i,j)-pf(l)
         pf(l)=pfnew(i,j)
       end do
-      write(*,*)sum(pf)
+      !write(*,*)sum(pf)
 
     !write(*,*) 'niter',niter
       adpf=abs(dpf)
-    write(*,*) 'dpf',maxval(adpf)
+    !write(*,*) 'dpf',maxval(adpf)
     if(dtnxt/h*maxval(adpf)>dpth)  dtnxt=dpth*h/maxval(adpf)
     return
   end subroutine
@@ -1305,7 +1322,7 @@ end subroutine coordinate3dp
     r=b-m
     p=r
     rsold=sum(r*r)
-    write(*,*)rsold
+    !write(*,*)rsold
     if(rsold<1e-12*imax*jmax)  then
       go to 100
     end if
@@ -1338,7 +1355,7 @@ end subroutine coordinate3dp
         x=x+alpha*p
         r=r-alpha*m
         rsnew = sum(r*r)
-        write(*,*)iter,rsnew
+        !write(*,*)iter,rsnew
         if(rsnew<1e-12*imax*jmax) then
             niter=iter
           exit
@@ -1516,6 +1533,9 @@ end subroutine coordinate3dp
       end do
   
       hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW))
+      if(outpertime) then
+        hnext=min(hnext,dtout*365*24*3600)
+      end if
       !if(load==0)hnext=min(hnext,dtmax)
       !hnext=max(0.249d0*ds0/vs,SAFETY*h*(errmax_gb**PGROW))
   
