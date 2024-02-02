@@ -655,8 +655,7 @@ tout=dtout*365*24*60*60
   timer=0d0
   k=0
   rk=0
-  rupt=1d9
-  rupsG=0
+
   dtnxt = dtinit
   !outv=1d-6
   slipping=.false.
