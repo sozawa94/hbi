@@ -65,7 +65,7 @@ program main
   !controls
   logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal,outpertime
   logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,foward,inverse,geofromfile,restart,latticeh,pressuredependent,pfconst
-  character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,bcl,bcr,evlaw,setting
+  character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,model,parameter_file,outdir,command,bcl,bcr,evlaw,setting
   real(8)::a0,a1,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dummy(10)
@@ -219,8 +219,6 @@ program main
       read (pvalue,*) dtinit
     case('sparam')
       read (pvalue,*) sparam
-    case('cdiff')
-      read (pvalue,*) cdiff
     case('q0')
       read (pvalue,*) q0
     case('eta')
@@ -303,6 +301,8 @@ program main
       read (pvalue,'(a)') evlaw
     case('setting')
       read (pvalue,'(a)') setting
+    case('model')
+      read (pvalue,'(a)') model
     end select
   end do
   close(33)
@@ -847,7 +847,7 @@ program main
       write(19,'(a20,i0,a6,a12,a6,a12,a4,i0)') 'Starting job number=',number,'date',sys_time(1),'time',sys_time(2),'np',np
       close(19)
       !allocate(locid(9))
-      !ocid=(/1850,2000,2050,2100,2150,2250,2350,2500,2750/)
+      !locid=(/1850,2000,2050,2100,2150,2250,2350,2500,2750/)
       !call open_BP6()
 
     end if
@@ -939,7 +939,7 @@ program main
     dtdid=0d0
     if(my_rank==0) then
       call output_monitor()
-      !call output_BP6()
+      write(50,'(i7,f19.4)') k,x
     end if
     dtnxt = dtinit
   end if
@@ -1133,7 +1133,7 @@ program main
     if(outfield) then
       if(my_rank==0) then
         write(*,'(a,i0,f17.8,a)') 'time step=' ,k,x/365/24/60/60, ' yr'
-        write(50,*) k,x
+        write(50,'(i7,f19.4)') k,x
         !if(slipping) then
         !  write(53,*) k,x/365/24/60/60,1
         !else
@@ -1275,8 +1275,8 @@ contains
     write(52,'(i7,f19.4,8e16.5,f16.4,i6)')k,x,log10(mvelG),meandispG,meanmuG,maxnormG,minnormG,xcol(mvelloc(1)),errmax_gb,dtdid,time2-time1,niter
   end subroutine
   subroutine output_local(nf,loc)
-    integer,intent(in)::nf,loc
     implicit none
+    integer,intent(in)::nf,loc
     write(nf,'(i7,f19.4,8e16.6)')k,x,log10(vel(loc)),disp(loc),sigmae(loc),tau(loc),pf(loc),mu(loc),psi(loc),kp(loc)
   end subroutine
   subroutine output_field()
@@ -1462,7 +1462,7 @@ contains
     qin=0d0
     do i=1,ncellg
       a(i)=max(a0,a0+(abs(i-500)-300)*2d-5)
-      !a(i)=max(a0,a0+(abs(i-700)-500)*2d-5)
+      if(model=='B') a(i)=max(a0,a0+(abs(i-700)-500)*2d-5) !Model B
       a(i)=min(a(i),b0+0.002)
       !a(i)=0.02
       !if(abs(xcol(i)-lf/2)>lf/2-lf/20) a(i)=a1
@@ -1481,7 +1481,7 @@ contains
 
     !case A
     qin(1950)=q0
-    !qin(1200)=-19*q0
+    if(model=='D') qin(1200)=-19*q0 !Model D
     qin(1600)=19*q0
 
     !Zhu et al. 2020
@@ -1830,7 +1830,7 @@ contains
 
     !b(n/2)=b(n/2)+h*qin(n/2)
     !write(*,*) b(n/2)
-    !if(time<100*24*3600) 
+    !if(time>100*24*3600) qin(n/2)=0d0
     b(N/2)=b(N/2)+h*qin(n/2)/beta/phi(N/2)*1e-9/ds0
 
     m=0d0
