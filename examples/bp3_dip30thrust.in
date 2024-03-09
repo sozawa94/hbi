@@ -2,12 +2,11 @@ problem      2dph
 ncellg 1600
 ds           0.025
 dipangle 30.0
-filenumber    2005
-interval     500
-nstep     100001
-tmax   47304e6
+filenumber    2006
+interval     100
+nstep     20000
+tmax   1500
 backslip T
 vpl          1d-9
-dtinit      1d0
 parameterfromfile T
-parameter_file "examples/bp3param.dat"
+parameter_file "examples/bp3_dip30thrustparam.dat"

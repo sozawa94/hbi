@@ -48,8 +48,8 @@ contains
       HACApK_entry_ij=tensor2d3_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
       & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang)
 
-    case('2dpah')
-      HACApK_entry_ij=matels2dp_ij(i,j,st_bemv%xcol,st_bemv%xel,st_bemv%xer)-&
+    case('2dvs')
+      HACApK_entry_ij=matels2dpa_ij(i,j,st_bemv%xcol,st_bemv%xel,st_bemv%xer)-&
       & matels2dp_ij(i,j,st_bemv%xcol,-st_bemv%xel,-st_bemv%xer)
       !   &tensor2d3_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
       !   & st_bemv%xel,st_bemv%xer,-st_bemv%yel,-st_bemv%yer,st_bemv%ang)
@@ -607,6 +607,17 @@ End Subroutine D2dip2
     matels2dp_ij=factor*(1.d0/(xcol(i)-xer(j))-1.d0/(xcol(i)-xel(j)))
   end function matels2dp_ij
 
+  real(8) function matels2dpa_ij(i,j,xcol,xel,xer)
+  implicit none
+  integer,intent(in)::i,j
+  real(8),intent(in)::xcol(:),xel(:),xer(:)
+  !real(8),intent(in)::rigid,pois
+  real(8)::factor
+
+  !antiplane shear
+  factor=rigid/(2.d0*pi)
+  matels2dpa_ij=factor*(1.d0/(xcol(i)-xer(j))-1.d0/(xcol(i)-xel(j)))
+end function matels2dpa_ij
 
   function inte12s(x1,x2)
     implicit none
@@ -1046,22 +1057,20 @@ End Subroutine D2dip2
 
   end function okada_ij
 
-  real(8) function okada_load(x,y,z,xs1,xs2,ys,ang,angd,fdp,v,rake)
+  real(8) function okada_load(x,y,z,xs1,xs2,depth,ang,angd,v,rake)
     implicit none
-    real(8),intent(in)::x,y,z,xs1,xs2,ys,ang,angd,fdp,rake
+    real(8),intent(in)::x,y,z,xs1,xs2,ang,angd,depth,rake
     character(128),intent(in)::v
     integer::iret
     real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha
-    real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,depth,dip
-
+    real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,dip,fwid=100d0
     alpha=(1d0+(0.5d0/pois-1d0))/(1d0+2d0*(0.5d0/pois-1d0))
     !rotation so that strike is parallel to y axis
     dx=x-xs1
-    dy=y-ys
-    depth=fdp/2
+    dy=y
     dip=90d0
 
-    call okada(alpha,dx,dy,z,depth,dip,0d0,xs2-xs1,-0.5d0*fdp,0.5d0*fdp,cos(rake),sin(rake),0d0,&
+    call okada(alpha,dx,0d0,z,depth+0.5*fwid,dip,0d0,xs2-xs1,-0.5d0*fwid,0.5d0*fwid,cos(rake),sin(rake),0d0,&
    &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz)
 
     exx=-uxx
@@ -1076,7 +1085,8 @@ End Subroutine D2dip2
     sxy=2*rigid*exy
     sxz=2*rigid*ezx
     syz=2*rigid*eyz
- ! write(*,*)sxx,syy,szz,sxy,syz,sxz
+    
+    !write(*,*)sxx,syy,szz,sxy,syz,sxz
 
     rotang=ang
     dpang=angd
@@ -1091,15 +1101,10 @@ End Subroutine D2dip2
    &p(1),p(2),p(3),p(4),p(5),p(6))
 
 
-  ! write(*,*)p
-   !write(*,*)st_bemv%v
-    select case(v)
-      case('n')
-        okada_load=p(3)
-      case('o')
-        okada_load=p(5)*cos(rake)+p(6)*sin(rake)
-    end select
- ! write(*,*) okada_ij
+  !write(*,*)p
+
+        okada_load=p(5)
+
     ! rr=(st_bemv%xcol(i)-st_bemv%xs1(j))**2+(st_bemv%zcol(i)-st_bemv%zs1(j))**2
     ! okada_ij=1/rr
    return

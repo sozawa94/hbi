@@ -5,8 +5,8 @@ imax 100 !number of elements
 jmax 40
 filenumber    201 !id of output files
 interval     100 !output and checkpointing every 100 steps
-nstep     100000 !time steps
-tmax   567648e5 !maximum time (s)
+nstep     10000 !time steps
+tmax   500 !maximum time (s)
 backslip T !loading with backslip 
 vpl          1d-9 !backslip rate
 dtinit      1d-1 !initial time step

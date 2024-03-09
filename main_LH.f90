@@ -64,7 +64,7 @@ program main
 
   !controls
   logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal,outpertime
-  logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,foward,inverse,geofromfile,restart,latticeh
+  logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,foward,inverse,geofromfile,restart,latticeh,debug
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
@@ -136,7 +136,7 @@ program main
   velmax=1d7
   velmin=1d-16
   law='d'
-  tmax=1d12
+  tmax=1d4
   interval=0
   nuclei=.false.
   slipevery=.false.
@@ -194,8 +194,6 @@ program main
       read (pvalue,*) dc0
     case('f0')
       read (pvalue,*) mu0
-    case('load')
-      read (pvalue,*) load
     case('sr')
       read (pvalue,*) sr
     case('vpl')
@@ -210,10 +208,10 @@ program main
       read (pvalue,*) tauinit
     case('sigmainit')
       read (pvalue,*) sigmainit
+    case('muinit')
+      read (pvalue,*) muinit
     case('dtinit')
       read (pvalue,*) dtinit
-    case('sparam')
-      read (pvalue,*) sparam
     case('tmax')
       read (pvalue,*) tmax
     case('dtout')
@@ -222,8 +220,6 @@ program main
       read (pvalue,*) eps_r
     case('eps_h')
       read (pvalue,*) eps_h
-    case('slipevery')
-      read (pvalue,*) slipevery
     case('backslip')
       read (pvalue,*) backslip
     case('limitsigma')
@@ -260,9 +256,12 @@ program main
       read(pvalue,'(a)') evlaw
     case('loc')
       read(pvalue,*) loc
+    case('debug')
+      read(pvalue,*) debug
     end select
   end do
   close(33)
+  tmax=tmax*365*24*3600
   if(interval==0) interval=Nstep
 
   !limitsigma=.true.
@@ -305,7 +304,7 @@ program main
   xcol=0d0;ycol=0d0;zcol=0d0;ds=0d0
 
   select case(problem)
-  case('2dp')
+  case('2dp','2dvs')
     allocate(xel(NCELLg),xer(NCELLg))
     xel=0d0;xer=0d0
   case('2dn','2dph','2dn3','2dnh','25d')
@@ -452,7 +451,7 @@ program main
   !lrtrn=HACApK_init(NCELLg,st_ctl2,st_bemv,icomm)
   allocate(coord(NCELLg,3))
   select case(problem)
-  case('2dp')
+  case('2dp','2dvs')
     allocate(st_bemv%xcol(NCELLg),st_bemv%xel(NCELLg),st_bemv%xer(NCELLg))
     st_bemv%xcol=xcol;st_bemv%xel=xel;st_bemv%xer=xer
     st_bemv%problem=problem
@@ -535,7 +534,7 @@ program main
   !st_ctl%param(7)=1
   !st_ctl%param(12)=1
   select case(problem)
-  case('2dp','2dn3','3dp')
+  case('2dp','2dn3','3dp','2dvs')
     sigmaconst=.true.
   end select
   st_bemv%md='s'
@@ -583,6 +582,8 @@ program main
       sigdot(i)=sigdotg(i_)
     end do
   end if
+
+  !call taudot_3dph()
 
   ! dc=2e-5
   ! f0=0.35
@@ -729,6 +730,7 @@ program main
     !uniform values
     sigma=sigmainit
     tau=tauinit
+    tau=sigma*muinit
     vel=tau/abs(tau)*velinit
     mu=tau/sigma
     phi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
@@ -750,48 +752,49 @@ program main
     x=0d0
     kstart=1
     kend=0
-    if(my_rank<npd) then
-      write(fname,'("output/ind",i0,"_",i0,".dat")') number,my_rank
-      nout=my_rank+100
-      open(nout,file=fname)
-      !write(nout)st_sum%lodc(1:NCELL)
-      do i=1,ncell
-        write(nout,'(i0)') st_sum%lodc(i)
-      end do
-      close(nout)
-
-      write(fname,'("output/xyz",i0,"_",i0,".dat")') number,my_rank
-      nout=my_rank+100
-      open(nout,file=fname)
-      do i=1,ncell
-        i_=st_sum%lodc(i)
-        write(nout,'(3e15.6)') xcol(i_),ycol(i_),zcol(i_)
-      end do
-      close(nout)
-      ! write(fname,'("output/prm",i0,"_",i0,".dat")') number,my_rank
+    call output_coord()
+    if(my_rank==0) then
+      ! write(fname,'("output/ind",i0,"_",i0,".dat")') number,my_rank
       ! nout=my_rank+100
       ! open(nout,file=fname)
+      ! !write(nout)st_sum%lodc(1:NCELL)
       ! do i=1,ncell
-      !   write(nout,*) a(i),taudot(i),sigdot(i_)
+      !   write(nout,'(i0)') st_sum%lodc(i)
       ! end do
       ! close(nout)
-      write(fname,'("output/vel",i0,"_",i0,".dat")') number,my_rank
+
+      ! write(fname,'("output/xyz",i0,".dat")') number
+      ! nout=my_rank+100
+      ! open(nout,file=fname)
+      ! do i=1,ncellg
+      !   write(nout,'(3e15.6)') xcol(i),ycol(i),zcol(i)
+      ! end do
+      ! close(nout)
+      ! ! write(fname,'("output/prm",i0,"_",i0,".dat")') number,my_rank
+      ! ! nout=my_rank+100
+      ! ! open(nout,file=fname)
+      ! ! do i=1,ncell
+      ! !   write(nout,*) a(i),taudot(i),sigdot(i_)
+      ! ! end do
+      ! ! close(nout)
+
+      nout=80
+      write(fname,'("output/vel",i0,".dat")') number
       open(nout,file=fname,form='unformatted',access='stream',status='replace')
-      nout2=nout+np
-      write(fname,'("output/slip",i0,"_",i0,".dat")') number,my_rank
+      nout2=nout+1
+      write(fname,'("output/slip",i0,".dat")') number
       open(nout2,file=fname,form='unformatted',access='stream',status='replace')
-      nout3=nout2+np
-      write(fname,'("output/sigma",i0,"_",i0,".dat")') number,my_rank
+      nout3=nout2+1
+      write(fname,'("output/sigma",i0,".dat")') number
       open(nout3,file=fname,form='unformatted',access='stream',status='replace')
-      nout4=nout3+np
-      write(fname,'("output/tau",i0,"_",i0,".dat")') number,my_rank
+      nout4=nout3+1
+      write(fname,'("output/tau",i0,".dat")') number
       open(nout4,file=fname,form='unformatted',access='stream',status='replace')
       
-      nout5=nout4+np
-      write(fname,'("output/EQslip",i0,"_",i0,".dat")') number,my_rank
+      nout5=nout4+1
+      write(fname,'("output/EQslip",i0,".dat")') number
       open(nout5,file=fname,form='unformatted',access='stream',status='replace')
-    end if
-    if(my_rank.eq.0) then
+
       write(fname,'("output/time",i0,".dat")') number
       open(50,file=fname)
       write(fname,'("output/monitor",i0,".dat")') number
@@ -876,17 +879,6 @@ program main
     time1=MPI_Wtime()
 
     !output intiial condition
-    if(my_rank<npd) then
-      !call output_field()
-      ! do i=1,ncell
-      !   i_=st_sum%lodc(i)
-      !   write(nout)i_
-      ! end do
-      write(nout) vel
-      write(nout2) disp
-      write(nout3) sigma
-      write(nout4) tau
-    end if
     k=0
     errmax_gb=0d0
     dtdid=0d0
@@ -894,6 +886,7 @@ program main
       write(50,'(i7,f19.4)') k,x
       call output_monitor()
     end if
+    call output_field()
     dtnxt = dtinit
   end if
   tout=dtout*365*24*60*60
@@ -1014,6 +1007,7 @@ program main
     if(x>tout) then
       outfield=.true.
       tout=x+dtout*365*24*60*60
+      if(x<300*356*23*3600) outfield=.false.
     end if
 
     if(outfield) then
@@ -1030,12 +1024,7 @@ program main
         open(52,file=fname,position='append')
       end if
       !lattice H
-      if(my_rank<npd) then
-        write(nout) vel
-        write(nout2) disp
-        write(nout3) sigma
-        write(nout4) tau
-      end if
+       call output_field()
     end if
 
     if(my_rank==0.and.k>kend) then
@@ -1138,7 +1127,7 @@ end if
 !if(my_rank==0) write(19,'(a20,i0,f16.2)')'Finished job number=',number,time2-time1
 Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 select case(problem)
-case('2dp','2dn3','3dp')
+case('2dp','2dn3','3dp','2dvs')
   lrtrn=HACApK_free_leafmtxp(st_leafmtxp_s)
 case('2dn','2dph','3dnt','3dht','3dnr','3dhr','3dph')
   lrtrn=HACApK_free_leafmtxp(st_leafmtxp_s)
@@ -1163,13 +1152,106 @@ contains
 
   subroutine output_field()
     implicit none
-    do i=1,NCELL
-      i_=st_sum%lodc(i)
-      write(nout,'(i0,10e14.5,i10)') i_,xcol(i_),ycol(i_),zcol(i_),log10(vel(i)),tau(i),sigma(i),mu(i),disp(i),phi(i),x,k
+    integer::nn,rcounts(npd),displs(npd+1)
+    real(8)::velG(NCELLg),tauG(NCELLg),sigmaG(Ncellg),dispG(ncellg)
+    call MPI_GATHER(ncell,1,MPI_INT,rcounts,1,MPI_INT,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+
+    displs(1)=0
+    do nn=2,npd+1
+      displs(nn)=displs(nn-1)+rcounts(nn-1)
     end do
-    write(nout,*)
-    write(nout,*)
+
+    call MPI_GATHERv(vel,NCELL,MPI_REAL8,velG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    call MPI_GATHERv(tau,NCELL,MPI_REAL8,tauG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    call MPI_GATHERv(sigma,NCELL,MPI_REAL8,sigmaG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    call MPI_GATHERv(disp,NCELL,MPI_REAL8,dispG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+
+    if(my_rank==0) then
+      write(nout) velG
+      write(nout2) dispG
+      write(nout3) sigmaG
+      write(nout4) tauG
+    end if
+
   end subroutine
+
+  ! subroutine output_EQslip()
+  !   implicit none
+  !   integer::nn,rcounts(npd),displs(npd+1)
+  !   real(8)::EQslipG(ncellg)
+  !   nout=100
+
+  !   call MPI_GATHER(ncell,1,MPI_INT,rcounts,1,MPI_INT,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+
+  !   displs(1)=0
+  !   do nn=2,npd+1
+  !     displs(nn)=displs(nn-1)+rcounts(nn-1)
+  !   end do
+
+  !   call MPI_GATHERv(vel,NCELL,MPI_REAL8,velG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+
+  !   if(my_rank==0) then
+  !     write(nout) velG
+  !   end if
+
+  ! end subroutine
+  ! subroutine output_field_init()
+  !   implicit none
+  !   integer::nn,rcounts(npd),displs(npd+1)
+  !   !real(8),allocatable::vel(:)
+  !   real(8)::velG(NCELLg)
+  !   nout=100
+  !   if(my_rank==0) then
+  !      write(fname,'("output/vel",i0,".dat")') number
+  !      open(nout,file=fname,form='unformatted',access='stream',status='replace')
+  !   end if
+
+  !   write(*,*) my_rank,st_ctl%lpmd(37),st_ctl%lpmd(31)
+
+  !   call MPI_GATHER(ncell,1,MPI_INT,rcounts,1,MPI_INT,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+
+  !   displs(1)=0
+  !   do nn=2,npd+1
+  !     displs(nn)=displs(nn-1)+rcounts(nn-1)
+  !   end do
+
+  !   call MPI_GATHERv(vel,NCELL,MPI_REAL8,velG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+
+  !   if(my_rank==0) write(nout) velG
+
+  ! end subroutine
+
+
+  subroutine output_coord()
+    implicit none
+    integer::nn
+    nout=100
+
+   if(my_rank==0) then
+    write(fname,'("output/xyz",i0,".dat")') number
+    open(nout,file=fname,status='replace')
+      do i=1,ncell
+        i_=st_sum%lodc(i)
+        write(nout,'(3e15.6)') xcol(i_),ycol(i_),zcol(i_)
+      end do
+    close(nout)
+    end if
+    Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+
+    do nn=1,npd-1
+      if(my_rank==nn) then
+      write(fname,'("output/xyz",i0,".dat")') number
+      open(nout,file=fname,position='append')
+      do i=1,ncell
+        i_=st_sum%lodc(i)
+        write(nout,'(3e15.6)') xcol(i_),ycol(i_),zcol(i_)
+      end do
+      close(nout)
+      end if
+      Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+    end do
+
+end subroutine
 
   !------------coordinate-----------------------------------------------------------!
   subroutine coordinate2dp(NCELLg,ds0,xel,xer,xcol)
@@ -1428,6 +1510,16 @@ contains
 
   end subroutine
 
+  subroutine taudot_3dph()
+    real(8)::rate
+    open(111,file='tmp')
+    do i=1,NCELL
+      i_=st_sum%lodc(i)
+      taudot(i)=okada_load(xcol(i_),ycol(i_),zcol(i_),-ds0*imax/2,ds0*imax/2,ds0*jmax,0d0,pi/2.0,'o',0d0)*vpl
+    end do
+    close(111)
+  end subroutine
+
   !computing dydx for time integration
   subroutine derivs(x, y, dydx)
     use m_HACApK_solve
@@ -1495,9 +1587,11 @@ contains
     do i=1,NCELL
       sum_gs(i)=sum_gs(i)+taudot(i)
       sum_gn(i)=sum_gn(i)+sigdot(i)
+      !write(*,*) sum_gs(i)
       call deriv_d(sum_gs(i),sum_gn(i),phitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
     enddo
     !$omp end parallel do
+    !write(*,*) dydx
     return
   end subroutine
 
@@ -1666,9 +1760,9 @@ contains
     end do
 
     hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW))
-    if(outpertime) then
-      hnext=min(hnext,dtout*365*24*3600)
-    end if
+    ! if(outpertime) then
+    !   hnext=min(hnext,dtout*365*24*3600)
+    ! end if
     !if(load==0)hnext=min(hnext,dtmax)
     !hnext=max(0.249d0*ds0/vs,SAFETY*h*(errmax_gb**PGROW))
 
@@ -1898,6 +1992,8 @@ contains
     implicit none
     real(8)::rr,lc,ret1(NCELLg),ret2(NCELLg),vec(NCELLg)
     integer::p
+    ret1=0d0
+    ret2=0d0
 
     vec=1d0
     !do i=1,NCELL
