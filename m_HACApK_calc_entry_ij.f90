@@ -1057,10 +1057,9 @@ end function matels2dpa_ij
 
   end function okada_ij
 
-  real(8) function okada_load(x,y,z,xs1,xs2,depth,ang,angd,v,rake)
+  real(8) function okada_load(x,y,z,xs1,xs2,depth,ang,angd,rake)
     implicit none
     real(8),intent(in)::x,y,z,xs1,xs2,ang,angd,depth,rake
-    character(128),intent(in)::v
     integer::iret
     real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha
     real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,dip,fwid=100d0

@@ -149,8 +149,9 @@ program main
   outpertime=.false.
   limitsigma=.false.
   maxsig=300d0
-  minsig=10d0
+  minsig=1d0
   amp=0d0
+  muinit=0d0
   dtout=365*24*3600
   dtinit=1d0
   tp=86400d0
@@ -730,7 +731,7 @@ program main
     !uniform values
     sigma=sigmainit
     tau=tauinit
-    tau=sigma*muinit
+    if(muinit.ne.0d0) tau=sigma*muinit
     vel=tau/abs(tau)*velinit
     mu=tau/sigma
     phi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
@@ -884,6 +885,8 @@ program main
     dtdid=0d0
     if(my_rank==0) then
       write(50,'(i7,f19.4)') k,x
+      write(*,*) 'initial Vmax',mvelG
+      write(*,*) 'initial mu_avg',meanmuG
       call output_monitor()
     end if
     call output_field()
@@ -1512,12 +1515,12 @@ end subroutine
 
   subroutine taudot_3dph()
     real(8)::rate
-    open(111,file='tmp')
+    !open(111,file='tmp')
     do i=1,NCELL
       i_=st_sum%lodc(i)
-      taudot(i)=okada_load(xcol(i_),ycol(i_),zcol(i_),-ds0*imax/2,ds0*imax/2,ds0*jmax,0d0,pi/2.0,'o',0d0)*vpl
+      taudot(i)=okada_load(xcol(i_),ycol(i_),zcol(i_),-ds0*imax/2,ds0*imax/2,ds0*jmax,0d0,pi/2.0,0d0)*vpl
     end do
-    close(111)
+    !close(111)
   end subroutine
 
   !computing dydx for time integration
