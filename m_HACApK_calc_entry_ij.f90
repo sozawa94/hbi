@@ -50,7 +50,7 @@ contains
 
     case('2dvs')
       HACApK_entry_ij=matels2dpa_ij(i,j,st_bemv%xcol,st_bemv%xel,st_bemv%xer)-&
-      & matels2dp_ij(i,j,st_bemv%xcol,-st_bemv%xel,-st_bemv%xer)
+      & matels2dpa_ij(i,j,st_bemv%xcol,-st_bemv%xel,-st_bemv%xer)
       !   &tensor2d3_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
       !   & st_bemv%xel,st_bemv%xer,-st_bemv%yel,-st_bemv%yer,st_bemv%ang)
 
@@ -106,6 +106,33 @@ contains
   end select
 end function
 
+real(8) function load2dnh(xr,yr,xs,ys,ang,v)
+  implicit none
+  real(8)::angle,dx
+  real(8),intent(in)::xr,yr,xs,ys,ang
+  character(128),intent(in)::v
+  real(8)::sxx,sxy,syy,sxxp,sxyp,syyp,sxxq,sxyq,syyq,dip,s1,s2
+
+  dip=ang
+  s1=dcos(dip)
+  s2=dsin(dip)
+  Call D2dip2(xr,yr,xs,ys,s1,s2,sxxp,syyp,sxyp)
+  !Call D2dip2(xcol(i),ycol(i),xer(j),yer(j),s1,s2,sxxq,syyq,sxyq)
+  
+  sxx=sxxp!-sxxq
+  syy=syyp!-syyq
+  sxy=sxyp!-sxyq
+  !write(*,*) sxx,sxy,syy
+
+
+  select case(v)
+  case('s')
+    load2dnh=-0.5d0*(sxx-syy)*dsin(2*ang)+sxy*dcos(2*ang)
+  case('n')
+    load2dnh=-0.5d0*(sxx+syy)+0.5d0*(sxx-syy)*dcos(2*ang)+sxy*dsin(2*ang)
+  end select
+end function
+
 Subroutine D2dip2(X,Y,xs,ys,s1,s2,sxx,syy,sxy)
   Implicit None
   ! input
@@ -129,22 +156,22 @@ Subroutine D2dip2(X,Y,xs,ys,s1,s2,sxx,syy,sxy)
 
 End Subroutine D2dip2
 
-  real(8) function load2dnh(xs,ys,edge,dipangle,v)
-    implicit none
-    real(8)::angle,dx
-    real(8),intent(in)::xs,ys,edge,dipangle
-    real(8)::p22,p23,p33,u1,u2
-    character(128),intent(in)::v
-    Call D2dip(xs,ys,edge,1d8,dipangle*pi/180d0,1d0,p22,p23,p33)
-    select case(v)
-    case('xx')
-      load2dnh=p22
-    case('xy')
-      load2dnh=p23
-    case('yy')
-      load2dnh=p33
-    end select
-  end function
+  ! real(8) function load2dnh(xs,ys,edge,dipangle,v)
+  !   implicit none
+  !   real(8)::angle,dx
+  !   real(8),intent(in)::xs,ys,edge,dipangle
+  !   real(8)::p22,p23,p33,u1,u2
+  !   character(128),intent(in)::v
+  !   Call D2dip(xs,ys,edge,1d8,dipangle*pi/180d0,1d0,p22,p23,p33)
+  !   select case(v)
+  !   case('xx')
+  !     load2dnh=p22
+  !   case('xy')
+  !     load2dnh=p23
+  !   case('yy')
+  !     load2dnh=p33
+  !   end select
+  ! end function
 
   real(8) function matel2dph_ij(i,j,xcol,ycol,ang,v)
     implicit none

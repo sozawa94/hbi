@@ -54,7 +54,7 @@ program main
   real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:)
 
   !variables
-  real(8),allocatable::phi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:),cslip(:)
+  real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:),cslip(:)
   real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:)
 
   real(8),allocatable::rdata(:)
@@ -63,13 +63,13 @@ program main
   integer::hypoloc(1),load,eventcount,thec,inloc,sw
 
   !controls
-  logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal,outpertime
-  logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,foward,inverse,geofromfile,restart,latticeh,debug
+  logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal,deepcreep
+  logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,foward,inverse,geofromfile,restart,latticeh,debug,bgstress
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dummy(10)
-  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo
+  real(8)::alpha,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo
 
   !temporal variable
 
@@ -145,8 +145,7 @@ program main
   inverse=.false.
   slipfinal=.false.
   restart=.false.
-  latticeh=.false.
-  outpertime=.false.
+  deepcreep=.false.
   limitsigma=.false.
   maxsig=300d0
   minsig=1d0
@@ -243,8 +242,6 @@ program main
       read(pvalue,*) dipangle
     case('fwid')
       read(pvalue,*) fwid
-    case('outpertime')
-      read(pvalue,*) outpertime
     case('restart')
       read(pvalue,*) restart
     case('latticeh')
@@ -259,6 +256,10 @@ program main
       read(pvalue,*) loc
     case('debug')
       read(pvalue,*) debug
+    case('deepcreep')
+      read(pvalue,*) deepcreep
+    case('bgstress')
+      read(pvalue,*) bgstress
     end select
   end do
   close(33)
@@ -351,7 +352,7 @@ program main
   !mesh generation (rectangular assumed)
   if(my_rank==0) write(*,*) 'Generating mesh'
   select case(problem)
-  case('2dp')
+  case('2dp','2dvs')
     call coordinate2dp(NCELLg,ds0,xel,xer,xcol)
 
   case('2dph')
@@ -555,8 +556,8 @@ program main
   end if
   !write(*,*) my_rank,st_ctl%lpmd(33),st_ctl%lpmd(37)
   allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL))
-  allocate(phi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL),cslip(NCELL))
-  phi=0d0;vel=0d0;tau=0d0;sigma=0d0;disp=0d0
+  allocate(psi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL),cslip(NCELL))
+  psi=0d0;vel=0d0;tau=0d0;sigma=0d0;disp=0d0
   allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL))
   taudot=0d0;sigdot=0d0
 
@@ -582,6 +583,15 @@ program main
       taudot(i)=taudotg(i_)
       sigdot(i)=sigdotg(i_)
     end do
+  end if
+
+  if(deepcreep) then
+    select case(problem)
+    case('3dph')
+      call taudot_3dph()
+    case('2dnh','2dph')
+      call taudot_2dnh()
+    end select
   end if
 
   !call taudot_3dph()
@@ -664,7 +674,7 @@ program main
       close(nout)
       !write(*,*) my_rank,m
 
-      phi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
+      psi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
       !write(*,*) tau
       write(fname,'("output/vel",i0,"_",i0,".dat")') number,my_rank
       open(nout,file=fname,form='unformatted',access='stream',status='old',position='append')
@@ -704,7 +714,7 @@ program main
     end if
 
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-    call MPI_bcast(phi,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
+    call MPI_bcast(psi,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
     call MPI_bcast(vel,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
     call MPI_bcast(tau,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
     call MPI_bcast(sigma,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
@@ -734,7 +744,7 @@ program main
     if(muinit.ne.0d0) tau=sigma*muinit
     vel=tau/abs(tau)*velinit
     mu=tau/sigma
-    phi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
+    psi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
     disp=0d0
 
     !non-uniform initial stress from file
@@ -745,9 +755,13 @@ program main
         sigma(i)=sigmag(i_)
         vel(i)=velg(i_)
         mu(i)=tau(i)/sigma(i)
-        phi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
+        psi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
         !write(*,*) tau(i),sigma(i),vel(i)
       end do
+    end if
+
+    if(bgstress) then
+      call initcond()
     end if
 
     x=0d0
@@ -913,10 +927,10 @@ program main
 
   !$omp parallel do
   do i=1,NCELL
-    y(3*i-2) = phi(i)
+    y(3*i-2) = psi(i)
     y(3*i-1) = tau(i)
     y(3*i)=sigma(i)
-    !if(my_rank==53)write(*,*) phi(i),tau(i),sigma(i)
+    !if(my_rank==53)write(*,*) psi(i),tau(i),sigma(i)
   end do
   !$omp end parallel do
   !stop
@@ -942,11 +956,11 @@ program main
     !compute physical values for control and output
     !$omp parallel do
     do i = 1, NCELL
-      phi(i) = y(3*i-2)
+      psi(i) = y(3*i-2)
       tau(i) = y(3*i-1)
       sigma(i)=y(3*i)
       disp(i)=disp(i)+vel(i)*dtdid*0.5d0 !2nd order
-      vel(i)= 2*vref*exp(-phi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
+      vel(i)= 2*vref*exp(-psi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
       disp(i)=disp(i)+vel(i)*dtdid*0.5d0
       mu(i)=tau(i)/sigma(i)
     end do
@@ -1150,7 +1164,7 @@ contains
   subroutine output_local(loc_)
     implicit none
     integer,intent(in)::loc_
-    write(53,'(i7,f19.4,6e16.5)')k,x,log10(vel(loc_)),disp(loc_),tau(loc_),sigma(loc_),mu(loc_),phi(loc_)
+    write(53,'(i7,f19.4,6e16.5)')k,x,log10(vel(loc_)),disp(loc_),tau(loc_),sigma(loc_),mu(loc_),psi(loc_)
   end subroutine
 
   subroutine output_field()
@@ -1229,15 +1243,21 @@ contains
     implicit none
     integer::nn
     nout=100
+    nout2=101
 
    if(my_rank==0) then
     write(fname,'("output/xyz",i0,".dat")') number
     open(nout,file=fname,status='replace')
+    write(fname,'("output/ind",i0,".dat")') number
+    open(nout2,file=fname,status='replace')
       do i=1,ncell
         i_=st_sum%lodc(i)
+        write(nout2,*) i_
         write(nout,'(3e15.6)') xcol(i_),ycol(i_),zcol(i_)
       end do
     close(nout)
+    close(nout2)
+
     end if
     Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
@@ -1245,11 +1265,15 @@ contains
       if(my_rank==nn) then
       write(fname,'("output/xyz",i0,".dat")') number
       open(nout,file=fname,position='append')
+      write(fname,'("output/ind",i0,".dat")') number
+      open(nout2,file=fname,position='append')
       do i=1,ncell
         i_=st_sum%lodc(i)
+        write(nout2,*) i_
         write(nout,'(3e15.6)') xcol(i_),ycol(i_),zcol(i_)
       end do
       close(nout)
+      close(nout2)
       end if
       Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
     end do
@@ -1523,6 +1547,43 @@ end subroutine
     !close(111)
   end subroutine
 
+  subroutine taudot_2dnh()
+    real(8)::rate
+    integer::nload=1000
+    character(128)::vv
+    do i=1,NCELL
+      i_=st_sum%lodc(i)
+      vv="s"
+      taudot(i)=load2dnh(xcol(i_),ycol(i_),xer(Nload),yer(Nload),pi*dipangle/180,vv)*vpl
+      vv="n"
+      sigdot(i)=load2dnh(xcol(i_),ycol(i_),xer(Nload),yer(Nload),pi*dipangle/180,vv)*vpl
+
+      taudot(i)=taudot(i)+sr*0.5*sin(2*ang(i_))
+      sigdot(i)=sigdot(i)+sr*sin(ang(i_))**2
+
+      write(*,*) xcol(i_),taudot(i),sigdot(i)
+    end do
+  end subroutine
+
+  subroutine initcond()
+    implicit none
+    real(8),parameter::rho=1.6e3,g=9.80
+    real(8)::sxx0,sxy0,syy0
+  do i=1,ncell
+    i_=st_sum%lodc(i)
+    syy0=min(50,rho*g*ycol(i_)/1e3)
+    sxy0=0.0
+    sxx0=syy0*3.0
+    tau(i)=sxy0*cos(2*ang(i_))+0.5*(sxx0-syy0)*sin(2*ang(i_))
+    sigma(i)=sin(ang(i_))**2*sxx0+cos(ang(i_))**2*syy0+sxy0*sin(2*ang(i_))
+  end do
+    mu=tau/sigma
+    vel=velinit
+    psi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
+    disp=0d0
+
+  end subroutine
+
   !computing dydx for time integration
   subroutine derivs(x, y, dydx)
     use m_HACApK_solve
@@ -1537,7 +1598,7 @@ end subroutine
     real(8),intent(in) :: x
     real(8),intent(in) ::y(:)
     real(8),intent(out) :: dydx(:)
-    real(8) :: veltmp(NCELL),tautmp(NCELL),sigmatmp(NCELL),phitmp(NCELL)
+    real(8) :: veltmp(NCELL),tautmp(NCELL),sigmatmp(NCELL),psitmp(NCELL)
     real(8) :: sum_gs(NCELL),sum_gn(NCELL)!,velstmpG(NCELLg),veldtmpG(NCELLg)
     !real(8) :: sum_xx(NCELL),sum_xy(NCELL),sum_yy(NCELL)!,sum_xz(NCELL),sum_yz(NCELL),sum_zz(NCELL)
     !real(8) :: sum_xxG(NCELLg),sum_xyG(NCELLg),sum_yyG(NCELLg)!,sum_xzG(NCELLg),sum_yzG(NCELLg),sum_zzG(NCELLg)
@@ -1551,10 +1612,10 @@ end subroutine
 
     !$omp parallel do
     do i = 1, NCELL
-      phitmp(i) = y(3*i-2)
+      psitmp(i) = y(3*i-2)
       tautmp(i) = y(3*i-1)
       sigmatmp(i) = y(3*i)
-      veltmp(i) = 2*vref*dexp(-phitmp(i)/a(i))*dsinh(tautmp(i)/sigmatmp(i)/a(i))
+      veltmp(i) = 2*vref*dexp(-psitmp(i)/a(i))*dsinh(tautmp(i)/sigmatmp(i)/a(i))
       !if(my_rank==0)write(*,*) veltmp(i)
     enddo
     !$omp end parallel do
@@ -1591,89 +1652,89 @@ end subroutine
       sum_gs(i)=sum_gs(i)+taudot(i)
       sum_gn(i)=sum_gn(i)+sigdot(i)
       !write(*,*) sum_gs(i)
-      call deriv_d(sum_gs(i),sum_gn(i),phitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
+      call deriv_d(sum_gs(i),sum_gn(i),psitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
     enddo
     !$omp end parallel do
     !write(*,*) dydx
     return
   end subroutine
 
-  subroutine deriv_d(sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,dphidt,dtaudt,dsigdt)
+  subroutine deriv_d(sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,dpsidt,dtaudt,dsigdt)
     implicit none
-    real(8)::fss,dvdtau,dvdsig,dvdphi,mu,phiss,dcv
+    real(8)::fss,dvdtau,dvdsig,dvdpsi,mu,psiss,dcv
     real(8),parameter::fw=0.2,vw=0.1
     !type(t_deriv),intent(in) ::
-    real(8),intent(in)::sum_gs,sum_gn,phitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0
-    real(8),intent(out)::dphidt,dtaudt,dsigdt
+    real(8),intent(in)::sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0
+    real(8),intent(out)::dpsidt,dtaudt,dsigdt
     dsigdt=sum_gn
     !regularized slip law
     !fss=mu0+(a(i_)-b(i_))*dlog(abs(veltmp(i))/vref)
     !fss=fw(i_)+(fss-fw(i_))/(1.d0+(veltmp(i)/vw(i_))**8)**0.125d0 !flash heating
-    !dphidt(i)=-abs(veltmp(i))/dc(i_)*(abs(tautmp(i))/sigmatmp(i)-fss)
+    !dpsidt(i)=-abs(veltmp(i))/dc(i_)*(abs(tautmp(i))/sigmatmp(i)-fss)
 
     select case(evlaw)
     case('aging')
-      dphidt=b/dc*vref*dexp((f0-phitmp)/b)-b*abs(veltmp)/dc    !slip law
+      dpsidt=b/dc*vref*dexp((f0-psitmp)/b)-b*abs(veltmp)/dc    !slip law
     case('slip')
       fss=f0+(a-b)*dlog(abs(veltmp)/vref)
-      dphidt=-abs(veltmp)/dc*(abs(tautmp)/sigmatmp-fss)
+      dpsidt=-abs(veltmp)/dc*(abs(tautmp)/sigmatmp-fss)
     case('dynamic')
       fss=f0+(a-b)*dlog(abs(veltmp)/vref)
       fss=fw+(fss-fw)/(1.d0+(veltmp/vw)**8)**0.125d0 !flash heating
-      phiss=a*dlog(2*vref/veltmp*sinh(fss/a))
+      psiss=a*dlog(2*vref/veltmp*sinh(fss/a))
       !dcv=dc*(1+(veltmp/vref)**2)**(0.5)
       dcv=dc*(1+log((veltmp/vref)+1))
-      dphidt=-veltmp/dcv*(phitmp-phiss)
+      dpsidt=-veltmp/dcv*(psitmp-psiss)
     end select
 
     !regularized aing law
-    !dphidt=b/dc*vref*dexp((f0-phitmp)/b)-b*abs(veltmp)/dc
+    !dpsidt=b/dc*vref*dexp((f0-psitmp)/b)-b*abs(veltmp)/dc
 
     !regularized aging law with cutoff velocity for evolution
-    !dphidt(i)=b(i_)/dc(i_)*vref*dexp((f0(i_)-phitmp(i))/b(i_))*(1d0-abs(veltmp(i))/vref*(exp((phitmp(i)-f0(i_))/b(i_))-vref/vc(i_)))
+    !dpsidt(i)=b(i_)/dc(i_)*vref*dexp((f0(i_)-psitmp(i))/b(i_))*(1d0-abs(veltmp(i))/vref*(exp((psitmp(i)-f0(i_))/b(i_))-vref/vc(i_)))
 
-    dvdtau=2*vref*dexp(-phitmp/a)*dcosh(tautmp/sigmatmp/a)/(a*sigmatmp)
+    dvdtau=2*vref*dexp(-psitmp/a)*dcosh(tautmp/sigmatmp/a)/(a*sigmatmp)
     !mu=tautmp(i)/sigmatmp(i)
-    !dvdtau=vref*(exp((mu-phitmp(i))/a(i))+exp((-mu-phitmp(i))/a(i)))/(a(i)*sigmatmp(i))
-    dvdsig=-2*vref*dexp(-phitmp/a)*dcosh(tautmp/sigmatmp/a)*tautmp/(a*sigmatmp**2)
-    !dvdphi=2*vref*exp(-phitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
-    dvdphi=-veltmp/a
-    !dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(dvdphi*phitmp(i)*dvdsig*sigmatmp(i))
-    dtaudt=sum_gs-0.5d0*rigid/vs*(dvdphi*dphidt+dvdsig*dsigdt)
+    !dvdtau=vref*(exp((mu-psitmp(i))/a(i))+exp((-mu-psitmp(i))/a(i)))/(a(i)*sigmatmp(i))
+    dvdsig=-2*vref*dexp(-psitmp/a)*dcosh(tautmp/sigmatmp/a)*tautmp/(a*sigmatmp**2)
+    !dvdpsi=2*vref*exp(-psitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
+    dvdpsi=-veltmp/a
+    !dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(dvdpsi*psitmp(i)*dvdsig*sigmatmp(i))
+    dtaudt=sum_gs-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*dsigdt)
     dtaudt=dtaudt/(1d0+0.5d0*rigid/vs*dvdtau)
     !write(*,*) rigid/vs*dvdtau
     if(veltmp<=0d0) then
-      dvdtau=2*vref*dexp(-phitmp/a)*dcosh(tautmp/sigmatmp/a)/(a*sigmatmp)
-      dvdsig=-2*vref*dexp(-phitmp/a)*dcosh(tautmp/sigmatmp/a)*tautmp/(a*sigmatmp**2)
+      dvdtau=2*vref*dexp(-psitmp/a)*dcosh(tautmp/sigmatmp/a)/(a*sigmatmp)
+      dvdsig=-2*vref*dexp(-psitmp/a)*dcosh(tautmp/sigmatmp/a)*tautmp/(a*sigmatmp**2)
       !sign ok?
-      !dvdphi=2*vref*exp(-phitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
-      dvdphi=-veltmp/a
-      !dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(-dvdphi*phitmp(i)*dvdsig*sigmatmp(i))
-      dtaudt=sum_gs-0.5d0*rigid/vs*(dvdphi*dphidt+dvdsig*dsigdt)
+      !dvdpsi=2*vref*exp(-psitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
+      dvdpsi=-veltmp/a
+      !dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(-dvdpsi*psitmp(i)*dvdsig*sigmatmp(i))
+      dtaudt=sum_gs-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*dsigdt)
       dtaudt=dtaudt/(1d0+0.5d0*rigid/vs*dvdtau)
     end if
   end subroutine
-  subroutine deriv_3dn(sum_gs,sum_gd,sum_gn,phitmp,taustmp,taudtmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,dphidt,dtausdt,dtauddt,dsigdt)
+  subroutine deriv_3dn(sum_gs,sum_gd,sum_gn,psitmp,taustmp,taudtmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,dpsidt,dtausdt,dtauddt,dsigdt)
     implicit none
     integer::i
-    real(8)::fss,dvdtau,dvdsig,dvdphi,absV
+    real(8)::fss,dvdtau,dvdsig,dvdpsi,absV
     !type(t_deriv),intent(in) ::
-    real(8),intent(in)::sum_gs,sum_gd,sum_gn,phitmp,taustmp,taudtmp,tautmp,sigmatmp,veltmp,a,b,dc,f0
-    real(8),intent(out)::dphidt,dtausdt,dtauddt,dsigdt
+    real(8),intent(in)::sum_gs,sum_gd,sum_gn,psitmp,taustmp,taudtmp,tautmp,sigmatmp,veltmp,a,b,dc,f0
+    real(8),intent(out)::dpsidt,dtausdt,dtauddt,dsigdt
     !write(*,*) 'vel',veltmp(i)
     dsigdt=sum_gn
     !fss=mu0+(a(i)-b(i))*dlog(abs(veltmp(i))/vref)
     !fss=fw(i)+(fss-fw(i))/(1.d0+(veltmp(i)/vw(i))**8)**0.125d0 !flash heating
     !slip law
-    !dphidt(i)=-abs(veltmp(i))/dc(i)*(abs(tautmp(i))/sigmatmp(i)-fss)
+    !dpsidt(i)=-abs(veltmp(i))/dc(i)*(abs(tautmp(i))/sigmatmp(i)-fss)
     !aing law
-    dphidt=b*vref/dc*exp((f0-phitmp)/b)-b*veltmp/dc
-    dvdtau=2*vref*dexp(-phitmp/a)*dcosh(tautmp/sigmatmp/a)/(a*sigmatmp)
-    dvdsig=-2*vref*dexp(-phitmp/a)*dcosh(tautmp/sigmatmp/a)*tautmp/(a*sigmatmp**2)
-    dvdphi=-veltmp/a
-    dtausdt=sum_gs-0.5d0*rigid/vs*(dvdphi*dphidt+dvdsig*dsigdt)*(taustmp/tautmp)
+    dpsidt=b*vref/dc*exp((f0-psitmp)/b)-b*veltmp/dc
+    dvdtau=2*vref*dexp(-psitmp/a)*dcosh(tautmp/sigmatmp/a)/(a*sigmatmp)
+    dvdsig=-2*vref*dexp(-psitmp/a)*dcosh(tautmp/sigmatmp/a)*tautmp/(a*sigmatmp**2)
+    dvdpsi=-veltmp/a
+    dtausdt=sum_gs-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*dsigdt)*(taustmp/tautmp)
     dtausdt=dtausdt/(1d0+0.5d0*rigid/vs*dvdtau)
-    dtauddt=sum_gd-0.5d0*rigid/vs*(dvdphi*dphidt+dvdsig*dsigdt)*(taudtmp/tautmp)
+    dtauddt=sum_gd-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*dsigdt)*(taudtmp/tautmp)
     dtauddt=dtauddt/(1d0+0.5d0*rigid/vs*dvdtau)
   end subroutine
 

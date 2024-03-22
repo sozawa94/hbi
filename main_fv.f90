@@ -70,7 +70,7 @@ program main
   real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dummy(10)
   real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,cdiff,q0,qin
-  real(8)::kpmax,kpmin,kp0,kT,kL,s0,ksinit,dtout,pfinit,pbcl,pbcr,lf,eta,beta,phi0,str,cc,td,cd
+  real(8)::kpmax,kpmin,kp0,kT,kL,s0,ksinit,dtout,pfinit,pbcl,pbcr,lf,eta,beta,phi0,str,cc,td,cd,Bs
   real(8)::b0list(9)=(/0.012,0.0115,0.011,0.0105,0.010,0.0095,0.009,0.0085,0.008/)
 
   !temporal variable
@@ -81,7 +81,7 @@ program main
 
   !for time integration
   real(8)::x !time
-  real(8),allocatable::y(:),yscal(:),dydx(:),yg(:)
+  real(8),allocatable::y(:),yscal(:),dydx(:),yg(:),dy(:)
   real(8)::eps_r,errmax_gb,dtinit,dtnxt,dttry,dtdid,dtmin,tp,fwid
 
   integer::r1,r2,r3,NVER,amari,out,kmax,loci,locj,loc,stat,nth
@@ -111,9 +111,9 @@ program main
   number=0
   if(input_file(1:11)=='examples/in') then
     input_file=adjustl(input_file(12:))
-    write(*,*) input_file
+    !write(*,*) input_file
     read(input_file,*) number
-    write(*,*) number
+    !write(*,*) number
   end if
 
   if(my_rank==0) then
@@ -156,6 +156,9 @@ program main
   bcr='Neumann'
   evlaw='aging'
   alpha=1.0
+  kT=1e12
+  kL=1e8
+  Bs=0.0
   !number=0
 
 
@@ -306,6 +309,8 @@ program main
     end select
   end do
   close(33)
+  tmax=tmax*365*24*3600
+  if(interval==0) interval=Nstep
 
   !limitsigma=.true.
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -398,61 +403,61 @@ program main
     end do
     close(20)
     call coordinate2dn()
-  case('3dp')
-    call coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
-    ds=ds0*ds0
-  case('3dnr','3dhr')
-    open(20,file=geofile,status='old',iostat=ios)
-    if(ios /= 0) then
-     if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
-     stop
-    end if
-    do i=1,NCELLg
-     read(20,*) xcol(i),ycol(i),zcol(i),ang(i),angd(i)
-     ds(i)=ds0*ds0
-    end do
-    close(20)
-  case('3dph')
-    call coordinate3ddip(imax,jmax,ds0,dipangle)
-    ds=ds0*ds0
-  case('3dnt','3dht')
-    !.stl format
-    open(12,file=geofile,iostat=ios)
-    if(ios /= 0) then
-      if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
-      stop
-    end if
-    do while(.true.)
-      read(12,*) dum
-      if(dum=='facet') exit
-    end do
-    !write(*,*) ios
-    do k=1,ncellg
-      !read(12,*)
-      read(12,*) !outer loop
-      read(12,*) dum,xs1(k),ys1(k),zs1(k) !vertex
-      read(12,*) dum,xs2(k),ys2(k),zs2(k) !vertex
-      read(12,*) dum,xs3(k),ys3(k),zs3(k) !vertex
-      read(12,*) !end loop
-      read(12,*) !endfacet
-      read(12,*) !facet
-      xcol(k)=(xs1(k)+xs2(k)+xs3(k))/3
-      ycol(k)=(ys1(k)+ys2(k)+ys3(k))/3
-      zcol(k)=(zs1(k)+zs2(k)+zs3(k))/3
-    !  write(*,*)ios
-      !if(my_rank==0)write(*,'(9e17.8)') xs1(k),ys1(k),zs1(k),xs2(k),ys2(k),zs2(k),xs3(k),ys3(k),zs3(k)
-    end do
-    !mesh format created by .msh => mkelm.c
-    ! open(20,file=geofile,status='old',iostat=ios)
-    ! if(ios /= 0) then
-    !   if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
-    !   stop
-    ! end if
-    ! do i=1,NCELLg
-    !   read(20,*) k,xs1(i),ys1(i),zs1(i),xs2(i),ys2(i),zs2(i),xs3(i),ys3(i),zs3(i),xcol(i),ycol(i),zcol(i)
-    ! end do
-    ! close(20)
-    call evcalc(xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,ev11,ev12,ev13,ev21,ev22,ev23,ev31,ev32,ev33,ds)
+  ! case('3dp')
+  !   call coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
+  !   ds=ds0*ds0
+  ! case('3dnr','3dhr')
+  !   open(20,file=geofile,status='old',iostat=ios)
+  !   if(ios /= 0) then
+  !    if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
+  !    stop
+  !   end if
+  !   do i=1,NCELLg
+  !    read(20,*) xcol(i),ycol(i),zcol(i),ang(i),angd(i)
+  !    ds(i)=ds0*ds0
+  !   end do
+  !   close(20)
+  ! case('3dph')
+  !   call coordinate3ddip(imax,jmax,ds0,dipangle)
+  !   ds=ds0*ds0
+  ! case('3dnt','3dht')
+  !   !.stl format
+  !   open(12,file=geofile,iostat=ios)
+  !   if(ios /= 0) then
+  !     if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
+  !     stop
+  !   end if
+  !   do while(.true.)
+  !     read(12,*) dum
+  !     if(dum=='facet') exit
+  !   end do
+  !   !write(*,*) ios
+  !   do k=1,ncellg
+  !     !read(12,*)
+  !     read(12,*) !outer loop
+  !     read(12,*) dum,xs1(k),ys1(k),zs1(k) !vertex
+  !     read(12,*) dum,xs2(k),ys2(k),zs2(k) !vertex
+  !     read(12,*) dum,xs3(k),ys3(k),zs3(k) !vertex
+  !     read(12,*) !end loop
+  !     read(12,*) !endfacet
+  !     read(12,*) !facet
+  !     xcol(k)=(xs1(k)+xs2(k)+xs3(k))/3
+  !     ycol(k)=(ys1(k)+ys2(k)+ys3(k))/3
+  !     zcol(k)=(zs1(k)+zs2(k)+zs3(k))/3
+  !   !  write(*,*)ios
+  !     !if(my_rank==0)write(*,'(9e17.8)') xs1(k),ys1(k),zs1(k),xs2(k),ys2(k),zs2(k),xs3(k),ys3(k),zs3(k)
+  !   end do
+  !   !mesh format created by .msh => mkelm.c
+  !   ! open(20,file=geofile,status='old',iostat=ios)
+  !   ! if(ios /= 0) then
+  !   !   if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
+  !   !   stop
+  !   ! end if
+  !   ! do i=1,NCELLg
+  !   !   read(20,*) k,xs1(i),ys1(i),zs1(i),xs2(i),ys2(i),zs2(i),xs3(i),ys3(i),zs3(i),xcol(i),ycol(i),zcol(i)
+  !   ! end do
+  !   ! close(20)
+  !   call evcalc(xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,ev11,ev12,ev13,ev21,ev22,ev23,ev31,ev32,ev33,ds)
   end select
 
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -578,7 +583,7 @@ program main
   if(.not.sigmaconst) lrtrn=HACApK_construct_LH(st_LHp_n,st_leafmtxp_n,st_bemv,st_ctl,coord,eps_h)
   !end if
   !write(*,*) my_rank,st_ctl%lpmd(33),st_ctl%lpmd(37)
-  allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL))
+  allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL),dy(4*NCELL))
   allocate(psi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL),pf(NCELL),sigmae(NCELL),pfhyd(NCELL))
   psi=0d0;vel=0d0;tau=0d0;sigma=0d0;disp=0d0
   allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL),ks(NCELL),kp(NCELL),qflow(NCELL),kLv(NCELL),kTv(NCELL),phi(NCELL))
@@ -984,17 +989,21 @@ program main
     !time3=MPI_Wtime()
 
     !update state and stress with explicit solver
-    call rkqs(y,dydx,x,dttry,eps_r,dtdid,dtnxt,errmax_gb,errmaxloc)
-    do i=1,NCELL
+    call rkqs(y,dydx,x,dttry,eps_r,dtdid,dtnxt,errmax_gb,errmaxloc,dy)
+    !$omp parallel do
+     do i=1,NCELL
       psi(i) = y(4*i-3)
       tau(i) = y(4*i-2)
       sigmae(i)=y(4*i-1)
+      !sigma(i)=sigma(i)+
+      pf(i)=pf(i)+Bs*(1-Bs)*dy(4*i-1)
       mu(i)=tau(i)/sigmae(i)
       vel(i)= 2*vref*exp(-psi(i)/a(i))*sinh(tau(i)/sigmae(i)/a(i))
       !disp(i)=disp(i)+vel(i)*dtdid*0.5d0
       sigma(i)=y(4*i-1)+pf(i)
       ks(i)=y(4*i)
     end do
+    !$omp end parallel do
     !write(*,*) sigma(ncell/2),sigmae(ncell/2),pf(ncell/2)
 
     !update pf with implicit solver
@@ -1028,6 +1037,7 @@ program main
       tau(i) = y(4*i-2)
       sigmae(i)=sigma(i)-pf(i)
       y(4*i-1)=sigmae(i)
+
       ks(i)=y(4*i)
       disp(i)=disp(i)+vel(i)*dtdid*0.5d0 !2nd order
       vel(i)= 2*vref*exp(-psi(i)/a(i))*sinh(tau(i)/sigmae(i)/a(i))
@@ -1139,7 +1149,9 @@ program main
         !else
         !  write(53,*) k,x/365/24/60/60,0
         !end if
-
+        close(50)
+        write(fname,'("output/time",i0,".dat")') number
+        open(50,file=fname,position='append')
         close(52)
         write(fname,'("output/monitor",i0,".dat")') number
         open(52,file=fname,position='append')
@@ -1201,7 +1213,7 @@ program main
         !eventcount=eventcount+1
         !end of an event
         if(my_rank==0) then
-          write(51,'(i0,i7,f17.2,i5,e15.6,f14.4)') eventcount,k,onset_time,hypoloc,moment,(log10(moment*rigid*sg)+5.9)/1.5
+          write(51,'(i0,i0,f17.2,i5,e15.6,f14.4)') eventcount,k,onset_time,hypoloc,moment,(log10(moment*rigid*sg)+5.9)/1.5
         end if
         if(slipevery.and.(my_rank<npd)) then
           ! write(nout) vel
@@ -1277,7 +1289,7 @@ contains
   subroutine output_local(nf,loc)
     implicit none
     integer,intent(in)::nf,loc
-    write(nf,'(i7,f19.4,8e16.6)')k,x,log10(vel(loc)),disp(loc),sigmae(loc),tau(loc),pf(loc),mu(loc),psi(loc),kp(loc)
+    write(nf,'(i7,f19.4,9e16.6)')k,x,log10(vel(loc)),disp(loc),sigmae(loc),tau(loc),pf(loc),sigma(loc),mu(loc),psi(loc),kp(loc)
   end subroutine
   subroutine output_field()
     do i=1,NCELL
@@ -1340,119 +1352,6 @@ contains
     enddo
     return
   end subroutine
-
-  subroutine coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
-    implicit none
-    integer,intent(in)::imax,jmax
-    real(8),intent(in)::ds0
-    real(8),intent(out)::xcol(:),zcol(:)
-    real(8),intent(out)::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
-    real(8)::dx,dz
-    integer::i,j,k
-
-    dx=ds0
-    dz=ds0
-    do i=1,imax
-      do j=1,jmax
-        k=(i-1)*jmax+j
-        xcol(k)=(i-imax/2-0.5d0)*dx
-        zcol(k)=-(j-jmax/2-0.5d0)*dz
-        xs1(k)=xcol(k)+0.5d0*dx
-        xs2(k)=xcol(k)-0.5d0*dx
-        xs3(k)=xcol(k)-0.5d0*dx
-        xs4(k)=xcol(k)+0.5d0*dx
-        zs1(k)=zcol(k)+0.5d0*dz
-        zs2(k)=zcol(k)+0.5d0*dz
-        zs3(k)=zcol(k)-0.5d0*dz
-        zs4(k)=zcol(k)-0.5d0*dz
-      end do
-    end do
-    return
-  end subroutine coordinate3dp
-
-    subroutine coordinate3ddip(imax,jmax,ds0,dipangle)
-      implicit none
-      integer,intent(in)::imax,jmax
-      real(8),intent(in)::ds0,dipangle
-      !integer,intent(in)::NCELLg
-      !real(8),intent(out)::xcol(:),ycol(:),zcol(:)
-      !real(8),intent(out)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
-      integer::i,j,k
-      real(8)::xc,yc,zc,amp,yr(0:imax),zr(0:imax),stangle
-
-
-        !dipangle=dipangle*pi/180d0
-        stangle=0d0*pi/180d0
-         k=0
-         yr(0)=0d0
-         zr(0)=0d0
-         !nb=int(50.0*jmax/320.0)
-         !if(my_rank==0) write(*,*)nb
-         do j=1,jmax
-         yr(j)=yr(j-1)-ds0*cos(dipangle*pi/180d0)
-         zr(j)=zr(j-1)-ds0*sin(dipangle*pi/180d0)
-         end do
-         do i=1,imax
-           do j=1,jmax
-           k=k+1
-             xcol(k)=(i-imax/2-0.5d0)*ds0
-             ycol(k)=0.5d0*(yr(j-1)+yr(j)) !-(j-0.5d0)*ds0*cos(dipangle)
-             zcol(k)=0.5d0*(zr(j-1)+zr(j)) !-(j-0.5d0)*ds0*sin(dipangle)
-
-             angd(k)=datan2(zr(j-1)-zr(j),yr(j-1)-yr(j))
-             ang(k)=0d0
-             !write(*,*)angd(k)
-             if(my_rank==0)write(111,*)xcol(k),ycol(k),zcol(k)
-             end do
-         end do
-
-      return
-    end subroutine coordinate3ddip
-
-  subroutine evcalc(xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,ev11,ev12,ev13,ev21,ev22,ev23,ev31,ev32,ev33,ds)
-    !calculate ev for each element
-    implicit none
-    real(8),intent(in)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
-    real(8),intent(out)::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:),ds(:)
-    real(8)::rr,vba(0:2),vca(0:2),tmp1,tmp2,tmp3
-
-    do k=1,NCELLg
-      vba(0) = xs2(k)-xs1(k)
-      vba(1) = ys2(k)-ys1(k)
-      vba(2) = zs2(k)-zs1(k)
-      vca(0) = xs3(k)-xs1(k)
-      vca(1) = ys3(k)-ys1(k)
-      vca(2) = zs3(k)-zs1(k)
-
-      ev31(k) = vba(1)*vca(2)-vba(2)*vca(1)
-      ev32(k) = vba(2)*vca(0)-vba(0)*vca(2)
-      ev33(k) = vba(0)*vca(1)-vba(1)*vca(0)
-      rr = sqrt(ev31(k)*ev31(k)+ev32(k)*ev32(k)+ev33(k)*ev33(k))
-      !// unit vectors for local coordinates of elements
-      ev31(k) = ev31(k)/rr ; ev32(k) = ev32(k)/rr ; ev33(k) = ev33(k)/rr
-      !if(my_rank==0) write(*,'(i0,3e15.6)') k,ev31(k),ev32(k),ev33(k)
-
-      if( abs(ev33(k)) < 1.0d0 ) then
-        ev11(k) = -ev32(k) ; ev12(k) = ev31(k) ; ev13(k) = 0.0d0
-        rr = sqrt(ev11(k)*ev11(k) + ev12(k)*ev12(k))
-        ev11(k) = ev11(k)/rr ; ev12(k) = ev12(k)/rr;
-      else
-        ev11(k) = 1.0d0 ; ev12(k) = 0.0d0 ; ev13(k) = 0.0d0
-      end if
-      !if(my_rank==0) write(*,*) ev11(k),ev12(k),ev13(k)
-
-      ev21(k) = ev32(k)*ev13(k)-ev33(k)*ev12(k)
-      ev22(k) = ev33(k)*ev11(k)-ev31(k)*ev13(k)
-      ev23(k) = ev31(k)*ev12(k)-ev32(k)*ev11(k)
-
-      tmp1=vba(0)*vba(0)+vba(1)*vba(1)+vba(2)*vba(2)
-      tmp2=vca(0)*vca(0)+vca(1)*vca(1)+vca(2)*vca(2)
-      tmp3=vba(0)*vca(0)+vba(1)*vca(1)+vba(2)*vca(2)
-      ds(k)=0.5d0*sqrt(tmp1*tmp2-tmp3*tmp3)
-      !if(my_rank==0) write(*,*)ev21(k),ev22(k),ev23(k)
-    end do
-
-  end subroutine
   subroutine initcond_thrust()
     implicit none
     real(8),parameter::g=9.80,rhor=2.6d3,rhof=1.0d3,ofs=5.0,Qe=1d4,T0=1e0
@@ -1488,7 +1387,6 @@ contains
     ! qin=0d0
 
     qtmp=sum(qin)
-    
 
     do i=1,ncellg
         q(i)=qtmp-qin(i)
@@ -1499,7 +1397,6 @@ contains
         ks(i)=(kpmax*Vpl/kL+kpmin/kTv(i))/(Vpl/kL+1/kTv(i))
         write(*,*) ks(i),q(i),KTv(i)
     end do
-
 
     sigma=g*rhor*(ycol+0.2)*1e-3
     pfhyd=g*rhof*(ycol+0.2)*1e-3
@@ -1576,8 +1473,10 @@ contains
   subroutine initcond_injection()
     !BP6
     implicit none
+    real(8)::ang0,syy0,sxy0,sxx0
     qin(ncell/2)=1.25e-6
     phi=phi0
+    
     ! phi=0.1
     ! beta=1e-8
     ! eta=1e-3
@@ -1586,14 +1485,26 @@ contains
     kp=kpmax
     ks=kp
     kTv=kT
+    kLv=kL
     pf=pfinit
     sigma=sigmainit
     sigmae=sigma-pf
+    tau=sigmae*muinit
+
+    ! syy0=100
+    ! sxy0=55
+    ! ang0=30
+    ! velinit=1e-9
+    ! sxx0=syy0*(1+2*sxy0/(syy0*tan(2*ang0/180*pi)))
+    ! tau=sxy0*cos(2*ang)+0.5*(sxx0-syy0)*sin(2*ang)
+    ! sigmae=sin(ang)**2*sxx0+cos(ang)**2*syy0+sxy0*sin(2*ang)
+
+
+    mu=tau/sigmae
+    ! pf=pfinit
+    ! sigma=sigmae+pf
     pfhyd=0.d0
     vel=velinit
-    tau=sigmae*muinit
-    ! vel=tau/abs(tau)*velinit
-    mu=muinit
     psi=a*dlog(2*vref/vel*sinh(tau/sigmae/a))
     disp=0d0
   end subroutine
@@ -1605,10 +1516,13 @@ contains
     phi=phi0
     pfhyd=0d0
     kLv=kL
+    kTv=1e12
     
     sigma=sigmainit
     ks=kpmin
+    ks(1:10)=kpmax
     pf=pfinit
+    pf(1:10)=pbcl
     ! do i=1,int(ncell*1/5)
     !   pf(i)=pbcl
     !   ks(i)=kpmax
@@ -1685,32 +1599,39 @@ contains
     real(8),parameter::dpth=0.1
     !real(8),parameter::cc=1d-12 !beta(1e-8)*phi(1e-1)*eta(1e-3)
 
+    !$omp parallel do
     do i=1,ncell
       pftry(i)=pf(i)
       sigmae(i)=y(4*i-1)
       ks(i)=y(4*i)
       sigma(i)=sigmae(i)+pf(i)
     end do
+    !$omp end parallel do
 
     err=0d0
 
       !calculate diffusion coefficient
+      !$omp parallel do
       do i=1,ncell
         !cdiff(i)=((ks(i)-kpmin)*exp(-(sigma(i)-pftry(i))/s0)+kpmin)/cc*1d-6
         !cdiff(i)=ks(i)*exp(-(sigma(i)-pftry(i))/s0)/cc*1d-6
-        cc=eta*beta*phi0
+        cc=eta*beta*phi(i)
         cdiff(i)=ks(i)/cc*1d-6 !Pa-->MPa
         !write(*,*) cdiff(i)
       end do
+      !$omp end parallel do
 
       call Beuler(pf,cdiff,h,pfnew,time,niter)
 
+    !$omp parallel do
     do i=1,ncell
       dpf(i)=pfnew(i)-pf(i)
       pf(i)=pfnew(i)
       y(4*i-1)=y(4*i-1)-dpf(i) !update effective normal stress
       !y(4*i-2)=y(4*i-2)-0.6*dpf(i)
     end do
+    !$omp end parallel do
+
     !write(*,*) 'niter',niter
     !write(*,*) 'dpf',maxval(dpf)
     if(dtnxt/h*maxval(dpf)>dpth)  dtnxt=dpth*h/maxval(dpf)
@@ -1718,23 +1639,17 @@ contains
   end subroutine
 
   subroutine Beuler(pf,cdiff,h,pfnew,time,niter)
-    integer,parameter::itermax=1000
+    integer,parameter::itermax=10000
     real(8),intent(in)::pf(:),h,cdiff(:),time
     real(8),intent(out)::pfnew(:)
     integer,intent(out)::niter
     real(8)::eta,pf0(NCELL),m(ncell),dpf(ncell),p(ncell),r(ncell),b(ncell),x(ncell),tmp1,tmp2,rsnew,rsold,alpha(ncell)
     real(8)::Dxx(ncell,3),Am(ncell,3),sat(ncell)
     integer::n,iter
-    real(8)::p0=0.0,td=1d6
+    real(8)::p0=0.0,td=1d6,tol=1e-4
     !real(8),parameter::str=1e-11 !beta(1e-9)*phi(1e-2)
     n=ncell
     niter=0
-    ! do i=1,n
-    !   !cdiff(i)=((ks(i)-kpmin)*exp(-(sigma(i)-pftry(i))/s0)+kpmin)/cc*1d-6
-    !   cdiff(i)=ks(i)*exp(-(sigma(i)-pftry(i))/s0)/cc*1d-6
-    !   !cdiff(i)=c0*exp(-pftry(i)/s0)
-    !   !cdiff(i)=(1.d0+y(i))*1d-2
-    ! end do
     Dxx=0d0
 
     !compute Dxx for Dirichlet BC
@@ -1758,6 +1673,7 @@ contains
       Dxx(n-1,1:3)=(/cdiff(n-2)/2+cdiff(n-1)/2, -cdiff(n-2)/2-cdiff(n-1)-cdiff(n)/2, -cdiff(n)/2+cdiff(n-1)/2/)
       Dxx(n,3)=-cdiff(n)-cdiff(n-1)
       Dxx(n,2)=cdiff(n-1)-cdiff(n)
+
     case('Neumann')
       Dxx(n-1,1:3)=(/cdiff(n-2)/2+cdiff(n-1)/2, -cdiff(n-2)/2-cdiff(n-1)-cdiff(n)/2, cdiff(n-1)/2+cdiff(n)/2/)
       Dxx(n,3)=-cdiff(n)-cdiff(n-1)
@@ -1773,36 +1689,33 @@ contains
     Am(1,2)=-h*Dxx(1,2)
     Am(n,3)=1.0-h*Dxx(n,3)
     Am(n,2)=-h*Dxx(n,2)
+
+     !$omp parallel do
     do i=2,n-1
       Am(i,1)=-h*Dxx(i,1)
       Am(i,2)=1.0-h*Dxx(i,2)
       Am(i,3)=-h*Dxx(i,3)
     end do
-    !do i=0,n
-    !  write(*,'(3e15.6)') A(i,:)
-    !end do
+     !$omp end parallel do
 
-    !membrane diffusion
-    !Am(n/2,2)=Am(n/2,2)!+h/td
+    do i=1,n
+      !write(*,'(3e15.6)') Am(i,:)
+    end do
 
     SAT=0d0
 
-    !penalty vector for Neumann BC
-    !SAT(1)=q0*h/ds0
-    !SAT(n)=-q0*h/ds0
-
-    !penalty vector for Dirichlet BC
+    !penalty vector
     select case(bcl)
     case('Dirichlet')
-      SAT(1)=-cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
-      SAT(2)=SAT(1)/2
+      SAT(1)=-1.0*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
+      SAT(2)=-0.5*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
     case('Neumann')
       SAT(1)=-q0/beta/phi(1)*1e-9*h/ds0*2
     end select
 
     select case(bcr)
     case('Dirichlet')
-      SAT(n)=-cdiff(n)/ds0/ds0*(pbcr-pfhyd(n))*h*2
+      SAT(n)=-1*cdiff(n)/ds0/ds0*(pbcr-pfhyd(n))*h*2
       SAT(n-1)=SAT(n)/2
     case('Neumann')
       SAT(n)=q0/beta/phi(n)*1e-9*h/ds0*2
@@ -1818,26 +1731,30 @@ contains
       !SAT(1500)=-9*q0/beta/phi(1500)*1e-9*h/ds0
       !SAT(1950)=-1*q0/beta/phi(1950)*1e-9*h/ds0
     end if
-    x=pf-SAT-pfhyd !initial guess
-    b=pf-SAT-pfhyd
 
+    x=pf-pfhyd !initial guess
+
+    b=pf-SAT-pfhyd   
     !injection at the center of the fault (if nonzero qin is used)
-    ! if(time<30*24*3600)
-    ! constant fluid source
-    ! do i=2,n-1
-    !  b(i)=b(i)+h*0.5*qin(i)/str*1e-9/ds0
-    ! end do
+    if(setting=='injection') then
+        b(N/2)=b(N/2)+h*qin(n/2)/beta/phi(N/2)*1e-9/ds0
+    end if
 
-    !b(n/2)=b(n/2)+h*qin(n/2)
-    !write(*,*) b(n/2)
-    !if(time>100*24*3600) qin(n/2)=0d0
-    b(N/2)=b(N/2)+h*qin(n/2)/beta/phi(N/2)*1e-9/ds0
+    b(1)=b(1)/2
+    b(n)=b(n)/2
+
+    Am(1,:)=Am(1,:)/2
+    Am(n,:)=Am(n,:)/2
 
     m=0d0
     m(1)=x(1)*Am(1,1)+x(2)*Am(1,2)
+
+    !$omp parallel do
     do i=2,n-1
       m(i)=x(i-1)*Am(i,1)+x(i)*Am(i,2)+x(i+1)*Am(i,3)
     end do
+    !$omp end parallel do
+
     m(n)=x(n)*Am(n,3)+x(n-1)*Am(n,2)
     !write(*,'(9e15.6)')m
 
@@ -1845,17 +1762,20 @@ contains
     !write(*,'(9e15.6)')r
     p=r
     rsold=sum(r*r)
-    if(rsold<1e-12*n)  then
+    if(rsold<tol**2*n)  then
+      iter=0
       go to 100
     end if
-
+    iter=itermax
     do iter=1,itermax
       tmp1=sum(r*r)
       m=0d0
       m(1)=p(1)*Am(1,1)+p(2)*Am(1,2)
+      !$omp parallel do
       do i=2,n-1
         m(i)=p(i-1)*Am(i,1)+p(i)*Am(i,2)+p(i+1)*Am(i,3)
       end do
+      !$omp end parallel do
       m(n)=p(n)*Am(n,3)+p(n-1)*Am(n,2)
       !write(*,'(9e15.6)')m
 
@@ -1866,7 +1786,7 @@ contains
       !write(*,'(9e15.6)')r
       rsnew = sum(r*r)
       !write(*,*)iter,rsnew
-      if(rsnew<1e-12*n) then
+      if(rsnew<tol**2*n) then
           niter=iter
         exit
       end if
@@ -1875,6 +1795,8 @@ contains
       !write(*,'(9e15.6)')x
 
     end do
+
+    if(iter==itermax) write(*,*) "Maximum iteration"
     100 pfnew=x+pfhyd
     return
   end subroutine
@@ -2044,6 +1966,7 @@ contains
 
     !sum_gs=sum_gs+2*pi/Ttide*Atide*sin(2*pi/Ttide*x)
 
+      !$omp parallel do
     do i=1,NCELL
       !permeability evolution
       dksdt=-veltmp(i)/kL*(kstmp(i)-kpmax)-(kstmp(i)-kpmin)/kTv(i)
@@ -2062,7 +1985,7 @@ contains
         dpsidt=-abs(veltmp(i))/dc(i)*(abs(tautmp(i))/sigmaetmp(i)-fss)
       end select
 
-      dsigdt=sum_gn(i)
+      dsigdt=(1-Bs)*sum_gn(i)
       !dsigdt=dsigdt-cd*dphidt
 
       dvdtau=2*vref*dexp(-psitmp(i)/a(i))*dcosh(tautmp(i)/sigmaetmp(i)/a(i))/(a(i)*sigmaetmp(i))
@@ -2080,11 +2003,12 @@ contains
       !if(i==1) write(*,*) dksdt
       !call deriv_d(sum_gs(i),sum_gn(i),phitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
     enddo
+      !$omp end parallel do
     return
   end subroutine
 
   !---------------------------------------------------------------------
-  subroutine rkqs(y,dydx,x,htry,eps,hdid,hnext,errmax_gb,errmaxloc)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+  subroutine rkqs(y,dydx,x,htry,eps,hdid,hnext,errmax_gb,errmaxloc,dy)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
     !---------------------------------------------------------------------
     use m_HACApK_solve
     use m_HACApK_base
@@ -2094,17 +2018,18 @@ contains
     !integer::NCELL,NCELLg,rcounts(:),displs(:)
     real(8),intent(in)::htry,eps
     real(8),intent(inout)::y(:),x,dydx(:)
-    real(8),intent(out)::hdid,hnext,errmax_gb !hdid: resulatant dt hnext: htry for the next
+    real(8),intent(out)::hdid,hnext,errmax_gb,dy(:) !hdid: resulatant dt hnext: htry for the next
     integer,intent(out)::errmaxloc
     !type(st_HACApK_lcontrol),intent(in) :: st_ctl
     !type(st_HACApK_leafmtxp),intent(in) :: st_leafmtxp
     !type(st_HACApK_calc_entry) :: st_bemv
     integer :: i,ierr,loc
     real(8) :: errmax,h,xnew,htemp,dtmin
-    real(8),dimension(size(y))::yerr,ytemp
+    real(8),dimension(size(y))::yerr,ytemp,y0
     real(8),parameter::SAFETY=0.9,PGROW=-0.2,PSHRNK=-0.25,ERRCON=1.89d-4
 
     h=htry
+    y0=y
     !dtmin=0.5d0*minval(ds)/vs
     !call derivs(x,y,dydx)
     do while(.true.)
@@ -2187,6 +2112,7 @@ contains
 
     hdid=h
     x=x+h
+    dy=y-y0
     y(:)=ytemp(:)
 
   end subroutine
