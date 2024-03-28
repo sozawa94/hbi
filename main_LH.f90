@@ -764,6 +764,9 @@ program main
       call initcond()
     end if
 
+    !calculate Lb/ds
+    if(my_rank==0) write(*,*) 'Lb/ds~',rigid*dc(1)/b(1)/sigma(1) 
+
     x=0d0
     kstart=1
     kend=0

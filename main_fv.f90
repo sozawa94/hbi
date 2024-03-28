@@ -1763,10 +1763,9 @@ contains
     p=r
     rsold=sum(r*r)
     if(rsold<tol**2*n)  then
-      iter=0
       go to 100
     end if
-    iter=itermax
+    niter=itermax
     do iter=1,itermax
       tmp1=sum(r*r)
       m=0d0
@@ -1796,7 +1795,7 @@ contains
 
     end do
 
-    if(iter==itermax) write(*,*) "Maximum iteration"
+    if(niter==itermax) write(*,*) "Maximum iteration"
     100 pfnew=x+pfhyd
     return
   end subroutine
