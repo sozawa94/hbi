@@ -1574,7 +1574,7 @@ end subroutine
     real(8)::sxx0,sxy0,syy0
   do i=1,ncell
     i_=st_sum%lodc(i)
-    syy0=min(50,rho*g*ycol(i_)/1e3)
+    syy0=min(50.0,rho*g*ycol(i_)/1e3)
     sxy0=0.0
     sxx0=syy0*3.0
     tau(i)=sxy0*cos(2*ang(i_))+0.5*(sxx0-syy0)*sin(2*ang(i_))
