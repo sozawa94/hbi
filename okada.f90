@@ -8,9 +8,10 @@ module mod_okada
 
 contains
   subroutine okada(alpha,x,y,z,depth,dip,al1,al2,aw1,aw2,disl1,disl2,disl3,&
-    &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz)
+    &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,fullspace)
     implicit none
     real(8),intent(in)::alpha,x,y,z,depth,dip,al1,al2,aw1,aw2,disl1,disl2,disl3
+    logical,intent(in)::fullspace
     real(8),intent(out)::ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz
     integer::i,j,k
     real(8),parameter::pi2=8.d0*datan(1.d0),epso=1d-6
@@ -141,6 +142,7 @@ contains
     uxz=u(10)
     uyz=u(11)
     uzz=u(12)
+    if(fullspace) return
 
     !return
 

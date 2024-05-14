@@ -26,6 +26,7 @@ contains
     implicit none
     integer::i,j
     real(8)::tmp1,tmp2
+    logical::fullspace
     type(st_HACApK_calc_entry) :: st_bemv
     select case(st_bemv%problem)
     case('2dp')
@@ -64,7 +65,12 @@ contains
     !   & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
     !   !write(*,*)HACApK_entry_ij
     case('3dhr','3dph')
-      HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%v,st_bemv%rake,st_bemv%w)
+      fullspace=.false.
+      HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%v,st_bemv%rake,st_bemv%w,fullspace)
+      !write(*,*)HACApK_entry_ij
+    case('3dnr')
+      fullspace=.true.
+      HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%v,st_bemv%rake,st_bemv%w,fullspace)
       !write(*,*)HACApK_entry_ij
     case('3dn','3dnt')
       !HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
@@ -1004,12 +1010,13 @@ end function matels2dpa_ij
 
     return
   end subroutine
-  real(8) function okada_ij(i,j,xcol,ycol,zcol,ang,angd,v,rake,w)
+  real(8) function okada_ij(i,j,xcol,ycol,zcol,ang,angd,v,rake,w,fullspace)
     implicit none
     integer,intent(in)::i,j
     !type(st_HACApK_calc_entry) :: st_bemv
     real(8),intent(in)::xcol(:),ycol(:),zcol(:),ang(:),angd(:),rake(:),w
     character(128),intent(in)::v
+    logical,intent(in)::fullspace
     integer::iret
     real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha
     real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,z,depth,dip
@@ -1036,7 +1043,7 @@ end function matels2dpa_ij
    !
 
     call okada(alpha,dx/w,dy/w,z/w,depth/w,dip,-0.5d0,0.5d0,-0.5d0,0.5d0,cos(rake(j)),sin(rake(j)),0d0,&
-   &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz)
+   &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,fullspace)
   ! write(*,*) st_bemv%zcol(i),-st_bemv%zcol(j),st_bemv%angd(j)*180/pi
    ! write(*,*)uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz
     ! write(*,*)iret    ! case('dp')
@@ -1087,6 +1094,7 @@ end function matels2dpa_ij
   real(8) function okada_load(x,y,z,xs1,xs2,depth,ang,angd,rake)
     implicit none
     real(8),intent(in)::x,y,z,xs1,xs2,ang,angd,depth,rake
+    logical::fullspace=.false.
     integer::iret
     real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha
     real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,dip,fwid=100d0
@@ -1097,7 +1105,7 @@ end function matels2dpa_ij
     dip=90d0
 
     call okada(alpha,dx,0d0,z,depth+0.5*fwid,dip,0d0,xs2-xs1,-0.5d0*fwid,0.5d0*fwid,cos(rake),sin(rake),0d0,&
-   &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz)
+   &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,fullspace)
 
     exx=-uxx
     eyy=-uyy

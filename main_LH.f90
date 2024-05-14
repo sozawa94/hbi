@@ -64,7 +64,7 @@ program main
 
   !controls
   logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal,deepcreep
-  logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,foward,inverse,geofromfile,restart,latticeh,debug,bgstress
+  logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,forward,inverse,geofromfile,restart,latticeh,debug,bgstress
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
@@ -138,17 +138,18 @@ program main
   law='d'
   tmax=1d4
   interval=0
+  bgstress=.false.
   nuclei=.false.
   slipevery=.false.
   sigmaconst=.false.
-  foward=.false.
+  forward=.false.
   inverse=.false.
   slipfinal=.false.
   restart=.false.
   deepcreep=.false.
   limitsigma=.false.
   maxsig=300d0
-  minsig=1d0
+  minsig=0.2d0
   amp=0d0
   muinit=0d0
   dtout=365*24*3600
@@ -161,6 +162,7 @@ program main
   errold=1.0
   fwid=1e8
   evlaw='aging'
+  
   !number=0
 
 
@@ -226,8 +228,8 @@ program main
       read (pvalue,*) limitsigma
     case('sigmaconst')
       read(pvalue,*) sigmaconst
-    case('foward')
-      read(pvalue,*) foward
+    case('forward')
+      read(pvalue,*) forward
     case('inverse')
       read(pvalue,*) inverse
     case('geofromfile')
@@ -605,8 +607,8 @@ program main
   !stop
   !max time step
   !if(load==0) dtmax=0.02d0*10d0/sr
-
-  if(foward) call foward_check()
+  !write(*,*) forward
+  if(forward) call forward_check()
   if(inverse) call inverse_problem()
 
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -741,6 +743,8 @@ program main
     !uniform values
     sigma=sigmainit
     tau=tauinit
+    !if(my_rank==0) write(*,*) tau
+
     if(muinit.ne.0d0) tau=sigma*muinit
     vel=tau/abs(tau)*velinit
     mu=tau/sigma
@@ -763,6 +767,8 @@ program main
     if(bgstress) then
       call initcond()
     end if
+
+    call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
     !calculate Lb/ds
     if(my_rank==0) write(*,*) 'Lb/ds~',rigid*dc(1)/b(1)/sigma(1) 
@@ -906,7 +912,7 @@ program main
       write(*,*) 'initial mu_avg',meanmuG
       call output_monitor()
     end if
-    call output_field()
+    call output_field(mvel_loc)
     dtnxt = dtinit
   end if
   tout=dtout*365*24*60*60
@@ -949,12 +955,10 @@ program main
     !timer=timer+time4-time3
 
     !if normal stress is bounded
-    if(limitsigma) then
       do i=1,NCELL
         if(y(3*i)<minsig) y(3*i)=minsig
         if(y(3*i)>maxsig) y(3*i)=maxsig
       end do
-    end if
 
     !compute physical values for control and output
     !$omp parallel do
@@ -1044,7 +1048,7 @@ program main
         open(52,file=fname,position='append')
       end if
       !lattice H
-       call output_field()
+       call output_field(mvel_loc)
     end if
 
     if(my_rank==0.and.k>kend) then
@@ -1063,7 +1067,7 @@ program main
         eventcount=eventcount+1
         moment0=meandispG
         idisp=disp
-        !hypoloc=maxloc(abs(vel))
+        hypoloc=mvel_loc(1)
         onset_time=x
         !tout=onset_time
 
@@ -1086,7 +1090,7 @@ program main
         !eventcount=eventcount+1
         !end of an event
         if(my_rank==0) then
-          write(44,'(i0,i7,f17.2,f14.4)') eventcount,k,onset_time,(log10(moment*rigid*sg)+5.9)/1.5
+          write(44,'(i0,i7,f17.2,f14.4,i8)') eventcount,k,onset_time,(log10(moment*rigid*sg)+5.9)/1.5,hypoloc
         end if
         cslip=disp-idisp
         if(my_rank<npd) then
@@ -1170,9 +1174,10 @@ contains
     write(53,'(i7,f19.4,6e16.5)')k,x,log10(vel(loc_)),disp(loc_),tau(loc_),sigma(loc_),mu(loc_),psi(loc_)
   end subroutine
 
-  subroutine output_field()
+  subroutine output_field(mvel_loc)
     implicit none
     integer::nn,rcounts(npd),displs(npd+1)
+    integer::mvel_loc(1)
     real(8)::velG(NCELLg),tauG(NCELLg),sigmaG(Ncellg),dispG(ncellg)
     call MPI_GATHER(ncell,1,MPI_INT,rcounts,1,MPI_INT,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
 
@@ -1187,6 +1192,7 @@ contains
     call MPI_GATHERv(disp,NCELL,MPI_REAL8,dispG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
 
     if(my_rank==0) then
+      mvel_loc=maxloc(abs(velG))
       write(nout) velG
       write(nout2) dispG
       write(nout3) sigmaG
@@ -1631,7 +1637,7 @@ end subroutine
     end if
     !call MPI_BARRIER(MPI_COMM_WORLD,ierr);time3=MPI_Wtime()
     call HACApK_adot_lattice_hyp(st_sum,st_LHp_s,st_ctl,wws,st_vel)
-    if(problem=='3dhr'.or.problem=='3dph') then
+    if(problem=='3dnr'.or.problem=='3dhr'.or.problem=='3dph') then
       sum_gs(:)=st_sum%vs(:)/ds0
     else
       sum_gs(:)=st_sum%vs(:)
@@ -1641,7 +1647,7 @@ end subroutine
       sum_gn=0d0
     else
       call HACAPK_adot_lattice_hyp(st_sum,st_LHP_n,st_ctl,wws,st_vel)
-      if(problem=='3dhr'.or.problem=='3dph') then
+      if(problem=='3dnr'.or.problem=='3dhr'.or.problem=='3dph') then
         sum_gn(:)=st_sum%vs(:)/ds0
       else
         sum_gn(:)=st_sum%vs(:)
@@ -2055,10 +2061,11 @@ end subroutine
     return
   end subroutine
 
-  subroutine foward_check()
+  subroutine forward_check()
     implicit none
     real(8)::rr,lc,ret1(NCELLg),ret2(NCELLg),vec(NCELLg)
     integer::p
+    if(my_rank==0) write(*,*) 'Calculating stress field from uniform slip'
     ret1=0d0
     ret2=0d0
 
@@ -2113,14 +2120,14 @@ end subroutine
       st_vel%vs=vec
       call HACApK_adot_lattice_hyp(st_sum,st_LHp_s,st_ctl,wws,st_vel)
       ret1(:)=st_sum%vs(:)
-      if(problem=='3dhr'.or.problem=='3dph') ret1(:)=ret1(:)/ds0
+      if(problem=='3dnr'.or.problem=='3dhr'.or.problem=='3dph') ret1(:)=ret1(:)/ds0
 
       if(.not.sigmaconst) then
         !lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_n,st_bemv,st_ctl,ret2,vec)
         st_vel%vs=vec
         call HACApK_adot_lattice_hyp(st_sum,st_LHp_n,st_ctl,wws,st_vel)
         ret2(:)=st_sum%vs(:)
-        if(problem=='3dhr'.or.problem=='3dph') ret2(:)=ret2(:)/ds0
+        if(problem=='3dnr'.or.problem=='3dhr'.or.problem=='3dph') ret2(:)=ret2(:)/ds0
       end if
 
 
