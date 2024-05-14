@@ -50,7 +50,7 @@ program main
   real(8),allocatable::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:)
 
   !parameters for each elements
-  real(8),allocatable::a(:),b(:),dc(:),f0(:),fw(:),vw(:),vc(:),taudot(:),tauddot(:),sigdot(:),kLv(:),kTv(:)
+  real(8),allocatable::a(:),b(:),dc(:),f0(:),fw(:),vw(:),vc(:),taudot(:),tauddot(:),sigdot(:),kLv(:),kTv(:),kpmaxv(:)
   real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:),pfg(:),qin(:)
 
   !variables
@@ -70,7 +70,7 @@ program main
   real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dummy(10)
   real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,cdiff,q0,qin
-  real(8)::kpmax,kpmin,kp0,kT,kL,s0,ksinit,dtout,pfinit,pbcl,pbcr,lf,eta,beta,phi0,str,cc,td,cd,Bs
+  real(8)::kpmax,kpmin,kp0,kT,kL,s0,ksinit,dtout,pfinit,pbcl,pbcr,pinj,lf,eta,beta,phi0,str,cc,td,cd,Bs
   real(8)::b0list(9)=(/0.012,0.0115,0.011,0.0105,0.010,0.0095,0.009,0.0085,0.008/)
 
   !temporal variable
@@ -252,6 +252,8 @@ program main
       read (pvalue,*) pbcl
     case('pbcr')
       read (pvalue,*) pbcr
+    case('pinj')
+      read (pvalue,*) pinj
     case('tmax')
       read (pvalue,*) tmax
     case('eps_r')
@@ -586,7 +588,8 @@ program main
   allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL),dy(4*NCELL))
   allocate(psi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL),pf(NCELL),sigmae(NCELL),pfhyd(NCELL))
   psi=0d0;vel=0d0;tau=0d0;sigma=0d0;disp=0d0
-  allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL),ks(NCELL),kp(NCELL),qflow(NCELL),kLv(NCELL),kTv(NCELL),phi(NCELL))
+  allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL))
+  allocate(ks(NCELL),kp(NCELL),qflow(NCELL),kLv(NCELL),kTv(NCELL),kpmaxv(NCELL),phi(NCELL))
   taudot=0d0;sigdot=0d0;ks=0d0
 
   !uniform
@@ -677,7 +680,7 @@ program main
 
     if(my_rank<npd) then
       nout(1)=my_rank+100
-      write(fname,'("output/vel",i0,"_",i0,".dat")') number,my_rank
+      write(fname,'("output/vel",i0,".dat")') number
       open(nout(1),file=fname,form='unformatted',access='stream')
       inquire(nout(1),size=file_size)
       m=file_size/8
@@ -687,13 +690,13 @@ program main
       !write(*,*) my_rank,vel
       close(nout(1))
 
-      write(fname,'("output/slip",i0,"_",i0,".dat")') number,my_rank
+      write(fname,'("output/slip",i0,".dat")') number
       open(nout(1),file=fname,form='unformatted',access='stream')
       read(nout(1)) rdata
       disp(1:NCELL)=rdata(m-NCELL+1:m)
       close(nout(1))
 
-      write(fname,'("output/sigma",i0,"_",i0,".dat")') number,my_rank
+      write(fname,'("output/sigma",i0,".dat")') number
       open(nout(1),file=fname,form='unformatted',access='stream')
       read(nout(1)) rdata
       sigma(1:NCELL)=rdata(m-NCELL+1:m)
@@ -744,6 +747,8 @@ program main
 
 
     !depth dependent initial condition
+    !call initcond_valve()
+
     select case(setting)
     case('thrust')
       call initcond_thrust()
@@ -751,8 +756,10 @@ program main
     case('ss')
       call initcond_ss()
     !injection-induced seismicity (BP&)
-    case('injection')
-      call initcond_injection()
+    case('injectionp')
+      call initcond_injectionp()
+    case('injectionq')
+      call initcond_injectionq()
     !tectonic swarm
     case('swarm')
       call initcond_swarm()
@@ -761,6 +768,9 @@ program main
     !pf(NCELL/2)=3d0
     !tau=tauinit
     qflow=q0
+
+    !check initcond
+    write(*,*) 'diffusion constant',ks(1)/beta/phi(1)/eta
 
 
     !ks=1d-13*exp(50d0/30d0)
@@ -786,13 +796,13 @@ program main
     kstart=1
     kend=0
     if(my_rank<npd) then
-      write(fname,'("output/ind",i0,"_",i0,".dat")') number,my_rank
+      write(fname,'("output/ind",i0,".dat")') number
       nout(1)=my_rank+100
       open(nout(1),file=fname,form='unformatted',access='stream')
       write(nout(1))st_sum%lodc(1:NCELL)
       close(nout(1))
 
-      write(fname,'("output/xyz",i0,"_",i0,".dat")') number,my_rank
+      write(fname,'("output/xyz",i0,".dat")') number
       nout(1)=my_rank+100
       open(nout(1),file=fname)
       do i=1,ncell
@@ -807,25 +817,25 @@ program main
       !   write(nout,*) a(i),taudot(i),sigdot(i_)
       ! end do
       ! close(nout)
-      write(fname,'("output/vel",i0,"_",i0,".dat")') number,my_rank
+      write(fname,'("output/vel",i0,".dat")') number
       open(nout(1),file=fname,form='unformatted',access='stream',status='replace')
       nout(2)=nout(1)+np
-      write(fname,'("output/slip",i0,"_",i0,".dat")') number,my_rank
+      write(fname,'("output/slip",i0,".dat")') number
       open(nout(2),file=fname,form='unformatted',access='stream',status='replace')
       nout(3)=nout(2)+np
-      write(fname,'("output/sigma",i0,"_",i0,".dat")') number,my_rank
+      write(fname,'("output/sigma",i0,".dat")') number
       open(nout(3),file=fname,form='unformatted',access='stream',status='replace')
       nout(4)=nout(3)+np
-      write(fname,'("output/tau",i0,"_",i0,".dat")') number,my_rank
+      write(fname,'("output/tau",i0,".dat")') number
       open(nout(4),file=fname,form='unformatted',access='stream',status='replace')
       nout(5)=nout(4)+np
-      write(fname,'("output/ks",i0,"_",i0,".dat")') number,my_rank
+      write(fname,'("output/ks",i0,".dat")') number
       open(nout(5),file=fname,form='unformatted',access='stream',status='replace')
       nout(6)=nout(5)+np
-      write(fname,'("output/pf",i0,"_",i0,".dat")') number,my_rank
+      write(fname,'("output/pf",i0,".dat")') number
       open(nout(6),file=fname,form='unformatted',access='stream',status='replace')
       nout(7)=nout(6)+np
-      write(fname,'("output/qflow",i0,"_",i0,".dat")') number,my_rank
+      write(fname,'("output/qflow",i0,".dat")') number
       open(nout(7),file=fname,form='unformatted',access='stream',status='replace')
     end if
     if(my_rank.eq.0) then
@@ -1113,11 +1123,11 @@ program main
 
     !stop controls
     if(mvelG>velmax) then
-      if(my_rank == 0) write(*,*) 'slip rate above vmax'
+      if(my_rank == 0) write(*,*) 'slip rate above vmax at time step ', k
       exit
     end if
     if(mvelG<velmin) then
-      if(my_rank == 0) write(*,*) 'slip rate below vmin'
+      if(my_rank == 0) write(*,*) 'slip rate below vmin at time step ', k
       exit
     end if
     if(x>tmax) then
@@ -1125,7 +1135,7 @@ program main
       exit
     end if
     if(minnormG<0.2) then
-      if(my_rank == 0) write(*,*) 'normal stress below 0.2MPa'
+      if(my_rank == 0) write(*,*) 'normal stress below 0.2MPa at time step ', k
       exit
     end if
 
@@ -1436,9 +1446,13 @@ contains
     !q0=(pbcr-pbcl)/lf*ks(1)/1d-12*1d-6*2
 
     kp0=kp0*exp(sigmainit/s0)
-    kpmax=kp0*(1+kL/kT/Vpl)-kpmin*kL/kT/Vpl
+    
+    do i=1,ncellg
+      kTv(i)=kT
+      if(abs(xcol(i)-lf/2)>lf/6) kTv(i)=kT*100
+    end do
 
-    kTv=kT
+    kpmaxv=kp0*(1+kL/kTv/Vpl)-kpmin*kL/kTv/Vpl
 
     ks=kp0
     !adding velocity-strengthening buffer at the edge
@@ -1470,10 +1484,107 @@ contains
     disp=0d0
   end subroutine
 
-  subroutine initcond_injection()
+  subroutine initcond_valve()
+    implicit none
+
+    !pbcr is given
+    lf=ncellg*ds0
+    qin=0d0
+
+    !q0=(pbcr-pbcl)/lf*ks(1)/1d-12*1d-6*2
+
+    kp0=kpmax
+    
+    do i=1,ncellg
+      kTv(i)=kT
+      if(abs(xcol(i)-lf/2)>lf/10) kTv(i)=kT*100
+    end do
+
+    kpmaxv=kpmax
+
+    ks=kp0
+    !adding velocity-strengthening buffer at the edge
+    ! do i=1,ncellg
+    !   if(abs(xcol(i)-lf/2)>lf/2-lf/10) a(i)=a1
+    !   !if(i<ncellg/10.or.i>ncellg*5/8) a(i)=a1
+    !   !a(i)=a1
+    ! end do
+
+    !q0 is given
+    !q=q0
+    pbcr=0d0
+    pbcl=pbcr+q0*lf/(ks(1)*exp(-sigmainit/s0))*eta*1d-3
+    phi=phi0
+
+
+    pf=pbcl+(pbcr-pbcl)*xcol/lf
+    sigma=sigmainit+pf
+    sigmae=sigma-pf
+    pfhyd=0.d0
+    vel=velinit
+    ! do i=1,ncell
+    !   if(abs(xcol(i)-5.0)<1.0) vel(i)=velinit*(1.0+0.001*sin(2*pi/2.0*xcol(i)))
+    ! end do
+    tau=sigmae*(f0+(a-b)*log(vel/vref))*1.001
+    ! vel=tau/abs(tau)*velinit
+    mu=tau/sigmae
+    psi=a*dlog(2*vref/vel*sinh(tau/sigmae/a))
+    disp=0d0
+  end subroutine
+
+  subroutine initcond_injectionp()
     !BP6
     implicit none
     real(8)::ang0,syy0,sxy0,sxx0
+    qin=0d0
+    phi=phi0
+    
+    ! phi=0.1
+    ! beta=1e-8
+    ! eta=1e-3
+    !ks=kp0
+    !kpmax=kp0
+    kp=kpmin
+    kpmaxv=kpmax
+    ks=kp
+    !ks(495:505)=kpmax
+    kTv=kT
+    kLv=kL
+    pf=pfinit
+    pf(Ncell/2)=pinj
+    sigma=sigmainit
+    sigmae=sigma-pf
+    tau=sigmae*muinit
+
+    ! syy0=100
+    ! sxy0=55
+    ! ang0=30
+    ! velinit=1e-9
+    ! sxx0=syy0*(1+2*sxy0/(syy0*tan(2*ang0/180*pi)))
+    ! tau=sxy0*cos(2*ang)+0.5*(sxx0-syy0)*sin(2*ang)
+    ! sigmae=sin(ang)**2*sxx0+cos(ang)**2*syy0+sxy0*sin(2*ang)
+
+
+    mu=tau/sigmae
+    ! pf=pfinit
+    ! sigma=sigmae+pf
+    pfhyd=0.d0
+    vel=velinit
+    psi=a*dlog(2*vref/vel*sinh(tau/sigmae/a))
+
+    !for constant pressure injection
+    !pf(Ncell/2)=pinj
+    !sigmae(Ncell/2)=sigmainit-pf(Ncell/2)
+    !vel(Ncell/2)=2*vref*dexp(-psi(NCELL/2)/a(NCELL/2))*dsinh(tau(NCELL/2)/sigmae(NCELL/2)/a(NCELL/2))
+
+    disp=0d0
+  end subroutine
+
+  subroutine initcond_injectionq()
+    !BP6
+    implicit none
+    real(8)::ang0,syy0,sxy0,sxx0
+    qin=0d0
     qin(ncell/2)=1.25e-6
     phi=phi0
     
@@ -1482,8 +1593,10 @@ contains
     ! eta=1e-3
     !ks=kp0
     !kpmax=kp0
-    kp=kpmax
+    kp=kpmin
+    kpmaxv=kpmax
     ks=kp
+    !ks(495:505)=kpmax
     kTv=kT
     kLv=kL
     pf=pfinit
@@ -1506,6 +1619,12 @@ contains
     pfhyd=0.d0
     vel=velinit
     psi=a*dlog(2*vref/vel*sinh(tau/sigmae/a))
+
+    !for constant pressure injection
+    !pf(Ncell/2)=pinj
+    !sigmae(Ncell/2)=sigmainit-pf(Ncell/2)
+    !vel(Ncell/2)=2*vref*dexp(-psi(NCELL/2)/a(NCELL/2))*dsinh(tau(NCELL/2)/sigmae(NCELL/2)/a(NCELL/2))
+
     disp=0d0
   end subroutine
 
@@ -1521,6 +1640,8 @@ contains
     sigma=sigmainit
     ks=kpmin
     ks(1:10)=kpmax
+    kpmaxv=kpmax
+    !kpmaxv(600:)=kpmax*0.01
     pf=pfinit
     pf(1:10)=pbcl
     ! do i=1,int(ncell*1/5)
@@ -1735,9 +1856,13 @@ contains
     x=pf-pfhyd !initial guess
 
     b=pf-SAT-pfhyd   
-    !injection at the center of the fault (if nonzero qin is used)
-    if(setting=='injection') then
-        b(N/2)=b(N/2)+h*qin(n/2)/beta/phi(N/2)*1e-9/ds0
+    !injection at the center of the fault
+    if(setting=='injectionp') then
+      !b(N/2)=b(N/2)+h*qin(n/2)/beta/phi(N/2)*1e-9/ds0 !injection rate
+      b(N/2)=b(N/2)+h*pinj/1e1 !injection pressure
+      Am(N/2,2)=Am(N/2,2)+h/1e1
+    else if(setting=='injectionq') then
+      b(N/2)=b(N/2)+h*qin(n/2)/beta/phi(N/2)*1e-9/ds0 !injection rate
     end if
 
     b(1)=b(1)/2
@@ -1968,7 +2093,7 @@ contains
       !$omp parallel do
     do i=1,NCELL
       !permeability evolution
-      dksdt=-veltmp(i)/kL*(kstmp(i)-kpmax)-(kstmp(i)-kpmin)/kTv(i)
+      dksdt=-veltmp(i)/kL*(kstmp(i)-kpmaxv(i))-(kstmp(i)-kpmin)/kTv(i)
 
       !aging law
       select case(evlaw)
