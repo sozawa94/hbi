@@ -54,7 +54,7 @@ program main
   real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:),pfg(:),qin(:)
 
   !variables
-  real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:),pfhyd(:)
+  real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:),pfhyd(:),lbds(:)
   real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:),pf(:),sigmae(:),ks(:),qflow(:),kp(:),phi(:)
 
   real(8),allocatable::rdata(:)
@@ -69,7 +69,7 @@ program main
   real(8)::a0,a1,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dummy(10)
-  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,cdiff,q0,qin
+  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,cdiff,q0,qin,tinj
   real(8)::kpmax,kpmin,kp0,kT,kL,s0,ksinit,dtout,pfinit,pbcl,pbcr,pinj,lf,eta,beta,phi0,str,cc,td,cd,Bs
   real(8)::b0list(9)=(/0.012,0.0115,0.011,0.0105,0.010,0.0095,0.009,0.0085,0.008/)
 
@@ -127,6 +127,8 @@ program main
   call MPI_BARRIER(MPI_COMM_WORLD,ierr);time1=MPI_Wtime()
 
   !default parameters
+  setting="injectionq"
+  dtout=1e3
   nmain=1000000
   eps_r=1d-4
   eps_h=1d-4
@@ -135,7 +137,6 @@ program main
   tmax=1d12
   dipangle=0d0
   nuclei=.false.
-  slipevery=.false.
   sigmaconst=.false.
   foward=.false.
   inverse=.false.
@@ -144,13 +145,13 @@ program main
   latticeh=.false.
   outpertime=.false.
   maxsig=300d0
-  minsig=10d0
+  minsig=0.2d0
   amp=0d0
   dtinit=1d0
   tp=86400d0
   initcondfromfile=.false.
   parameterfromfile=.false.
-  pressuredependent=.true.
+  pressuredependent=.false.
   pfconst=.false.
   bcl='Neumann'
   bcr='Neumann'
@@ -256,6 +257,8 @@ program main
       read (pvalue,*) pinj
     case('tmax')
       read (pvalue,*) tmax
+    case('tinj')
+      read (pvalue,*) tinj
     case('eps_r')
       read (pvalue,*) eps_r
     case('eps_h')
@@ -327,10 +330,11 @@ program main
     write(*,*) 'job number',number
   end if
 
-  if(ncellg==0.and.my_rank==0) then
-    write(*,*) 'error: Ncell is zero'
+  if(ncellg == 0) then
+    if(my_rank == 0) write(*,*) 'error: Ncellg is zero'
     stop
   end if
+
   !allocation
   allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg))
   allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),f0g(NCELLg),qin(ncellg))
@@ -397,7 +401,7 @@ program main
   case('2dn')
     open(20,file=geofile,status='old',iostat=ios)
     if(ios /= 0) then
-      if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
+      if(my_rank == 0) write(*,*) 'error: Failed to open geometry file'
       stop
     end if
     do i=1,NCELLg
@@ -589,7 +593,7 @@ program main
   allocate(psi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL),pf(NCELL),sigmae(NCELL),pfhyd(NCELL))
   psi=0d0;vel=0d0;tau=0d0;sigma=0d0;disp=0d0
   allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL))
-  allocate(ks(NCELL),kp(NCELL),qflow(NCELL),kLv(NCELL),kTv(NCELL),kpmaxv(NCELL),phi(NCELL))
+  allocate(ks(NCELL),kp(NCELL),qflow(NCELL),kLv(NCELL),kTv(NCELL),kpmaxv(NCELL),phi(NCELL),lbds(NCELL))
   taudot=0d0;sigdot=0d0;ks=0d0
 
   !uniform
@@ -753,7 +757,7 @@ program main
     case('thrust')
       call initcond_thrust()
     !steady state background flow and
-    case('ss')
+    case('steadystate')
       call initcond_ss()
     !injection-induced seismicity (BP&)
     case('injectionp')
@@ -790,6 +794,15 @@ program main
         psi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigmae(i)/a(i)))
         !write(*,*) tau(i),sigma(i),vel(i)
       end do
+    end if
+
+     !calculate Lb/ds
+    do i=1,ncell
+      lbds(i)=rigid*dc(i)/b(i)/sigma(i)/ds(i)
+    end do
+    !if(my_rank==0) write(*,*) 'Lb/ds~',rigid*dc(1)/b(1)/sigma(1)/ds0
+    if(minval(lbds) < 2.0) then
+      write(*,*) 'warning: element size may be too large. min(Lb/ds)=',minval(lbds)
     end if
 
     x=0d0
@@ -1585,7 +1598,7 @@ contains
     implicit none
     real(8)::ang0,syy0,sxy0,sxx0
     qin=0d0
-    qin(ncell/2)=1.25e-6
+    qin(ncell/2)=q0
     phi=phi0
     
     ! phi=0.1
@@ -1602,7 +1615,8 @@ contains
     pf=pfinit
     sigma=sigmainit
     sigmae=sigma-pf
-    tau=sigmae*muinit
+    tau=tauinit
+    if(muinit.ne.0d0) tau=sigmae*muinit
 
     ! syy0=100
     ! sxy0=55
@@ -1831,7 +1845,7 @@ contains
       SAT(1)=-1.0*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
       SAT(2)=-0.5*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
     case('Neumann')
-      SAT(1)=-q0/beta/phi(1)*1e-9*h/ds0*2
+      if(setting=='steadystate') SAT(1)=-q0/beta/phi(1)*1e-9*h/ds0*2
     end select
 
     select case(bcr)
@@ -1839,7 +1853,7 @@ contains
       SAT(n)=-1*cdiff(n)/ds0/ds0*(pbcr-pfhyd(n))*h*2
       SAT(n-1)=SAT(n)/2
     case('Neumann')
-      SAT(n)=q0/beta/phi(n)*1e-9*h/ds0*2
+      if(setting=='steadystate') SAT(n)=q0/beta/phi(n)*1e-9*h/ds0*2
       if(setting=='thrust') SAT(n)=qin(2000)/beta/phi(n)*1e-9*h/ds0*2
     end select
 
@@ -1861,7 +1875,7 @@ contains
       !b(N/2)=b(N/2)+h*qin(n/2)/beta/phi(N/2)*1e-9/ds0 !injection rate
       b(N/2)=b(N/2)+h*pinj/1e1 !injection pressure
       Am(N/2,2)=Am(N/2,2)+h/1e1
-    else if(setting=='injectionq') then
+    else if(setting=='injectionq' .and. time<tinj*365*24*3600) then
       b(N/2)=b(N/2)+h*qin(n/2)/beta/phi(N/2)*1e-9/ds0 !injection rate
     end if
 
