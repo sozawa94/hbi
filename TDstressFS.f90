@@ -407,7 +407,7 @@ contains
     real(8),intent(in)::X,Y,Z,bX,bY,bZ,PA(3),PB(3),mu,lambda
     real(8),intent(out)::Sxx,Syy,Szz,Sxy,Sxz,Syz
     logical::configI
-    real(8)::A(3,3),nu,SIdeVec(3),eZ(3),beta,ey1(3),ey2(3),ey3(3)
+    real(8)::A(3,3),nu,SIdeVec(3),eZ(3),beta,ey1(3),ey2(3),ey3(3),At(3,3)
     real(8)::y1A,y2A,y3A,y1AB,y2AB,y3AB,y1B,y2B,y3B,b1,b2,b3,bxt,byt,bzt
     real(8)::v11A,v22A,v33A,v12A,v13A,v23A,v11B,v22B,v33B,v12B,v13B,v23B
     real(8)::v11,v22,v33,v12,v13,v23,exx,eyy,ezz,exy,exz,eyz
@@ -534,6 +534,10 @@ contains
   ! A(1:3,2)=ey2(1:3)
   ! A(1:3,3)=ey3(1:3)
   !debug end
+  ! At=A
+  ! At(1,2)=A(2,1);At(1,3)=A(3,1);At(2,1)=A(1,2)
+  ! At(2,3)=A(3,2);At(3,1)=A(1,3);At(3,2)=A(2,3)
+
 
   call TensTrans(v11,v22,v33,v12,v13,v23,A,&
     & Exx,Eyy,Ezz,Exy,Exz,Eyz)
@@ -632,7 +636,9 @@ contains
     REAL*8, PARAMETER :: pi = 4*datan(1.d0)
   sinB = dsin(beta)
   cosB = dcos(beta)
-  cotB = 1d0/dtan(beta)
+  !cotB = 1d0/dtan(beta)
+  cotB = cosB/sinB
+ 
   !write(*,*)'cotB',cotB
   y3b = y3+2*a
   z1b = y1*cosB+y3b*sinB

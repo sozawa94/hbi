@@ -55,7 +55,7 @@ program main
 
   !variables
   real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:),cslip(:)
-  real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:)
+  real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:),lbds(:)
 
   real(8),allocatable::rdata(:)
   integer::lp,i,i_,j,k,kstart,kend,m,counts,interval,lrtrn,nl,ios,nmain,rk,nout,nout2,nout3,nout4,nout5,file_size,nrjct
@@ -135,12 +135,10 @@ program main
   eps_h=1d-4
   velmax=1d7
   velmin=1d-16
-  law='d'
   tmax=1d4
   interval=0
   bgstress=.false.
   nuclei=.false.
-  slipevery=.false.
   sigmaconst=.false.
   forward=.false.
   inverse=.false.
@@ -150,13 +148,10 @@ program main
   limitsigma=.false.
   maxsig=300d0
   minsig=0.2d0
-  amp=0d0
   muinit=0d0
   dtout=365*24*3600
   dtinit=1d0
   tp=86400d0
-  trelax=1d18
-  project="none"
   initcondfromfile=.false.
   parameterfromfile=.false.
   errold=1.0
@@ -295,10 +290,11 @@ program main
     if(my_rank==0) write(*,*) 'NCELLg',ncellg
   end select
 
-  if(ncellg==0.and.my_rank==0) then
-    write(*,*) 'error: Ncellg is zero'
+  if(ncellg == 0) then
+    if(my_rank == 0) write(*,*) 'error: Ncellg is zero'
     stop
   end if
+
   !allocation
   allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg))
   allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),f0g(NCELLg))
@@ -440,7 +436,11 @@ program main
   rake=crake
   !nonuniform parameters from file
   if(parameterfromfile) then
-    open(99,file=parameter_file)
+    open(99,file=parameter_file,iostat=ios)
+    if(ios /= 0) then
+      if(my_rank==0) write(*,*) 'error: Failed to open parameter file'
+      stop
+    end if
     do i=1,ncellg
       read(99,*) rake(i),ag(i),bg(i),dcg(i),f0g(i),taug(i),sigmag(i),velg(i),taudotg(i),sigdotg(i)
     end do
@@ -560,7 +560,7 @@ program main
   allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL))
   allocate(psi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL),cslip(NCELL))
   psi=0d0;vel=0d0;tau=0d0;sigma=0d0;disp=0d0
-  allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL))
+  allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL),lbds(NCELL))
   taudot=0d0;sigdot=0d0
 
   !uniform frictional parameters
@@ -588,6 +588,7 @@ program main
   end if
 
   if(deepcreep) then
+    if(my_rank == 0) write(*,*) 'loading rate is calculated from deep creep'
     select case(problem)
     case('3dph')
       call taudot_3dph()
@@ -608,7 +609,10 @@ program main
   !max time step
   !if(load==0) dtmax=0.02d0*10d0/sr
   !write(*,*) forward
-  if(forward) call forward_check()
+  if(forward) then
+    if(my_rank==0)write(*,*) 'Debug mode: calculate stress from uniform slip'
+    call forward_check()
+  end if
   if(inverse) call inverse_problem()
 
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -753,6 +757,7 @@ program main
 
     !non-uniform initial stress from file
     if(parameterfromfile) then
+      if(my_rank == 0) write(*,*) 'initial conditions from parameter file'
       do i=1,NCELL
         i_=st_sum%lodc(i)
         tau(i)=taug(i_)
@@ -771,8 +776,14 @@ program main
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
     !calculate Lb/ds
-    if(my_rank==0) write(*,*) 'Lb/ds~',rigid*dc(1)/b(1)/sigma(1) 
-
+    do i=1,ncell
+      lbds(i)=rigid*dc(i)/b(i)/sigma(i)/ds(i)
+    end do
+    !if(my_rank==0) write(*,*) 'Lb/ds~',rigid*dc(1)/b(1)/sigma(1)/ds0
+    if(minval(lbds) < 2.0) then
+      write(*,*) 'warning: element size may be too large. min(Lb/ds)=',minval(lbds)
+    end if
+    
     x=0d0
     kstart=1
     kend=0
@@ -908,7 +919,7 @@ program main
     dtdid=0d0
     if(my_rank==0) then
       write(50,'(i7,f19.4)') k,x
-      write(*,*) 'initial Vmax',mvelG
+      write(*,*) 'initial Vmax (m/s)',mvelG
       write(*,*) 'initial mu_avg',meanmuG
       call output_monitor()
     end if
@@ -1062,7 +1073,7 @@ program main
 
     !event list
     if(.not.slipping) then
-      if(mvelG>1d-1) then
+      if(mvelG>1d-2) then
         slipping=.true.
         eventcount=eventcount+1
         moment0=meandispG
@@ -1113,15 +1124,15 @@ program main
 
     !stop controls
     if(mvelG>velmax) then
-      if(my_rank == 0) write(*,*) 'slip rate above vmax'
+      if(my_rank == 0) write(*,*) 'slip rate above vmax at time step=', k
       exit
     end if
     if(mvelG<velmin) then
-      if(my_rank == 0) write(*,*) 'slip rate below vmin'
+      if(my_rank == 0) write(*,*) 'slip rate below vmin at time step=', k
       exit
     end if
     if(x>tmax) then
-      if(my_rank == 0) write(*,*) 'time exceeds tmax'
+      if(my_rank == 0) write(*,*) 'time exceeds tmax at time step=', k
       exit
     end if
     !if(maxval(sigma)>=maxsig) then
@@ -1570,7 +1581,7 @@ end subroutine
       taudot(i)=taudot(i)+sr*0.5*sin(2*ang(i_))
       sigdot(i)=sigdot(i)+sr*sin(ang(i_))**2
 
-      write(*,*) xcol(i_),taudot(i),sigdot(i)
+      !write(*,*) xcol(i_),taudot(i),sigdot(i)
     end do
   end subroutine
 
@@ -1766,7 +1777,7 @@ end subroutine
     integer :: i,ierr,loc
     real(8) :: errmax,h,xnew,htemp,dtmin
     real(8),dimension(size(y))::yerr,ytemp
-    real(8),parameter::SAFETY=0.9,PGROW=-0.2,PSHRNK=-0.25,ERRCON=1.89d-4,kp=0.08
+    real(8),parameter::SAFETY=0.9,PGROW=-0.2,PSHRNK=-0.25,ERRCON=1.89d-4,kp=0.08,tiny=1e-20
 
     nrjct=0
     h=htry
@@ -1811,12 +1822,12 @@ end subroutine
 
       !if(my_rank==0)write(*,*) h,errmax_gb
       !if(h<0.25d0*ds0/vs)exit
-      if((errmax_gb<1.d0).and.(errmax_gb>1d-15)) then
+      if((errmax_gb<1.d0).and.(errmax_gb>tiny)) then
         exit
       end if
 
       nrjct=nrjct+1
-      if(errmax_gb>1d-15) then
+      if(errmax_gb>tiny) then
         h=max(0.5d0*h,SAFETY*h*(errmax_gb**PSHRNK))
       else
         h=0.5*h
@@ -1826,7 +1837,7 @@ end subroutine
 
       xnew=x+h
       if(xnew-x<1.d-15) then
-        if(my_rank.eq.0)write(*,*)'error: dt is too small'
+        if(my_rank.eq.0) write(*,*) 'error: dt is too small'
         stop
       end if
 
