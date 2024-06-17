@@ -1,0 +1,11 @@
+problem      2dvs
+ncellg 1600
+ds           0.025
+filenumber    1
+interval     100
+nstep     50000
+tmax   3000
+backslip T
+vpl          1d-9
+parameterfromfile T
+parameter_file "examples/bp1_param.dat"
