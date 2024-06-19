@@ -67,9 +67,9 @@ program main
   logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,foward,inverse,geofromfile,restart,latticeh,pressuredependent,pfconst
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,model,parameter_file,outdir,command,bcl,bcr,evlaw,setting
   real(8)::a0,a1,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
-  real(8)::psi,vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
+  real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dummy(10)
-  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,cdiff,q0,qin,tinj
+  real(8)::alpha,ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,cdiff,q0,tinj
   real(8)::kpmax,kpmin,kp0,kT,kL,s0,ksinit,dtout,pfinit,pbcl,pbcr,pinj,lf,eta,beta,phi0,str,cc,td,cd,Bs
   real(8)::b0list(9)=(/0.012,0.0115,0.011,0.0105,0.010,0.0095,0.009,0.0085,0.008/)
 
