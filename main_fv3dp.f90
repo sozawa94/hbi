@@ -513,7 +513,7 @@ program main
 
   if(parameterfromfile) then
     open(99,file=parameter_file)
-    write(*,*) "reading friction parameters from file"
+    !write(*,*) "reading friction parameters from file"
     do i=1,ncellg
       read(99,*) a(i),b(i),dc(i),f0(i)
     end do
@@ -528,10 +528,12 @@ program main
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
   !setting initial condition
-  call initcond_bgflow()
+  !call initcond_bgflow()
   select case(setting)
   case('injection')
     call initcond_injection()
+  case('ss')
+    call initcond_bgflow()
   end select
 
   if(pressuredependent) then
@@ -716,10 +718,10 @@ tout=dtout*365*24*60*60
 
     !limitsigma
     ! if(limitsigma) then
-    !   do i=1,NCELLg
-    !     if(yg(4*i-1)<minsig) sigma(i)=pf(i)+minsig
-    !     if(yg(4*i-1)>maxsig) yg(4*i-1)=maxsig
-    !   end do
+      do i=1,NCELLg
+        if(yg(4*i-1)<minsig) sigma(i)=pf(i)+minsig
+        !if(yg(4*i-1)>maxsig) yg(4*i-1)=maxsig
+      end do
     ! end if
 
     !compute physical values for control and output
@@ -978,16 +980,20 @@ subroutine initcond_bgflow()
   !q0=(pbcr-pbcl)/lf*ks(1)/1d-12*1d-6*2
 
   !kp0=kp0*exp(sigmainit/s0)
-  kpmax=kp0*(1+kL/kT/Vpl)-kpmin*kL/kT/Vpl
 
   kTv=kT
+  ! do i=1,ncell
+  !   if(abs(zcol(i))<0.5) kTv(i)=kT*100
+  ! end do
+
+  kpmax=kp0*(1+kL/kT/Vpl)-kpmin*kL/kT/Vpl
   kp=kp0
   ks=kp0
   pbcr=0d0
   pbcl=pbcr+q0*lf/ks(1)*eta*1d-3
   phi=phi0
 
-  pf=pbcl+(pbcr-pbcl)*xcol/lf
+  pf=pbcl+(pbcr-pbcl)*ycol/lf
   sigma=sigmainit+pf
   sigmae=sigma-pf
   pfhyd=0.d0
@@ -1340,14 +1346,17 @@ end subroutine coordinate3dp
     Amy(imax,:,2)=-h*Dyy(imax,:,2)
 
     SAT=0d0
-
-    SAT(1,:)=-q0/beta/phi0*1e-9*h/ds0*2
-    SAT(imax,:)=q0/beta/phi0*1e-9*h/ds0*2
-
-
+  
     x=pf !initial guess
+
+    if(setting=='ss') then
+      SAT(1,:)=-q0/beta/phi0*1e-9*h/ds0*2
+      SAT(imax,:)=q0/beta/phi0*1e-9*h/ds0*2
+    end if
+
     b=pf-SAT
 
+    if(setting=='injection') then
     if(injectionfromfile) then
       qtmp=0d0
       do kwell=1,nwell
@@ -1367,8 +1376,9 @@ end subroutine coordinate3dp
         !write(*,*)i,j,qtmp
         b(i,j)=b(i,j)+h*qtmp/beta/phi0*1e-12/ds0/ds0
       end do
-    else if(time<td) then
+    else
       b(imax/2,jmax/2)=b(imax/2,jmax/2)+h*q0/beta/phi0*1e-12/ds0/ds0
+    end if
     end if
 
     !b(imax/2-5:imax/2+5,jmax/2-5:jmax/2+5)=b(imax/2-5:imax/2+5,jmax/2-5:jmax/2+5)+h*q0/beta/phi0*1e-12/ds0/ds0
