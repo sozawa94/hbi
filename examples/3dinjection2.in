@@ -1,0 +1,33 @@
+filenumber 1000
+setting injection
+problem 3dp
+injectionfromfile T
+injection_file "examples/wells.dat"
+imax 100
+jmax 100 
+interval  30 !output and checkpointing every 100 steps
+nstep     20000 !time steps
+tmax   5.0 !maximum time (year)
+dtout 0.01
+ds 0.02 !element size
+parameterfromfile F !nonuniform parameters
+backslip T
+vpl 0d0
+kpmax 1e-14
+kpmin 1e-14
+beta 5e-8
+eta 0.89e-3
+phi0 0.2
+s0 30.0
+kT 1e10
+kL 1e-3
+a 0.013
+b 0.00
+dc 1e-4
+f0 0.6
+muinit 0.55
+sigmainit 30.0
+velinit 1d-12
+bc Dirichlet
+pbc 0d0
+pfinit 0d0

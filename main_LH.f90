@@ -134,7 +134,7 @@ program main
   eps_r=1d-4
   eps_h=1d-4
   velmax=1d7
-  velmin=1d-16
+  velmin=1d-20
   tmax=1d4
   interval=0
   bgstress=.false.
@@ -1347,7 +1347,7 @@ end subroutine
       ang(i)=datan2(yer(i)-yel(i),xer(i)-xel(i))
       xcol(i)=0.5d0*(xel(i)+xer(i))
       ycol(i)=0.5d0*(yel(i)+yer(i))
-      write(*,*) ds(i),ang(i)
+      !write(*,*) ds(i),ang(i)
     enddo
     return
   end subroutine
@@ -1681,8 +1681,8 @@ end subroutine
 
   subroutine deriv_d(sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,dpsidt,dtaudt,dsigdt)
     implicit none
-    real(8)::fss,dvdtau,dvdsig,dvdpsi,mu,psiss,dcv
-    real(8),parameter::fw=0.2,vw=0.1
+    real(8)::fss,dvdtau,dvdsig,dvdpsi,mu,psiss,dcv,f
+    real(8),parameter::fw=0.2,vw=0.1,V0=0.5,n=4,Cr=1.0
     !type(t_deriv),intent(in) ::
     real(8),intent(in)::sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0
     real(8),intent(out)::dpsidt,dtaudt,dsigdt
@@ -1720,7 +1720,9 @@ end subroutine
     !dvdpsi=2*vref*exp(-psitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
     dvdpsi=-veltmp/a
     !dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(dvdpsi*psitmp(i)*dvdsig*sigmatmp(i))
-    dtaudt=sum_gs-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*dsigdt)
+    
+    !f=(1+(veltmp/V0)**n)**(1/n-1)*(veltmp/V0)**(n-1)
+    dtaudt=sum_gs-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*dsigdt)!*f*Cr
     dtaudt=dtaudt/(1d0+0.5d0*rigid/vs*dvdtau)
     !write(*,*) rigid/vs*dvdtau
     if(veltmp<=0d0) then
