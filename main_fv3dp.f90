@@ -134,6 +134,7 @@ program main
   minsig=0d0
   dtinit=1d0
   tp=86400d0
+  outpertime=.false.
   initcondfromfile=.false.
   parameterfromfile=.false.
   injectionfromfile=.false.
@@ -704,14 +705,18 @@ tout=dtout*365*24*60*60
     !update pf with implicit solver
     !write(*,*)maxval(pf)
     !write(*,*)'call implicit solver'
+    call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+
     ! if(.not.pfconst) then
     !   if(pressuredependent) then
     !     !call implicitsolver(pf,sigma,ks,dtdid,x,dtnxt)
     !   else
-        call implicitsolver2(pf,sigma,ks,dtdid,x,dtnxt,niter)
+    call implicitsolver2(pf,sigma,ks,dtdid,x,dtnxt,niter)
       ! end if
     ! end if
     !write(*,*)maxval(pf)
+    call MPI_BARRIER(MPI_COMM_WORLD,ierr);time1=MPI_Wtime()
+
 
     !time4=MPI_Wtime()
     !timer=timer+time4-time3
@@ -987,13 +992,15 @@ subroutine initcond_bgflow()
   ! end do
 
   kpmax=kp0*(1+kL/kT/Vpl)-kpmin*kL/kT/Vpl
+  !write(*,*) kpmax
   kp=kp0
   ks=kp0
   pbcr=0d0
   pbcl=pbcr+q0*lf/ks(1)*eta*1d-3
+  write(*,*) pbcl
   phi=phi0
 
-  pf=pbcl+(pbcr-pbcl)*ycol/lf
+  pf=pbcl+(pbcr-pbcl)*xcol/lf
   sigma=sigmainit+pf
   sigmae=sigma-pf
   pfhyd=0.d0
@@ -1006,6 +1013,7 @@ subroutine initcond_bgflow()
   mu=tau/sigmae
   psi=a*dlog(2*vref/vel*sinh(tau/sigmae/a))
   disp=0d0
+  !write(*,*)tau(1),psi(1)
 end subroutine
 
 subroutine input_well()
