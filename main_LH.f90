@@ -1104,9 +1104,9 @@ program main
           write(44,'(i0,i7,f17.2,f14.4,i8)') eventcount,k,onset_time,(log10(moment*rigid*sg)+5.9)/1.5,hypoloc
         end if
         cslip=disp-idisp
-        if(my_rank<npd) then
-          write(nout5) cslip
-        end if
+        ! if(my_rank<npd) then
+        !   write(nout5) cslip
+        ! end if
         ! if(slipevery.and.(my_rank<npd)) then
         !   write(nout) vel
         !   write(nout2) disp
