@@ -63,13 +63,13 @@ program main
   integer::hypoloc(1),load,eventcount,thec,inloc,sw
 
   !controls
-  logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal,deepcreep
+  logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal,deepcreep,rakefromglobal
   logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,forward,inverse,geofromfile,restart,latticeh,debug,bgstress
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dummy(10)
-  real(8)::alpha,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo
+  real(8)::alpha,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo,convangle
 
   !temporal variable
 
@@ -154,6 +154,9 @@ program main
   tp=86400d0
   initcondfromfile=.false.
   parameterfromfile=.false.
+  rakefromglobal=.false.
+  debug=.false.
+
   errold=1.0
   fwid=1e8
   evlaw='aging'
@@ -235,6 +238,8 @@ program main
       read(pvalue,*) minsig
     case('crake')
       read(pvalue,*) crake
+    case('convangle')
+      read(pvalue,*) convangle
     case('dipangle')
       read(pvalue,*) dipangle
     case('fwid')
@@ -257,6 +262,8 @@ program main
       read(pvalue,*) deepcreep
     case('bgstress')
       read(pvalue,*) bgstress
+    case('rakefromglobal')
+      read(pvalue,*) rakefromglobal
     end select
   end do
   close(33)
@@ -431,9 +438,8 @@ program main
   end select
 
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-  !stop
 
-  rake=crake
+   rake=crake
   !nonuniform parameters from file
   if(parameterfromfile) then
     open(99,file=parameter_file,iostat=ios)
@@ -447,6 +453,10 @@ program main
     close(99)
   end if
   rake=rake/180d0*pi
+
+  if(rakefromglobal) then
+    call calcrake(ev11,ev12,convangle,rake)
+  end if
 
   !HACApK setting
   lrtrn=HACApK_init(NCELLg,st_ctl,st_bemv,icomm)
@@ -531,6 +541,7 @@ program main
     coord(i,2)=ycol(i)
     coord(i,3)=zcol(i)
   end do
+
   !ycol=0d0
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
   !if(np==1) st_ctl%param(43)=1
@@ -781,7 +792,7 @@ program main
     end do
     !if(my_rank==0) write(*,*) 'Lb/ds~',rigid*dc(1)/b(1)/sigma(1)/ds0
     if(minval(lbds) < 2.0) then
-      write(*,*) 'warning: element size may be too large. min(Lb/ds)=',minval(lbds)
+      if (my_rank==0) write(*,*) 'warning: element size may be too large. min(Lb/ds)=',minval(lbds)
     end if
     
     x=0d0
@@ -1517,8 +1528,9 @@ end subroutine
     implicit none
     real(8),intent(in)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
     real(8),intent(out)::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:),ds(:)
-    real(8)::rr,vba(0:2),vca(0:2),tmp1,tmp2,tmp3
-
+    real(8)::rr,vba(0:2),vca(0:2),tmp1,tmp2,tmp3,theta
+    theta=0d0 
+    !open(50,file='cas3rake')
     do k=1,NCELLg
       vba(0) = xs2(k)-xs1(k)
       vba(1) = ys2(k)-ys1(k)
@@ -1542,11 +1554,17 @@ end subroutine
       else
         ev11(k) = 1.0d0 ; ev12(k) = 0.0d0 ; ev13(k) = 0.0d0
       end if
-      !if(my_rank==0) write(*,*) ev11(k),ev12(k),ev13(k)
 
       ev21(k) = ev32(k)*ev13(k)-ev33(k)*ev12(k)
       ev22(k) = ev33(k)*ev11(k)-ev31(k)*ev13(k)
       ev23(k) = ev31(k)*ev12(k)-ev32(k)*ev11(k)
+
+      !tmp1=(ev12(k)-atan(theta)*ev11(k))/(atan(theta)*ev21(k)-ev22(k))
+      !tmp2=atan(tmp1)
+      tmp1=atan2(-ev11(k),ev12(k))
+      !if(my_rank==0) write(50,*) ev11(k),ev12(k),90-tmp1/pi*180
+      rake(k)=pi/2-tmp1+convangle*pi/180
+
 
       tmp1=vba(0)*vba(0)+vba(1)*vba(1)+vba(2)*vba(2)
       tmp2=vca(0)*vca(0)+vca(1)*vca(1)+vca(2)*vca(2)
@@ -1555,6 +1573,19 @@ end subroutine
       !if(my_rank==0) write(*,*)ev21(k),ev22(k),ev23(k)
     end do
 
+  end subroutine
+
+  subroutine calcrake(ev11,ev12,convangle,rake)
+    real(8),intent(in)::ev11(:),ev12(:),convangle
+    real(8),intent(out)::rake(:)
+    real(8)::tmp1
+
+    do k=1,ncellg
+      tmp1=atan2(-ev11(k),ev12(k))
+      !if(my_rank==0) write(50,*) ev11(k),ev12(k),90-tmp1/pi*180
+      rake(k)=pi/2-tmp1+convangle*pi/180
+    end do
+    return
   end subroutine
 
   subroutine taudot_3dph()
