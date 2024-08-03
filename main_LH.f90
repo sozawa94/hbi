@@ -50,22 +50,22 @@ program main
   real(8),allocatable::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:)
 
   !parameters for each elements
-  real(8),allocatable::a(:),b(:),dc(:),f0(:),fw(:),vw(:),vc(:),taudot(:),tauddot(:),sigdot(:)
-  real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:)
+  real(8),allocatable::a(:),b(:),dc(:),f0(:),fw(:),vw(:),vc(:),taudot(:),tauddot(:),sigdot(:),vplv(:),values(:,:)
+  real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:),vplvg(:)
 
   !variables
-  real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:),cslip(:)
+  real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:),cslip(:),sigma0(:)
   real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:),lbds(:)
 
   real(8),allocatable::rdata(:)
-  integer::lp,i,i_,j,k,kstart,kend,m,counts,interval,lrtrn,nl,ios,nmain,rk,nout,nout2,nout3,nout4,nout5,file_size,nrjct
+  integer::lp,i,i_,j,k,kstart,kend,m,counts,interval,lrtrn,nl,ios,nmain,rk,nout,nout2,nout3,nout4,nout5,file_size,nrjct,ncol
   integer,allocatable::locid(:)
   integer::hypoloc(1),load,eventcount,thec,inloc,sw
 
   !controls
-  logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal,deepcreep,rakefromglobal
-  logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,forward,inverse,geofromfile,restart,latticeh,debug,bgstress
-  character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw
+  logical::aftershock,buffer,nuclei,slipping,outfield,structured,limitsigma,dcscale,slowslip,slipfinal,deepcreep,rakefromglobal
+  logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,forward,inverse,geofromfile,restart,latticeh,debug,bgstress,relax
+  character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw,param2(20)
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dummy(10)
@@ -156,6 +156,10 @@ program main
   parameterfromfile=.false.
   rakefromglobal=.false.
   debug=.false.
+  structured=.false.
+  relax=.false.
+  dtmax=1e10
+  ncol=0
 
   errold=1.0
   fwid=1e8
@@ -216,6 +220,8 @@ program main
       read (pvalue,*) tmax
     case('dtout')
       read (pvalue,*) dtout
+    case('dtmax')
+      read (pvalue,*) dtmax
     case('eps_r')
       read (pvalue,*) eps_r
     case('eps_h')
@@ -258,12 +264,20 @@ program main
       read(pvalue,*) loc
     case('debug')
       read(pvalue,*) debug
+    case('trelax')
+      read(pvalue,*) trelax
+    case('relax')
+      read(pvalue,*) relax
     case('deepcreep')
       read(pvalue,*) deepcreep
     case('bgstress')
       read(pvalue,*) bgstress
     case('rakefromglobal')
       read(pvalue,*) rakefromglobal
+    case('structured')
+      read(pvalue,*) structured
+    case('parameter_file_ncol')
+      read(pvalue,*) ncol
     end select
   end do
   close(33)
@@ -281,19 +295,23 @@ program main
   select case(problem)
   case('3dp','3dph')
     NCELLg=imax*jmax
-  case('3dht')
-    open(12,file=geofile,iostat=ios)
-    if(ios /= 0) then
-      if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
-      stop
+  case('3dht','3dnt')
+    if(structured) then
+      NCELLg=imax*jmax*2
+    else
+      open(12,file=geofile,iostat=ios)
+      if(ios /= 0) then
+        if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
+        stop
+      end if
+      nl=0
+      do
+        read(12,'()',end=100)
+        nl = nl + 1
+      end do
+100   close(12)
+      ncellg=nl/7
     end if
-    nl=0
-    do
-     read(12,'()',end=100)
-     nl = nl + 1
-    end do
-100 close(12)
-    ncellg=nl/7
     if(my_rank==0) write(*,*) 'NCELLg',ncellg
   end select
 
@@ -306,7 +324,7 @@ program main
   allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg))
   allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),f0g(NCELLg))
   allocate(taug(NCELLg),sigmag(NCELLg),velG(NCELLg),rake(NCELLg))
-  allocate(taudotg(NCELLg),sigdotg(NCELLg))
+  allocate(taudotg(NCELLg),sigdotg(NCELLg),vplvg(NCELLg))
 
   xcol=0d0;ycol=0d0;zcol=0d0;ds=0d0
 
@@ -396,33 +414,38 @@ program main
     ds=ds0*ds0
 
   case('3dnt','3dht')
-    !.stl format
-    open(12,file=geofile,iostat=ios)
-    if(ios /= 0) then
-      if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
-      stop
-    end if
 
-    do while(.true.)
-      read(12,*) dum
-      if(dum=='facet') exit
-    end do
-    !write(*,*) ios
-    do k=1,ncellg
-      read(12,*) !outer loop
-      read(12,*) dum,xs1(k),ys1(k),zs1(k) !vertex
-      read(12,*) dum,xs2(k),ys2(k),zs2(k) !vertex
-      read(12,*) dum,xs3(k),ys3(k),zs3(k) !vertex
-      read(12,*) !end loop
-      read(12,*) !endfacet
-      read(12,*) !facet
-      xcol(k)=(xs1(k)+xs2(k)+xs3(k))/3
-      ycol(k)=(ys1(k)+ys2(k)+ys3(k))/3
-      zcol(k)=(zs1(k)+zs2(k)+zs3(k))/3
-    !  write(*,*)ios
-      !if(my_rank==0)write(*,'(9e17.8)') xs1(k),ys1(k),zs1(k),xs2(k),ys2(k),zs2(k),xs3(k),ys3(k),zs3(k)
-    end do
-    !coordinate3dns(NCELLg,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3)
+    if(structured) then
+      call coordinate3dns(NCELLg,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3)
+    else
+      !.stl format
+      open(12,file=geofile,iostat=ios)
+      if(ios /= 0) then
+        if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
+        stop
+      end if
+
+      do while(.true.)
+        read(12,*) dum
+        if(dum=='facet') exit
+      end do
+      !write(*,*) ios
+      do k=1,ncellg
+        read(12,*) !outer loop
+        read(12,*) dum,xs1(k),ys1(k),zs1(k) !vertex
+        read(12,*) dum,xs2(k),ys2(k),zs2(k) !vertex
+        read(12,*) dum,xs3(k),ys3(k),zs3(k) !vertex
+        read(12,*) !end loop
+        read(12,*) !endfacet
+        read(12,*) !facet
+        xcol(k)=(xs1(k)+xs2(k)+xs3(k))/3
+        ycol(k)=(ys1(k)+ys2(k)+ys3(k))/3
+        zcol(k)=(zs1(k)+zs2(k)+zs3(k))/3
+      !  write(*,*)ios
+        !if(my_rank==0)write(*,'(9e17.8)') xs1(k),ys1(k),zs1(k),xs2(k),ys2(k),zs2(k),xs3(k),ys3(k),zs3(k)
+      end do
+    end if
+   
 
     !mesh format created by .msh => mkelm.c
     ! open(20,file=geofile,status='old',iostat=ios)
@@ -447,11 +470,49 @@ program main
       if(my_rank==0) write(*,*) 'error: Failed to open parameter file'
       stop
     end if
+    read(99, *, iostat=ios) param2(1:ncol)
+    allocate(values(NCELLg,ncol))
     do i=1,ncellg
-      read(99,*) rake(i),ag(i),bg(i),dcg(i),f0g(i),taug(i),sigmag(i),velg(i),taudotg(i),sigdotg(i)
+      read(99,*) values(i,1:ncol)
     end do
+
+    do k=1,ncol
+      !write(*,*) param2(k)
+      select case(param2(k))
+      case('rake')
+        rake(:)=values(:,k)
+      case('a')
+        ag(:)=values(:,k)
+      case('b')
+        bg(:)=values(:,k)
+      case('dc')
+        dcg(:)=values(:,k)
+      case('f0')
+        f0g(:)=values(:,k)
+      case('tau')
+        taug(:)=values(:,k)
+      case('sigma')
+        sigmag(:)=values(:,k)
+      case('vel')
+        velg(:)=values(:,k)
+      case('taudot')
+        taudotg(:)=values(:,k)
+      case('sigmadot')
+        sigdotg(:)=values(:,k)
+      case('vpl')
+        vplvg(:)=values(:,k)
+      end select
+    end do
+
+    deallocate(values)
+
+    ! do i=1,ncellg
+    !   read(99,*) rake(i),ag(i),bg(i),dcg(i),f0g(i),taug(i),sigmag(i),velg(i),taudotg(i),sigdotg(i)
+    ! end do
+
     close(99)
   end if
+
   rake=rake/180d0*pi
 
   if(rakefromglobal) then
@@ -569,9 +630,9 @@ program main
   end if
   !write(*,*) my_rank,st_ctl%lpmd(33),st_ctl%lpmd(37)
   allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL))
-  allocate(psi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL),cslip(NCELL))
+  allocate(psi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL),idisp(NCELL),cslip(NCELL),sigma0(NCELL))
   psi=0d0;vel=0d0;tau=0d0;sigma=0d0;disp=0d0
-  allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL),lbds(NCELL))
+  allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL),lbds(NCELL),vplv(NCELL))
   taudot=0d0;sigdot=0d0
 
   !uniform frictional parameters
@@ -579,6 +640,7 @@ program main
   b=b0
   dc=dc0
   f0=mu0
+  vplv=vpl
 
   if(.not.backslip) then
     taudot=sr
@@ -587,15 +649,57 @@ program main
 
 
   if(parameterfromfile) then
-    do i=1,NCELL
-      i_=st_sum%lodc(i)
-      a(i)=ag(i_)
-      b(i)=bg(i_)
-      dc(i)=dcg(i_)
-      f0(i)=f0g(i_)
-      taudot(i)=taudotg(i_)
-      sigdot(i)=sigdotg(i_)
+    do k=1,ncol
+      !write(*,*) param2(k)
+      select case(param2(k))
+      case('a')
+        do i=1,NCELL
+          i_=st_sum%lodc(i)
+          a(i)=ag(i_)
+        end do
+      case('b')
+        do i=1,NCELL
+          i_=st_sum%lodc(i)
+          b(i)=bg(i_)
+        end do      
+      case('dc')
+        do i=1,NCELL
+          i_=st_sum%lodc(i)
+          dc(i)=dcg(i_)
+        end do
+      case('f0')
+        do i=1,NCELL
+          i_=st_sum%lodc(i)
+          f0(i)=f0g(i_)
+        end do
+      case('taudot')
+        do i=1,NCELL
+          i_=st_sum%lodc(i)
+          taudot(i)=taudotg(i_)
+        end do
+      case('sigmadot')
+        do i=1,NCELL
+          i_=st_sum%lodc(i)
+          sigdot(i)=sigdotg(i_)
+        end do
+      case('vpl')
+        do i=1,NCELL
+          i_=st_sum%lodc(i)
+          vplv(i)=vplvg(i_)
+        end do
+      end select
     end do
+
+    ! do i=1,NCELL
+    !   i_=st_sum%lodc(i)
+    !   a(i)=ag(i_)
+    !   b(i)=bg(i_)
+    !   dc(i)=dcg(i_)
+    !   f0(i)=f0g(i_)
+    !   taudot(i)=taudotg(i_)
+    !   sigdot(i)=sigdotg(i_)
+    !   vplv(i)=vplvg(i_)
+    ! end do
   end if
 
   if(deepcreep) then
@@ -759,30 +863,42 @@ program main
     sigma=sigmainit
     tau=tauinit
     !if(my_rank==0) write(*,*) tau
-
     if(muinit.ne.0d0) tau=sigma*muinit
     vel=tau/abs(tau)*velinit
-    mu=tau/sigma
-    psi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
-    disp=0d0
+   
 
     !non-uniform initial stress from file
     if(parameterfromfile) then
-      if(my_rank == 0) write(*,*) 'initial conditions from parameter file'
-      do i=1,NCELL
-        i_=st_sum%lodc(i)
-        tau(i)=taug(i_)
-        sigma(i)=sigmag(i_)
-        vel(i)=velg(i_)
-        mu(i)=tau(i)/sigma(i)
-        psi(i)=a(i)*dlog(2*vref/vel(i)*sinh(tau(i)/sigma(i)/a(i)))
-        !write(*,*) tau(i),sigma(i),vel(i)
+      do k=1,ncol
+      select case(param2(k))
+        case('tau')
+          do i=1,NCELL
+            i_=st_sum%lodc(i)
+            tau(i)=taug(i_)
+          end do
+        case('sigma')
+          do i=1,NCELL
+            i_=st_sum%lodc(i)
+            sigma(i)=sigmag(i_)
+          end do
+        case('vel')
+          do i=1,NCELL
+            i_=st_sum%lodc(i)
+            vel(i)=velg(i_)
+          end do
+        end select
       end do
     end if
 
     if(bgstress) then
       call initcond()
     end if
+
+    sigma0=sigma
+    mu=tau/sigma
+    psi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
+    disp=0d0
+
 
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
@@ -1453,39 +1569,45 @@ end subroutine
       integer,intent(in)::NCELLg
       real(8),intent(out)::xcol(:),ycol(:),zcol(:)
       real(8),intent(out)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
-      integer::i,j,k,imax,jmax
+      integer::i,j,k
+      integer,parameter::ndata=256
       real(8)::dipangle,xc,yc,zc,amp
-      real(4)::xl(0:2048,0:2048)
+      real(4)::xl(ndata+1,ndata+1)
 
-      dipangle=30d0*pi/180d0
+      open(30,file='examples/roughsurf.txt')
+      do k=1,ndata+1
+        read(30,*) xl(k,1:ndata+1)
+      end do
+      close(30)
+
       do i=1,imax
         do j=1,jmax
           k=(i-1)*jmax+j
           !xcol(k)=(i-imax/2-0.5d0)*ds0
           !zcol(k)=-(j-0.5d0)*ds0-0.001d0
           xc=(i-imax/2-0.5)*ds0
-          yc=-(j-0.5d0)*ds0*cos(dipangle)
-          zc=-(j-0.5d0)*ds0*sin(dipangle)-1d-3!-100d0
+          yc=0.0
+          zc=(j-jmax/2-0.5)*ds0
   
           xs1(2*k-1)=xc-0.5d0*ds0
           xs2(2*k-1)=xc+0.5d0*ds0
           xs3(2*k-1)=xc-0.5d0*ds0
-          zs1(2*k-1)=zc+0.5d0*ds0*sin(dipangle)
-          zs2(2*k-1)=zc+0.5d0*ds0*sin(dipangle)
-          zs3(2*k-1)=zc-0.5d0*ds0*sin(dipangle)
-          ys1(2*k-1)=yc+0.5d0*ds0*cos(dipangle)
-          ys2(2*k-1)=yc+0.5d0*ds0*cos(dipangle)
-          ys3(2*k-1)=yc-0.5d0*ds0*cos(dipangle)
+          zs1(2*k-1)=zc+0.5d0*ds0
+          zs2(2*k-1)=zc+0.5d0*ds0
+          zs3(2*k-1)=zc-0.5d0*ds0
+          ys1(2*k-1)=xl(i,j)
+          ys2(2*k-1)=xl(i+1,j)
+          ys3(2*k-1)=xl(i,j+1)
   
           xs2(2*k)=xc+0.5d0*ds0
           xs1(2*k)=xc+0.5d0*ds0
           xs3(2*k)=xc-0.5d0*ds0
-          zs2(2*k)=zc-0.5d0*ds0*sin(dipangle)
-          zs1(2*k)=zc+0.5d0*ds0*sin(dipangle)
-          zs3(2*k)=zc-0.5d0*ds0*sin(dipangle)
-          ys2(2*k)=yc-0.5d0*ds0*cos(dipangle)
-          ys1(2*k)=yc+0.5d0*ds0*cos(dipangle)
-          ys3(2*k)=yc-0.5d0*ds0*cos(dipangle)
+          zs2(2*k)=zc-0.5d0*ds0
+          zs1(2*k)=zc+0.5d0*ds0
+          zs3(2*k)=zc-0.5d0*ds0
+          ys2(2*k)=xl(i+1,j+1)
+          ys1(2*k)=xl(i+1,j)
+          ys3(2*k)=xl(i,j+1)
   
         end do
       end do
@@ -1493,20 +1615,31 @@ end subroutine
         xcol(k)=(xs1(k)+xs2(k)+xs3(k))/3.d0
         ycol(k)=(ys1(k)+ys2(k)+ys3(k))/3.d0
         zcol(k)=(zs1(k)+zs2(k)+zs3(k))/3.d0
-        write(*,*) xcol(k),ycol(k),zcol(k)
+        !write(*,*) xcol(k),ycol(k),zcol(k)
       end do
   
       ! open(30,file='roughsurf.txt')
-      ! do k=0,2048
-      !   read(30,*) xl(k,0:2048)
+      ! do k=0,255
+      !   read(30,*) xl(k,0:255)
       ! end do
       ! close(30)
       ! amp=0.000d0
       ! if(my_rank.eq.0) open(32,file='tmp')
       ! do i=1,NCELLg
-      !   xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
-      !   zcol(i)=(zs1(i)+zs2(i)+zs3(i))/3.d0
-      !
+      !   ! xcol(i)=(xs1(i)+xs2(i)+xs3(i))/3.d0
+      !   ! zcol(i)=(zs1(i)+zs2(i)+zs3(i))/3.d0
+      
+      !   ! j=int((xs1(i)+10)*102.4)
+      !   ! k=int(-102.4*zs1(i))
+      !   ! ys1(i)=xl(j,k)*amp
+      !   ! j=int((xs2(i)+10)*102.4)
+      !   ! k=int(-102.4*zs2(i))
+      !   ! ys2(i)=xl(j,k)*amp
+      !   ! j=int((xs3(i)+10)*102.4)
+      !   ! k=int(-102.4*zs3(i))
+      !   ! ys3(i)=xl(j,k)*amp
+      !   ! ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
+
       !   j=int((xs1(i)+10)*102.4)
       !   k=int(-102.4*zs1(i))
       !   ys1(i)=xl(j,k)*amp
@@ -1517,6 +1650,8 @@ end subroutine
       !   k=int(-102.4*zs3(i))
       !   ys3(i)=xl(j,k)*amp
       !   ycol(i)=(ys1(i)+ys2(i)+ys3(i))/3.d0
+
+
       !   if(my_rank.eq.0) write(32,*) xcol(i),ycol(i),zcol(i)
       ! end do
   
@@ -1561,9 +1696,9 @@ end subroutine
 
       !tmp1=(ev12(k)-atan(theta)*ev11(k))/(atan(theta)*ev21(k)-ev22(k))
       !tmp2=atan(tmp1)
-      tmp1=atan2(-ev11(k),ev12(k))
+      !tmp1=atan2(-ev11(k),ev12(k))
       !if(my_rank==0) write(50,*) ev11(k),ev12(k),90-tmp1/pi*180
-      rake(k)=pi/2-tmp1+convangle*pi/180
+      !rake(k)=pi/2-tmp1+convangle*pi/180
 
 
       tmp1=vba(0)*vba(0)+vba(1)*vba(1)+vba(2)*vba(2)
@@ -1673,7 +1808,7 @@ end subroutine
 
     !matrix-vector mutiplation
     if(backslip) then
-      st_vel%vs=veltmp-vpl
+      st_vel%vs=veltmp-vplv
     else
       st_vel%vs=veltmp
     end if
@@ -1701,7 +1836,11 @@ end subroutine
     !$omp parallel do
     do i=1,NCELL
       sum_gs(i)=sum_gs(i)+taudot(i)
-      sum_gn(i)=sum_gn(i)+sigdot(i)
+      if(relax) then
+        sum_gn(i)=sum_gn(i)+sigdot(i)-(sigmatmp(i)-sigma0(i))/trelax
+      else
+        sum_gn(i)=sum_gn(i)+sigdot(i)
+      end if
       !write(*,*) sum_gs(i)
       call deriv_d(sum_gs(i),sum_gn(i),psitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
     enddo
@@ -1877,6 +2016,7 @@ end subroutine
     end do
 
     hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW))
+    hnext=min(hnext,dtmax)
     ! if(outpertime) then
     !   hnext=min(hnext,dtout*365*24*3600)
     ! end if
@@ -1969,7 +2109,7 @@ end subroutine
 
       xnew=x+h
       if(xnew-x<1.d-15) then
-        if(my_rank.eq.0)write(*,*)'error: dt is too small'
+        if(my_rank.eq.0)write(*,*)'error: Runge-Kutta method did not converge'
         stop
       end if
 
