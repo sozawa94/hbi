@@ -12,7 +12,7 @@ module m_HACApK_calc_entry_ij
     real(8),pointer::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
     real(8),pointer::ys1(:),ys2(:),ys3(:),ys4(:)
     real(8),pointer::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:)
-    real(8),pointer::ds(:)
+    real(8),pointer::ds(:),dsl(:)
     real(8)::w
     !real(8),pointer::ds
     character(128)::v,md
@@ -66,11 +66,11 @@ contains
     !   !write(*,*)HACApK_entry_ij
     case('3dhr','3dph')
       fullspace=.false.
-      HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%v,st_bemv%rake,st_bemv%w,fullspace)
+      HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%dsl,st_bemv%v,st_bemv%rake,st_bemv%w,fullspace)
       !write(*,*)HACApK_entry_ij
     case('3dnr')
       fullspace=.true.
-      HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%v,st_bemv%rake,st_bemv%w,fullspace)
+      HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%dsl,st_bemv%v,st_bemv%rake,st_bemv%w,fullspace)
       !write(*,*)HACApK_entry_ij
     case('3dn','3dnt')
       !HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
@@ -1010,16 +1010,16 @@ end function matels2dpa_ij
 
     return
   end subroutine
-  real(8) function okada_ij(i,j,xcol,ycol,zcol,ang,angd,v,rake,w,fullspace)
+  real(8) function okada_ij(i,j,xcol,ycol,zcol,ang,angd,dsl,v,rake,w,fullspace)
     implicit none
     integer,intent(in)::i,j
     !type(st_HACApK_calc_entry) :: st_bemv
-    real(8),intent(in)::xcol(:),ycol(:),zcol(:),ang(:),angd(:),rake(:),w
+    real(8),intent(in)::xcol(:),ycol(:),zcol(:),ang(:),angd(:),dsl(:),rake(:),w
     character(128),intent(in)::v
     logical,intent(in)::fullspace
     integer::iret
     real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha
-    real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,z,depth,dip
+    real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,z,depth,dip,r
 
     alpha=(1d0+(0.5d0/pois-1d0))/(1d0+2d0*(0.5d0/pois-1d0))
     !rotation so that strike is parallel to y axis
@@ -1037,12 +1037,13 @@ end function matels2dpa_ij
     z=zcol(i)
     depth=-zcol(j)
     dip=angd(j)*180/pi
+    r=dsl(j)/w
     !rake=st_bemv%rake
    !st_bemv%dip(j)=pi/180
    !write(*,*)w
    !
 
-    call okada(alpha,dx/w,dy/w,z/w,depth/w,dip,-0.5d0,0.5d0,-0.5d0,0.5d0,cos(rake(j)),sin(rake(j)),0d0,&
+    call okada(alpha,dx/w,dy/w,z/w,depth/w,dip,-0.5d0*r,0.5d0*r,-0.5d0*r,0.5d0*r,cos(rake(j)),sin(rake(j)),0d0,&
    &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,fullspace)
   ! write(*,*) st_bemv%zcol(i),-st_bemv%zcol(j),st_bemv%angd(j)*180/pi
    ! write(*,*)uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz

@@ -42,7 +42,7 @@ program main
   real(8)::time1,time2,time3,time4,timer,timeH
 
   !for fault geometry
-  real(8),allocatable::xcol(:),ycol(:),zcol(:),ds(:)
+  real(8),allocatable::xcol(:),ycol(:),zcol(:),ds(:),dsl(:)
   real(8),allocatable::xs1(:),xs2(:),xs3(:),xs4(:) !for 3dp
   real(8),allocatable::zs1(:),zs2(:),zs3(:),zs4(:) !for 3dp
   real(8),allocatable::ys1(:),ys2(:),ys3(:),ys4(:) !for 3dn
@@ -51,7 +51,7 @@ program main
 
   !parameters for each elements
   real(8),allocatable::a(:),b(:),dc(:),f0(:),fw(:),vw(:),vc(:),taudot(:),tauddot(:),sigdot(:),vplv(:),values(:,:)
-  real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:),vplvg(:)
+  real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:),vplvg(:),cslipG(:)
 
   !variables
   real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:),cslip(:),sigma0(:)
@@ -63,12 +63,12 @@ program main
   integer::hypoloc(1),load,eventcount,thec,inloc,sw
 
   !controls
-  logical::aftershock,buffer,nuclei,slipping,outfield,structured,limitsigma,dcscale,slowslip,slipfinal,deepcreep,rakefromglobal
+  logical::dilatancy,buffer,nuclei,slipping,outfield,structured,limitsigma,dcscale,slowslip,slipfinal,deepcreep,rakefromglobal
   logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,forward,inverse,geofromfile,restart,latticeh,debug,bgstress,relax
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw,param2(20)
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
-  real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dummy(10)
+  real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dummy(10),tdil,cdil
   real(8)::alpha,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo,convangle
 
   !temporal variable
@@ -158,6 +158,7 @@ program main
   debug=.false.
   structured=.false.
   relax=.false.
+  dilatancy=.false.
   dtmax=1e10
   ncol=0
 
@@ -250,6 +251,10 @@ program main
       read(pvalue,*) dipangle
     case('fwid')
       read(pvalue,*) fwid
+    case('tdil')
+      read(pvalue,*) tdil
+    case('cdil')
+      read(pvalue,*) cdil
     case('restart')
       read(pvalue,*) restart
     case('latticeh')
@@ -276,6 +281,8 @@ program main
       read(pvalue,*) rakefromglobal
     case('structured')
       read(pvalue,*) structured
+    case('dilatancy')
+      read(pvalue,*) dilatancy
     case('parameter_file_ncol')
       read(pvalue,*) ncol
     end select
@@ -321,9 +328,9 @@ program main
   end if
 
   !allocation
-  allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg))
+  allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg),dsl(NCELLg))
   allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),f0g(NCELLg))
-  allocate(taug(NCELLg),sigmag(NCELLg),velG(NCELLg),rake(NCELLg))
+  allocate(taug(NCELLg),sigmag(NCELLg),velG(NCELLg),rake(NCELLg),cslipG(NCELLg))
   allocate(taudotg(NCELLg),sigdotg(NCELLg),vplvg(NCELLg))
 
   xcol=0d0;ycol=0d0;zcol=0d0;ds=0d0
@@ -404,9 +411,10 @@ program main
      stop
     end if
     do i=1,NCELLg
-     read(20,*) xcol(i),ycol(i),zcol(i),ang(i),angd(i)
-     ds(i)=ds0*ds0
+     read(20,*) xcol(i),ycol(i),zcol(i),ang(i),angd(i),dsl(i)     
+     ds(i)=dsl(i)*dsl(i)
     end do
+    ds0=minval(dsl)
     close(20)
 
   case('3dph')
@@ -477,7 +485,7 @@ program main
     end do
 
     do k=1,ncol
-      !write(*,*) param2(k)
+      if(my_rank==0) write(*,*) param2(k)
       select case(param2(k))
       case('rake')
         rake(:)=values(:,k)
@@ -558,7 +566,7 @@ program main
 
   case('3dhr','3dnr','3dph')
     allocate(st_bemv%xcol(NCELLg),st_bemv%ycol(NCELLg),st_bemv%zcol(NCELLg))
-    allocate(st_bemv%ang(NCELLg),st_bemv%angd(NCELLg),st_bemv%rake(NCELLg))
+    allocate(st_bemv%ang(NCELLg),st_bemv%angd(NCELLg),st_bemv%rake(NCELLg),st_bemv%dsl(NCELLg))
     st_bemv%xcol=xcol
     st_bemv%ycol=ycol
     st_bemv%zcol=zcol
@@ -566,7 +574,9 @@ program main
     st_bemv%ang=ang
     st_bemv%problem=problem
     st_bemv%rake=rake
+    st_bemv%dsl=dsl
     st_bemv%w=ds0
+
   case('3dht','3dnt')
     allocate(st_bemv%xcol(NCELLg),st_bemv%ycol(NCELLg),st_bemv%zcol(NCELLg))
     allocate(st_bemv%xs1(NCELLg),st_bemv%xs2(NCELLg),st_bemv%xs3(NCELLg))
@@ -1231,6 +1241,7 @@ program main
           write(44,'(i0,i7,f17.2,f14.4,i8)') eventcount,k,onset_time,(log10(moment*rigid*sg)+5.9)/1.5,hypoloc
         end if
         cslip=disp-idisp
+        call output_EQslip()
         ! if(my_rank<npd) then
         !   write(nout5) cslip
         ! end if
@@ -1339,26 +1350,26 @@ contains
 
   end subroutine
 
-  ! subroutine output_EQslip()
-  !   implicit none
-  !   integer::nn,rcounts(npd),displs(npd+1)
-  !   real(8)::EQslipG(ncellg)
-  !   nout=100
+  subroutine output_EQslip()
+    implicit none
+    integer::nn,rcounts(npd),displs(npd+1)
+    real(8)::EQslipG(ncellg)
+    nout=100
 
-  !   call MPI_GATHER(ncell,1,MPI_INT,rcounts,1,MPI_INT,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    call MPI_GATHER(ncell,1,MPI_INT,rcounts,1,MPI_INT,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
 
-  !   displs(1)=0
-  !   do nn=2,npd+1
-  !     displs(nn)=displs(nn-1)+rcounts(nn-1)
-  !   end do
+    displs(1)=0
+    do nn=2,npd+1
+      displs(nn)=displs(nn-1)+rcounts(nn-1)
+    end do
 
-  !   call MPI_GATHERv(vel,NCELL,MPI_REAL8,velG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    call MPI_GATHERv(cslip,NCELL,MPI_REAL8,cslipG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
 
-  !   if(my_rank==0) then
-  !     write(nout) velG
-  !   end if
+    if(my_rank==0) then
+      write(nout5) cslipG
+    end if
 
-  ! end subroutine
+  end subroutine
   ! subroutine output_field_init()
   !   implicit none
   !   integer::nn,rcounts(npd),displs(npd+1)
@@ -1877,6 +1888,9 @@ end subroutine
       dpsidt=-veltmp/dcv*(psitmp-psiss)
     end select
 
+
+    if(dilatancy) dsigdt=-(sigmatmp-sigmainit)/tdil-cdil*dpsidt
+
     !regularized aing law
     !dpsidt=b/dc*vref*dexp((f0-psitmp)/b)-b*abs(veltmp)/dc
 
@@ -2009,7 +2023,7 @@ end subroutine
 
       xnew=x+h
       if(xnew-x<1.d-15) then
-        if(my_rank.eq.0) write(*,*) 'error: dt is too small'
+        if(my_rank.eq.0) write(*,*) 'error: Runge-Kutta method did not converge'
         stop
       end if
 
