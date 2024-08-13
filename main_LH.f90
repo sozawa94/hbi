@@ -1874,7 +1874,11 @@ end subroutine
 
     select case(evlaw)
     case('aging')
-      dpsidt=b/dc*vref*dexp((f0-psitmp)/b)-b*abs(veltmp)/dc    !slip law
+      if(b==0) then
+        dpsidt=0d0
+      else 
+        dpsidt=b/dc*vref*dexp((f0-psitmp)/b)-b*abs(veltmp)/dc
+      end if
     case('slip')
       fss=f0+(a-b)*dlog(abs(veltmp)/vref)
       dpsidt=-abs(veltmp)/dc*(abs(tautmp)/sigmatmp-fss)
