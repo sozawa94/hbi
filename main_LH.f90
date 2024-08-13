@@ -1354,7 +1354,6 @@ contains
     implicit none
     integer::nn,rcounts(npd),displs(npd+1)
     real(8)::EQslipG(ncellg)
-    nout=100
 
     call MPI_GATHER(ncell,1,MPI_INT,rcounts,1,MPI_INT,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
 
@@ -1879,12 +1878,12 @@ end subroutine
     case('slip')
       fss=f0+(a-b)*dlog(abs(veltmp)/vref)
       dpsidt=-abs(veltmp)/dc*(abs(tautmp)/sigmatmp-fss)
-    case('dynamic')
+    case('flashheating')
       fss=f0+(a-b)*dlog(abs(veltmp)/vref)
       fss=fw+(fss-fw)/(1.d0+(veltmp/vw)**8)**0.125d0 !flash heating
       psiss=a*dlog(2*vref/veltmp*sinh(fss/a))
       !dcv=dc*(1+(veltmp/vref)**2)**(0.5)
-      dcv=dc*(1+log((veltmp/vref)+1))
+      !dcv=dc*(1+log((veltmp/vref)+1))
       dpsidt=-veltmp/dcv*(psitmp-psiss)
     end select
 
