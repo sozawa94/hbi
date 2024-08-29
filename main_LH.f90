@@ -896,10 +896,6 @@ program main
     tau=tauinit
     !if(my_rank==0) write(*,*) tau
     if(muinit.ne.0d0) tau=sigma*muinit
-    vel=tau/abs(tau)*velinit
-    if(viscous) vflow=pre*tau**nflow
-
-   
 
     !non-uniform initial stress from file
     if(parameterfromfile) then
@@ -923,6 +919,12 @@ program main
         end select
       end do
     end if
+
+    vel=tau/abs(tau)*velinit   
+    if(viscous) vflow=pre*tau**nflow
+
+    write(*,*) vel
+
 
     if(bgstress) then
       call initcond()
