@@ -923,9 +923,6 @@ program main
     vel=tau/abs(tau)*velinit   
     if(viscous) vflow=pre*tau**nflow
 
-    write(*,*) vel
-
-
     if(bgstress) then
       call initcond()
     end if
