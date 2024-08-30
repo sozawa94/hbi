@@ -1,0 +1,23 @@
+problem 2dp
+evlaw mCNS
+ncellg 1000 !number of elements
+loc 500 !location of local data output
+filenumber    0 !id of output files
+interval  100 !output and checkpointing every 100 steps
+nstep     20000 !time steps
+dtout 5.0 !output every dtout year
+tmax   5000 !maximum time (s)
+backslip T !loading with backslip 
+vpl          1d-9 !backslip rate (m/s)
+ds 0.05 !element length (km)
+parameterfromfile T
+parameter_file "examples/paramCNS.dat"
+parameter_file_ncol 1
+b 0.010
+dc 0.005 !(m)
+vref 1e-9
+MCNS 3.0 !modified CNS model parameter
+f0 0.60
+tauinit 15.0 !(MPa)
+sigmainit 25.0 !(MPa)
+velinit 2d-9
