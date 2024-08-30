@@ -54,8 +54,8 @@ program main
   real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:),vplvg(:),cslipG(:),etavg(:)
 
   !variables
-  real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:),cslip(:),sigma0(:)
-  real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:),lbds(:)
+  real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),slip(:),mu(:),rupt(:),islip(:),velp(:),cslip(:),sigma0(:)
+  real(8),allocatable::taus(:),taud(:),vels(:),veld(:),slips(:),slipd(:),rake(:),lbds(:)
 
   real(8),allocatable::rdata(:)
   integer::lp,i,i_,j,k,kstart,kend,m,counts,interval,lrtrn,nl,ios,nmain,rk,nout,nout2,nout3,nout4,nout5,nout6,file_size,nrjct,ncol
@@ -66,9 +66,9 @@ program main
   logical::dilatancy,buffer,nuclei,slipping,outfield,structured,limitsigma,dcscale,slowslip,slipfinal,deepcreep,rakefromglobal,viscous
   logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,forward,inverse,geofromfile,restart,latticeh,debug,bgstress,relax
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw,param2(20)
-  real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG,etav0
+  real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meanslip,meanslipG,moment0,mvel,mvelG,etav0
   real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
-  real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dummy(10),tdil,cdil,nflow
+  real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dummy(10),tdil,cdil,nflow,MCNS,vref
   real(8)::alpha,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo,convangle
 
   !temporal variable
@@ -133,6 +133,7 @@ program main
   nmain=1000000
   eps_r=1d-4
   eps_h=1d-4
+  vref=1e-6
   velmax=1d7
   velmin=1d-20
   tmax=1d4
@@ -202,6 +203,10 @@ program main
       read (pvalue,*) dc0
     case('f0')
       read (pvalue,*) mu0
+    case('vref')
+      read (pvalue,*) vref
+    case('MCNS')
+      read (pvalue,*) MCNS
     case('etav')
       read (pvalue,*) etav0
     case('wid')
@@ -655,9 +660,9 @@ program main
   end if
   !write(*,*) my_rank,st_ctl%lpmd(33),st_ctl%lpmd(37)
   allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL))
-  allocate(psi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),disp(NCELL),mu(NCELL))
-  allocate(idisp(NCELL),cslip(NCELL),sigma0(NCELL),etav(NCELL),pre(NCELL),vflow(NCELL))
-  psi=0d0;vel=0d0;tau=0d0;sigma=0d0;disp=0d0;etav=0d0;pre=0d0;vflow=0d0
+  allocate(psi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),slip(NCELL),mu(NCELL))
+  allocate(islip(NCELL),cslip(NCELL),sigma0(NCELL),etav(NCELL),pre(NCELL),vflow(NCELL))
+  psi=0d0;vel=0d0;tau=0d0;sigma=0d0;slip=0d0;etav=0d0;pre=0d0;vflow=0d0
   allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL),lbds(NCELL),vplv(NCELL))
   taudot=0d0;sigdot=0d0
 
@@ -811,7 +816,7 @@ program main
       write(fname,'("output/slip",i0,"_",i0,".dat")') number,my_rank
       open(nout,file=fname,form='unformatted',access='stream')
       read(nout) rdata
-      disp(1:NCELL)=rdata(m-NCELL+1:m)
+      slip(1:NCELL)=rdata(m-NCELL+1:m)
       close(nout)
 
       write(fname,'("output/sigma",i0,"_",i0,".dat")') number,my_rank
@@ -871,7 +876,7 @@ program main
     call MPI_bcast(vel,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
     call MPI_bcast(tau,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
     call MPI_bcast(sigma,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
-    call MPI_bcast(disp,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
+    call MPI_bcast(slip,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
 
     s=0d0
     do i=1,NCELL
@@ -930,7 +935,8 @@ program main
     sigma0=sigma
     mu=tau/sigma
     psi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
-    disp=0d0
+    if(evlaw=='mCNS') psi=tau/sigma-a*dlog(vel/vref)
+    slip=0d0
 
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
@@ -1049,16 +1055,16 @@ program main
     call MPI_reduce(minnorm,minnormG,1,MPI_REAL8,MPI_MIN,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
     call MPI_bcast(minnormG,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
 
-    ! meandisp=sum(disp*ds)/sum(ds)
-    meandisp=0d0
+    ! meanslip=sum(slip*ds)/sum(ds)
+    meanslip=0d0
     do i=1,NCELL
       i_=st_sum%lodc(i)
-      meandisp=meandisp+disp(i)*ds(i_)
+      meanslip=meanslip+slip(i)*ds(i_)
     end do
-    !call MPI_ALLREDUCE(meandisp,meandispG,1,MPI_REAL8,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_reduce(meandisp,meandispG,1,MPI_REAL8,MPI_SUM,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
-    call MPI_bcast(meandispG,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
-    meandispG=meandispG/sg
+    !call MPI_ALLREDUCE(meanslip,meanslipG,1,MPI_REAL8,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_reduce(meanslip,meanslipG,1,MPI_REAL8,MPI_SUM,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    call MPI_bcast(meanslipG,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
+    meanslipG=meanslipG/sg
 
     ! meanmu=sum(mu*ds)
     meanmu=0d0
@@ -1103,7 +1109,7 @@ program main
 
 
   !do i=1,NCELLg
-  !  write(50,'(8e15.6,i6)') xcol(i),ycol(i),vel(i),tau(i),sigma(i),mu(i),disp(i),x,k
+  !  write(50,'(8e15.6,i6)') xcol(i),ycol(i),vel(i),tau(i),sigma(i),mu(i),slip(i),x,k
   !end do
   !write(50,*)
 
@@ -1139,10 +1145,11 @@ program main
       psi(i) = y(3*i-2)
       tau(i) = y(3*i-1)
       sigma(i)=y(3*i)
-      disp(i)=disp(i)+(vel(i)+vflow(i))*dtdid*0.5d0 !2nd order
+      slip(i)=slip(i)+(vel(i)+vflow(i))*dtdid*0.5d0 !2nd order
       vel(i)= 2*vref*exp(-psi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
+      if(evlaw=='mCNS') vel(i) = vref*dexp((tau(i)/sigma(i)-psi(i))/a(i))
       if(viscous) vflow(i)=pre(i)*tau(i)**nflow
-      disp(i)=disp(i)+(vel(i)+vflow(i))*dtdid*0.5d0
+      slip(i)=slip(i)+(vel(i)+vflow(i))*dtdid*0.5d0
       mu(i)=tau(i)/sigma(i)
     end do
     !$omp end parallel do
@@ -1174,16 +1181,16 @@ program main
     call MPI_reduce(minnorm,minnormG,1,MPI_REAL8,MPI_MIN,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
     call MPI_bcast(minnormG,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
 
-    ! meandisp=sum(disp*ds)/sum(ds)
-    meandisp=0d0
+    ! meanslip=sum(slip*ds)/sum(ds)
+    meanslip=0d0
     do i=1,NCELL
       i_=st_sum%lodc(i)
-      meandisp=meandisp+disp(i)*ds(i_)
+      meanslip=meanslip+slip(i)*ds(i_)
     end do
-    !call MPI_ALLREDUCE(meandisp,meandispG,1,MPI_REAL8,MPI_SUM,MPI_COMM_WORLD,ierr)
-    call MPI_reduce(meandisp,meandispG,1,MPI_REAL8,MPI_SUM,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
-    call MPI_bcast(meandispG,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
-    meandispG=meandispG/sg
+    !call MPI_ALLREDUCE(meanslip,meanslipG,1,MPI_REAL8,MPI_SUM,MPI_COMM_WORLD,ierr)
+    call MPI_reduce(meanslip,meanslipG,1,MPI_REAL8,MPI_SUM,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    call MPI_bcast(meanslipG,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
+    meanslipG=meanslipG/sg
 
     ! meanmu=sum(mu*ds)
     meanmu=0d0
@@ -1239,8 +1246,8 @@ program main
       if(mvelG>1d-2) then
         slipping=.true.
         eventcount=eventcount+1
-        moment0=meandispG
-        idisp=disp
+        moment0=meanslipG
+        islip=slip
         hypoloc=mvel_loc(1)
         onset_time=x
         !tout=onset_time
@@ -1248,7 +1255,7 @@ program main
         !onset save
         ! if(slipevery.and.(my_rank<npd)) then
         !   write(nout) vel
-        !   write(nout2) disp
+        !   write(nout2) slip
         !   write(nout3) sigma
         !   write(nout4) tau
         ! end if
@@ -1260,27 +1267,27 @@ program main
       if(mvelG<1d-3) then
         slipping=.false.
         !tout=x
-        moment=meandispG-moment0
+        moment=meanslipG-moment0
         !eventcount=eventcount+1
         !end of an event
         if(my_rank==0) then
           write(44,'(i0,i7,f17.2,f14.4,i8)') eventcount,k,onset_time,(log10(moment*rigid*sg)+5.9)/1.5,hypoloc
         end if
-        cslip=disp-idisp
+        cslip=slip-islip
         call output_EQslip()
         ! if(my_rank<npd) then
         !   write(nout5) cslip
         ! end if
         ! if(slipevery.and.(my_rank<npd)) then
         !   write(nout) vel
-        !   write(nout2) disp
+        !   write(nout2) slip
         !   write(nout3) sigma
         !   write(nout4) tau
         ! end if
 
       end if
       !   vmaxevent=max(vmaxevent,maxval(vel))
-      !   !write(53,'(i6,4e16.6)') !k,x-onset_time,sum(disp-idisp),sum(vel),sum(acg**2)
+      !   !write(53,'(i6,4e16.6)') !k,x-onset_time,sum(slip-islip),sum(vel),sum(acg**2)
       !   !if(x-onset_time>lapse) then
       !   !  lapse=lapse+dlapse
       !   !end if
@@ -1340,20 +1347,20 @@ contains
   subroutine output_monitor()
     implicit none
     time2=MPi_Wtime()
-    write(52,'(i7,f19.4,7e16.5,i4,f16.4)')k,x,log10(mvelG),meandispG,meanmuG,maxnormG,minnormG,errmax_gb,dtdid,nrjct,time2-time1
+    write(52,'(i7,f19.4,7e16.5,i4,f16.4)')k,x,log10(mvelG),meanslipG,meanmuG,maxnormG,minnormG,errmax_gb,dtdid,nrjct,time2-time1
   end subroutine
 
   subroutine output_local(loc_)
     implicit none
     integer,intent(in)::loc_
-    write(53,'(i7,f19.4,7e16.5)')k,x,log10(vel(loc_)),disp(loc_),tau(loc_),sigma(loc_),mu(loc_),psi(loc_),vflow(loc_)
+    write(53,'(i7,f19.4,7e16.5)')k,x,log10(vel(loc_)),slip(loc_),tau(loc_),sigma(loc_),mu(loc_),psi(loc_),vflow(loc_)
   end subroutine
 
   subroutine output_field(mvel_loc)
     implicit none
     integer::nn,rcounts(npd),displs(npd+1)
     integer::mvel_loc(1)
-    real(8)::velG(NCELLg),tauG(NCELLg),sigmaG(Ncellg),dispG(ncellg),vflowg(ncellg)
+    real(8)::velG(NCELLg),tauG(NCELLg),sigmaG(Ncellg),slipG(ncellg),vflowg(ncellg)
     call MPI_GATHER(ncell,1,MPI_INT,rcounts,1,MPI_INT,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
 
     displs(1)=0
@@ -1364,13 +1371,13 @@ contains
     call MPI_GATHERv(vel,NCELL,MPI_REAL8,velG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
     call MPI_GATHERv(tau,NCELL,MPI_REAL8,tauG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
     call MPI_GATHERv(sigma,NCELL,MPI_REAL8,sigmaG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
-    call MPI_GATHERv(disp,NCELL,MPI_REAL8,dispG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    call MPI_GATHERv(slip,NCELL,MPI_REAL8,slipG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
     if(viscous) call MPI_GATHERv(vflow,NCELL,MPI_REAL8,vflowG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
 
     if(my_rank==0) then
       mvel_loc=maxloc(abs(velG))
       write(nout) velG
-      write(nout2) dispG
+      write(nout2) slipG
       write(nout3) sigmaG
       write(nout4) tauG
       if(viscous) write(nout5) vflowG
@@ -1804,7 +1811,7 @@ end subroutine
     mu=tau/sigma
     vel=velinit
     psi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
-    disp=0d0
+    slip=0d0
 
   end subroutine
 
@@ -1841,6 +1848,7 @@ end subroutine
       tautmp(i) = y(3*i-1)
       sigmatmp(i) = y(3*i)
       veltmp(i) = 2*vref*dexp(-psitmp(i)/a(i))*dsinh(tautmp(i)/sigmatmp(i)/a(i))
+      if(evlaw=='mCNS') veltmp(i) = vref*dexp((tautmp(i)/sigmatmp(i)-psitmp(i))/a(i))
       !if(my_rank==0)write(*,*) veltmp(i)
     enddo
     !$omp end parallel do
@@ -1887,14 +1895,14 @@ end subroutine
         sum_gn(i)=sum_gn(i)+sigdot(i)
       end if
       !write(*,*) sum_gs(i)
-      call deriv_d(sum_gs(i),sum_gn(i),psitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
+      call deriv(sum_gs(i),sum_gn(i),psitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
     enddo
     !$omp end parallel do
     !write(*,*) dydx
     return
   end subroutine
 
-  subroutine deriv_d(sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,dpsidt,dtaudt,dsigdt)
+  subroutine deriv(sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,dpsidt,dtaudt,dsigdt)
     implicit none
     real(8)::fss,dvdtau,dvdsig,dvdpsi,mu,psiss,dcv,f
     real(8),parameter::fw=0.2,vw=0.1,V0=0.5,n=4,Cr=1.0
@@ -1924,6 +1932,12 @@ end subroutine
       !dcv=dc*(1+(veltmp/vref)**2)**(0.5)
       !dcv=dc*(1+log((veltmp/vref)+1))
       dpsidt=-veltmp/dcv*(psitmp-psiss)
+    case('mCNS')
+      if(b==0) then
+        dpsidt=0d0
+      else
+        dpsidt=b*Vref/dc*((psitmp-f0)/b/(MCNS+1)+1)*(((psitmp-f0)/b/(MCNS+1)+1)**(-MCNS-1)-veltmp/vref)
+      end if
     end select
 
 
