@@ -68,7 +68,7 @@ program main
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw,param2(20)
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG,etav0
   real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
-  real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dummy(10),tdil,cdil,wid,nflow
+  real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dummy(10),tdil,cdil,nflow
   real(8)::alpha,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo,convangle
 
   !temporal variable
