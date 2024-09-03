@@ -654,6 +654,7 @@ program main
   NCELL=st_vel%ndc
   if(.not.sigmaconst) then
     lrtrn=HACApK_init(NCELLg,st_ctl2,st_bemv,icomm)
+   ! st_ctl2%param(8)=20
     st_bemv%v='n'
     lrtrn=HACApK_generate(st_leafmtxp_n,st_bemv,st_ctl2,coord,eps_h)
     lrtrn=HACApK_construct_LH(st_LHp_n,st_leafmtxp_n,st_bemv,st_ctl2,coord,eps_h)
@@ -899,6 +900,7 @@ program main
     !uniform values
     sigma=sigmainit
     tau=tauinit
+    vel=velinit   
     !if(my_rank==0) write(*,*) tau
     if(muinit.ne.0d0) tau=sigma*muinit
 
@@ -925,7 +927,6 @@ program main
       end do
     end if
 
-    vel=tau/abs(tau)*velinit   
     if(viscous) vflow=pre*tau**nflow
 
     if(bgstress) then
@@ -2375,7 +2376,7 @@ end subroutine
       if(.not.sigmaconst) then
         !lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxp_n,st_bemv,st_ctl,ret2,vec)
         st_vel%vs=vec
-        call HACApK_adot_lattice_hyp(st_sum,st_LHp_n,st_ctl,wws,st_vel)
+        call HACApK_adot_lattice_hyp(st_sum,st_LHp_n,st_ctl2,wws,st_vel)
         ret2(:)=st_sum%vs(:)
         if(problem=='3dnr'.or.problem=='3dhr'.or.problem=='3dph') ret2(:)=ret2(:)/ds0
       end if
