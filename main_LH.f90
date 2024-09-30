@@ -1127,6 +1127,8 @@ program main
 
   do k=kstart,NSTEP
     !parallel computing for Runge-Kutta
+    !write(*,*) dc(1)/mvelG
+    !dttry = min(dtnxt,0.05*dc(1)/mvelG)
     dttry = dtnxt
     !time3=MPI_Wtime()
     call rkqs(y,dydx,x,dttry,eps_r,dtdid,dtnxt,errmax_gb,nrjct)
@@ -1249,6 +1251,7 @@ program main
         eventcount=eventcount+1
         moment0=meanslipG
         islip=slip
+        call get_mvelloc(mvel_loc)
         hypoloc=mvel_loc(1)
         onset_time=x
         !tout=onset_time
@@ -1355,6 +1358,23 @@ contains
     implicit none
     integer,intent(in)::loc_
     write(53,'(i7,f19.4,7e16.5)')k,x,log10(vel(loc_)),slip(loc_),tau(loc_),sigma(loc_),mu(loc_),psi(loc_),vflow(loc_)
+  end subroutine
+
+  subroutine get_mvelloc(mvel_loc)
+    implicit none
+    integer::nn,rcounts(npd),displs(npd+1)
+    integer::mvel_loc(1)
+    real(8)::velG(NCELLg)
+    call MPI_GATHER(ncell,1,MPI_INT,rcounts,1,MPI_INT,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+
+    displs(1)=0
+    do nn=2,npd+1
+      displs(nn)=displs(nn-1)+rcounts(nn-1)
+    end do
+
+    call MPI_GATHERv(vel,NCELL,MPI_REAL8,velG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    mvel_loc=maxloc(abs(velG))
+    return
   end subroutine
 
   subroutine output_field(mvel_loc)
