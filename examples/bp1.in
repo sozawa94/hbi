@@ -7,5 +7,12 @@ nstep     50000
 tmax   3000
 backslip T
 vpl          1d-9
+velinit 1e-9
+tauinit 26.546122360508928
+sigmainit 50.0
+b 0.015
+dc 0.008
+f0 0.6
 parameterfromfile T
 parameter_file "examples/bp1_param.dat"
+parameter_file_ncol 1

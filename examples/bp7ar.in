@@ -1,0 +1,19 @@
+problem      3dp
+imax 80 !number of elements
+jmax 80
+ds 0.01
+filenumber    701 !id of output files
+dtout 0.05
+interval     100 !output and checkpointing every 100 steps
+nstep     100000 !time steps
+tmax 10.0 
+backslip T !loading with backslip 
+vpl          1d-9 !backslip rate
+parameterfromfile T !nonuniform parameters
+parameter_file "examples/bp7ar_param.dat"
+parameter_file_ncol 2
+velinit 1e-9
+b 0.010
+dc 0.53e-3
+f0 0.6
+sigmainit 25.0

@@ -1,15 +1,18 @@
-sigmaconst T
 problem      3dht !3d half space & rectangle elements
 ncellg 9250 !number of elements
-filenumber    200 !id of output files
+filenumber    203 !id of output files
 interval     100 !output and checkpointing every 100 steps
 nstep     10000 !time steps
-tmax   500 !maximum time (s)
+tmax   1500 !maximum time (s)
 backslip T !loading with backslip 
 vpl          1d-9 !backslip rate
 parameterfromfile T !nonuniform parameters
-parameter_file "examples/bp5tparam.dat"
+parameter_file "examples/bp5t_param.dat"
+parameter_file_ncol 4
 geometry_file "examples/bp5t.stl" !fault geometry
-loc 777
-dtinit 1e-3
+b 0.03
+f0 0.6
+sigmainit 25.0
+crake 0.0
+sigmaconst T
 restart F !no restart
