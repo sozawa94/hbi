@@ -402,9 +402,11 @@ program main
   select case(problem)
   case('2dp','2dvs')
     call coordinate2dp(NCELLg,ds0,xel,xer,xcol)
+    dsl=ds
 
   case('2dph')
     call coordinate2dph()
+    dsl=ds
   
   case('2dn','2dnh','25d')
     open(20,file=geofile,status='old',iostat=ios)
@@ -417,10 +419,12 @@ program main
     end do
     close(20)
     call coordinate2dn()
+    dsl=ds
 
   case('3dp')
     call coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
     ds=ds0*ds0
+    dsl=ds0
 
   case('3dnr','3dhr')
     open(20,file=geofile,status='old',iostat=ios)
@@ -438,6 +442,7 @@ program main
   case('3dph')
     call coordinate3ddip(imax,jmax,ds0,dipangle)
     ds=ds0*ds0
+    dsl=ds0
 
   case('3dnt','3dht')
 
@@ -471,7 +476,6 @@ program main
         !if(my_rank==0)write(*,'(9e17.8)') xs1(k),ys1(k),zs1(k),xs2(k),ys2(k),zs2(k),xs3(k),ys3(k),zs3(k)
       end do
     end if
-   
 
     !mesh format created by .msh => mkelm.c
     ! open(20,file=geofile,status='old',iostat=ios)
@@ -484,6 +488,7 @@ program main
     ! end do
     ! close(20)
     call evcalc(xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,ev11,ev12,ev13,ev21,ev22,ev23,ev31,ev32,ev33,ds)
+    dsl=sqrt(2*ds)
   end select
 
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -943,11 +948,12 @@ program main
 
     !calculate Lb/ds
     do i=1,ncell
-      lbds(i)=rigid*dc(i)/b(i)/sigma(i)/ds(i)
+      i_=st_sum%lodc(i)
+      lbds(i)=rigid*dc(i)/b(i)/sigma(i)/dsl(i_)
     end do
     !if(my_rank==0) write(*,*) 'Lb/ds~',rigid*dc(1)/b(1)/sigma(1)/ds0
     if(minval(lbds) < 2.0) then
-      if (my_rank==0) write(*,*) 'warning: element size may be too large. min(Lb/ds)=',minval(lbds)
+      write(*,*) 'warning: element size may be too large. min(Lb/ds)=',minval(lbds)
     end if
     
     x=0d0
