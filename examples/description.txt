@@ -1,0 +1,15 @@
+This directory contains some examples for input file (.in) and python script to generate the parameter file (.py).
+
+[Simple problems]
+-2dp.in: a planar fault (plane strain) in a 2D elastic full space
+-uni3dp.in: a planar fault in a 3D elastic full space
+-uni3dthrust.in: a planar thrust fault (30 deg dip) in a 3D elastic half space
+
+[SCEC SEAS benchmark problems](https://strike.scec.org/cvws/seas/benchmark_descriptions.html)
+-bp1.in: BP1
+-bp3dip30thrust.in: BP3
+-bp5r.in: BP5 with rectangular elements 
+-bp5t.in: BP5 with triangular elements 
+-bp6a.in: BP6 with aging law (use main_fv.f90 to compile the code).
+-bp7r.in: BP7 with rectangular elements and aging law
+-bp7t.in: BP7 with triangular elements and aging law
