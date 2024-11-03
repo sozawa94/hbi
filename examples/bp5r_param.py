@@ -1,64 +1,55 @@
-#parameter file generator for BP5
+#!cd /work/hp220105o/i25004/hbi
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
-# Constants
 imax = 100
 jmax = 40
 ncell = imax * jmax
-pi = 4.0 * np.arctan(1.0)
-ds0 = 1.0
-mu0 = 0.6
-vref = 1e-6
-vs = 3.464
-velinit = 1e-9
-rigid = 32.04
+ds0=1.0
+x=np.zeros(ncell);z=np.zeros(ncell)
+
+# Frictional parameters
 a0 = 0.004
 b0 = 0.03
 dc0 = 0.14
 a_max = 0.04
+mu0=0.6
+vref=1e-6
+sigma0=25.0
+rigid=32.04
+cs=3.464
+vel0=1e-9
+tau0=sigma0*a_max*np.arcsinh(0.5*vel0/vref*np.exp((mu0+b0*np.log(vref/vel0))/a_max))#+rigid/(2*Vs)*vel(i)
+eta=rigid/2/cs
 
-# Arrays
-rake=np.zeros(ncell);a=np.zeros(ncell);b=np.zeros(ncell);dc=np.zeros(ncell);f0=np.zeros(ncell)
-tau=np.zeros(ncell);sigma=np.zeros(ncell);vel=np.zeros(ncell);taudot=np.zeros(ncell);sigmadot=np.zeros(ncell)
-xcol=np.zeros(ncell);zcol=np.zeros(ncell)
+a=np.zeros(ncell);dc=np.zeros(ncell)
+tau=np.zeros(ncell);vel=np.zeros(ncell)
 
 k=-1
 for i in range(imax):
     for j in range(jmax):
         k=k+1
         f0[k] = mu0
-        xcol[k]=(i+0.5-imax/2)*ds0
-        zcol[k]=-(j+0.5)*ds0
-        dep = -zcol[k]
-
-        if (dep > 4.0 and dep < 16.0 and abs(xcol[k]) < 30.0):
-            a[k] = a0
-        elif (dep < 2.0 or dep > 18.0 or abs(xcol[k]) > 32.0):
-            a[k] = a_max
-        else:
-            r = max(abs(dep - 10.0) - 6.0, abs(xcol[k]) - 30.0) / 2.0
-            a[k] = a0 + r * (a_max - a0)
-
-        r = max(abs(dep - 10.0) - 6.0, abs(xcol[k]) - 30.0) / 2.0
+        x[k]=(i+0.5-imax/2)*ds0
+        z[k]=-(j+0.5)*ds0
+        dep = -z[k]
+        dc[k]=dc0
+        r = max(abs(dep - 10) - 6, abs(x[k]) - 30) / 2
         a[k] = min(a0 + r * (a_max - a0), a_max)
         a[k] = max(a[k], a0)
-
-        b[k] = b0
-        dc[k] = dc0
-
-        if (abs(xcol[k] + 24.0) < 6.0 and abs(dep - 10.0) < 6.0):
+        vel[k]=vel0
+        if abs(x[k] + 24) < 6 and abs(dep - 10) < 6:
+            vel[k] = 3e-2
+        if abs(x[k] + 24) < 6 and abs(dep - 10) < 6:
             dc[k] = 0.13
 
-        sigma[k] = 25.0
-        vel[k] = velinit
-        dep = -zcol[k]
-        if (abs(xcol[k] + 24.0) < 6.0 and abs(dep - 10.0) < 6.0):
-            vel[k] = 0.03
-tau=sigma*a*np.arcsinh(0.5*vel/vref*np.exp((mu0+b0*np.log(vref/velinit))/a))+rigid/(2*vs)*vel
+        tau[k] = sigma0*(a[k]*np.arcsinh(0.5*vel[k]/vref*np.exp((mu0+b0*np.log(vref/vel0))/a[k]))+rigid/(2*cs)*vel[k])
+        #f.write(0.0),str(a[i]))#,b0,dc0,f0,tau0,sigma0,vel0,0.0,0.0)
+plt.scatter(x,z,c=tau,s=10)
+plt.colorbar()
 
-data=(rake,a,b,dc,f0,tau,sigma,vel,taudot,sigmadot)
+data=(a,dc,tau,vel)
 data=np.transpose(data)
-df=pd.DataFrame(data)
-print(df)
-df.to_csv('bp5r_param.dat', sep='\t', index=False, header=None)
+df=pd.DataFrame(data, columns=['a','dc','tau','vel'])
+df.to_csv('../examples/bp5r_param.dat', sep='\t', index=False)
