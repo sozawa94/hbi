@@ -19,7 +19,7 @@ Features
 
 - Hybrid MPI/open-MP parallelization
 
-See Documentation_for_HBI.pdf for more information.
+See [Documentation](https://github.com/sozawa94/hbi/blob/master/Documentation_for_HBI.pdf) for more information.
 
 This software is freely available under the MIT license.
 If you write a paper using this code, please cite the following paper:
@@ -27,8 +27,7 @@ If you write a paper using this code, please cite the following paper:
 So Ozawa, Akihiro Ida, Tetsuya Hoshino, Ryosuke Ando (2023),
 "Large-scale earthquake sequence simulations of 3D geometrically complex faults using the boundary element method accelerated by lattice H-matrices", Geophysical Journal International,232 (3), 1471-1481 https://doi.org/10.1093/gji/ggac386
 
-See also
-SC22 Poster: https://sc22.supercomputing.org/presentation/?id=rpost105&sess=sess274
+See also [SC22 Poster](https://sc22.supercomputing.org/presentation/?id=rpost105&sess=sess274)
 
 https://github.com/user-attachments/assets/d1331cee-73f1-4077-9a82-a148b9e94dba
 
