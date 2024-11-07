@@ -68,8 +68,8 @@ program main
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw,param2(20)
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meanslip,meanslipG,moment0,mvel,mvelG,etav0
   real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
-  real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dummy(10),tdil,cdil,nflow,MCNS,vref
-  real(8)::alpha,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo,convangle
+  real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dtout_co,dtout_inter,dummy(10),tdil,cdil,nflow,MCNS,vref
+  real(8)::alpha,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo,convangle,velth
 
   !temporal variable
 
@@ -138,6 +138,7 @@ program main
   velmin=1d-20
   tmax=1d4
   interval=0
+  velth=1e-2
   bgstress=.false.
   nuclei=.false.
   sigmaconst=.false.
@@ -151,6 +152,7 @@ program main
   minsig=0.2d0
   muinit=0d0
   dtout=365*24*3600
+  dtout_co=1000.0
   dtinit=1d0
   tp=86400d0
   initcondfromfile=.false.
@@ -235,6 +237,10 @@ program main
       read (pvalue,*) tmax
     case('dtout')
       read (pvalue,*) dtout
+    case('dtout_co')
+      read (pvalue,*) dtout_co
+    case('velth')
+      read (pvalue,*) velth
     case('dtmax')
       read (pvalue,*) dtmax
     case('eps_r')
@@ -307,6 +313,7 @@ program main
   end do
   close(33)
   tmax=tmax*365*24*3600
+  dtout_inter=dtout*365*24*3600
   if(interval==0) interval=Nstep
 
   !limitsigma=.true.
@@ -1108,7 +1115,9 @@ program main
     call output_field(mvel_loc)
     dtnxt = dtinit
   end if
-  tout=dtout*365*24*60*60
+
+  dtout=dtout_inter
+  tout=dtout
   !tout=20*365*24*60*60
   rk=0
 
@@ -1232,8 +1241,8 @@ program main
     !if(k>3800.and.k<4200.and.mod(k,10)==0) outfield=.true.
     if(x>tout) then
       outfield=.true.
-      tout=x+dtout*365*24*60*60
-      if(x<300*356*23*3600) outfield=.false.
+      tout=x+dtout
+      !if(x<300*356*23*3600) outfield=.false.
     end if
 
     if(outfield) then
@@ -1264,8 +1273,10 @@ program main
 
     !event list
     if(.not.slipping) then
-      if(mvelG>1d-2) then
+      if(mvelG>velth) then
         slipping=.true.
+        tout=x
+        dtout=dtout_co
         eventcount=eventcount+1
         moment0=meanslipG
         islip=slip
@@ -1286,9 +1297,9 @@ program main
     end if
     !
     if(slipping) then
-      if(mvelG<1d-3) then
+      if(mvelG<velth) then
         slipping=.false.
-        !tout=x
+        dtout=dtout_inter
         moment=meanslipG-moment0
         !eventcount=eventcount+1
         !end of an event
