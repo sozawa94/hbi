@@ -1233,8 +1233,66 @@ program main
     meanmuG=meanmuG/sg
     !if(outfield.and.(my_rank.lt.npd)) call output_field()
  
-    !output distribution control
     outfield=.false.
+    !event list
+    if(.not.slipping) then
+      if(mvelG>velth) then
+        outfield=.true.
+        slipping=.true.
+        dtout=dtout_co
+        tout=x+dtout
+        eventcount=eventcount+1
+        moment0=meanslipG
+        islip=slip
+        call get_mvelloc(mvel_loc)
+        hypoloc=mvel_loc(1)
+        onset_time=x
+        !tout=onset_time
+
+        !onset save
+        ! if(slipevery.and.(my_rank<npd)) then
+        !   write(nout) vel
+        !   write(nout2) slip
+        !   write(nout3) sigma
+        !   write(nout4) tau
+        ! end if
+
+      end if
+    end if
+    !
+    if(slipping) then
+      if(mvelG<0.5*velth) then
+        outfield=.true.
+        slipping=.false.
+        dtout=dtout_inter
+        tout=x+dtout
+        moment=meanslipG-moment0
+        !eventcount=eventcount+1
+        !end of an event
+        if(my_rank==0) then
+          write(44,'(i0,i7,f17.2,f14.4,i8)') eventcount,k,onset_time,(log10(moment*rigid*sg)+5.9)/1.5,hypoloc
+        end if
+        cslip=slip-islip
+        call output_EQslip()
+        ! if(my_rank<npd) then
+        !   write(nout5) cslip
+        ! end if
+        ! if(slipevery.and.(my_rank<npd)) then
+        !   write(nout) vel
+        !   write(nout2) slip
+        !   write(nout3) sigma
+        !   write(nout4) tau
+        ! end if
+
+      end if
+      !   vmaxevent=max(vmaxevent,maxval(vel))
+      !   !write(53,'(i6,4e16.6)') !k,x-onset_time,sum(slip-islip),sum(vel),sum(acg**2)
+      !   !if(x-onset_time>lapse) then
+      !   !  lapse=lapse+dlapse
+      !   !end if
+    end if
+
+
     if(mod(k,interval)==0) then
       outfield=.true.
     end if
@@ -1270,61 +1328,6 @@ program main
     end if
     time4=MPI_Wtime()
     timer=timer+time4-time3
-
-    !event list
-    if(.not.slipping) then
-      if(mvelG>velth) then
-        slipping=.true.
-        tout=x
-        dtout=dtout_co
-        eventcount=eventcount+1
-        moment0=meanslipG
-        islip=slip
-        call get_mvelloc(mvel_loc)
-        hypoloc=mvel_loc(1)
-        onset_time=x
-        !tout=onset_time
-
-        !onset save
-        ! if(slipevery.and.(my_rank<npd)) then
-        !   write(nout) vel
-        !   write(nout2) slip
-        !   write(nout3) sigma
-        !   write(nout4) tau
-        ! end if
-
-      end if
-    end if
-    !
-    if(slipping) then
-      if(mvelG<velth) then
-        slipping=.false.
-        dtout=dtout_inter
-        moment=meanslipG-moment0
-        !eventcount=eventcount+1
-        !end of an event
-        if(my_rank==0) then
-          write(44,'(i0,i7,f17.2,f14.4,i8)') eventcount,k,onset_time,(log10(moment*rigid*sg)+5.9)/1.5,hypoloc
-        end if
-        cslip=slip-islip
-        call output_EQslip()
-        ! if(my_rank<npd) then
-        !   write(nout5) cslip
-        ! end if
-        ! if(slipevery.and.(my_rank<npd)) then
-        !   write(nout) vel
-        !   write(nout2) slip
-        !   write(nout3) sigma
-        !   write(nout4) tau
-        ! end if
-
-      end if
-      !   vmaxevent=max(vmaxevent,maxval(vel))
-      !   !write(53,'(i6,4e16.6)') !k,x-onset_time,sum(slip-islip),sum(vel),sum(acg**2)
-      !   !if(x-onset_time>lapse) then
-      !   !  lapse=lapse+dlapse
-      !   !end if
-    end if
 
     !stop controls
     if(mvelG>velmax) then
