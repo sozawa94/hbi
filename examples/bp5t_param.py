@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 ncell=9250
 x=np.zeros(ncell);z=np.zeros(ncell)
-with open('/work/hp220105o/i25004/hbi/examples/bp5t.stl') as f: #need to be changed
+with open('bp5t.stl') as f: #need to be changed
     lines = f.read()
     d=lines.split()
     print(d[12])
@@ -53,4 +53,4 @@ plt.colorbar()
 data=(a,dc,tau,vel)
 data=np.transpose(data)
 df=pd.DataFrame(data, columns=['a','dc','tau','vel'])
-df.to_csv('../examples/bp5t_param.dat', sep='\t', index=False)
+df.to_csv('bp5t_param.dat', sep='\t', index=False)
