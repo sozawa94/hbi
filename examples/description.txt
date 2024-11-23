@@ -6,6 +6,7 @@ This directory contains some examples for input file (.in) and python script to 
 -uni3dthrust.in: a planar thrust fault (30 deg dip) in a 3D elastic half space
 
 [SCEC SEAS benchmark problems](https://strike.scec.org/cvws/seas/benchmark_descriptions.html)
+Run the corresponding Python script to generate the parameter file before running the simulations.
 -bp1.in: BP1
 -bp3dip30thrust.in: BP3 thrust fault with dip = 30 degrees
 -bp5r.in: BP5 with rectangular elements 
