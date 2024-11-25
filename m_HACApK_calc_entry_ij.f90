@@ -894,17 +894,17 @@ end function matels2dpa_ij
     dy=-sin(strike(j))*(xcol(i)-xcol(j))+cos(strike(j))*(ycol(i)-ycol(j))
 
     call dc3d25(alpha,dx,dy,ds(j),w,sxx,sxy,syy)
-    sxx2=cos(strike(j))*(sxx*cos(strike(j))-sxy*sin(strike(j)))-sin(strike(j))*(sxy*cos(strike(j))-syy*sin(strike(j)))
-    syy2=sin(strike(j))*(sxy*cos(strike(j))+sxx*sin(strike(j)))+cos(strike(j))*(syy*cos(strike(j))+sxy*sin(strike(j)))
-    sxy2=sin(strike(j))*(sxx*cos(strike(j))-sxy*sin(strike(j)))+cos(strike(j))*(sxy*cos(strike(j))-syy*sin(strike(j)))
 
     !rerotation
     select case(v)
     case('s')
-      matelrec_ij=-0.5d0*(sxx2-syy2)*dsin(2*strike(i))+sxy2*dcos(2*strike(i))
+      matelrec_ij=-0.5d0*(sxx-syy)*dsin(2*(strike(i)-strike(j)))+sxy*dcos(2*(strike(i)-strike(j)))
     case('n')
-      matelrec_ij=-0.5d0*(sxx2+syy2)-0.5d0*(sxx2-syy2)*dcos(2*strike(i))-sxy2*dsin(2*strike(i))
+      matelrec_ij=-0.5d0*(sxx+syy)+0.5d0*(sxx-syy)*dcos(2*(strike(i)-strike(j)))+sxy*dsin(2*(strike(i)-strike(j)))
+      !matelrec_ij=sin(strike(i))**2*sxx2+cos(strike(i))**2*syy2+sxy2*sin(2*strike(i))
     end select
+
+
     return
   end function matelrec_ij
   subroutine  dc3d25(alpha,x,y,dl,dw,sxx,sxy,syy)
@@ -1043,28 +1043,28 @@ end function matels2dpa_ij
    !write(*,*)w
    !
 
-    call okada(alpha,dx/w,dy/w,z/w,depth/w,dip,-0.5d0*r,0.5d0*r,-0.5d0*r,0.5d0*r,cos(rake(j)),sin(rake(j)),0d0,&
+    call okada(alpha,dx/w,dy/w,z/w,depth/w,dip,-0.5d0*r,0.5d0*r,-0.5d0*r,0.5d0*r,-cos(rake(j)),-sin(rake(j)),0d0,&
    &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,fullspace)
   ! write(*,*) st_bemv%zcol(i),-st_bemv%zcol(j),st_bemv%angd(j)*180/pi
    ! write(*,*)uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz
     ! write(*,*)iret    ! case('dp')
     !   call dc3d(alpha,dx,dy,zcol(i),zcol(j),dip(j),-0.5d0*ds,0.5d0*ds,-0.5d0*ds,0.5d0*ds,0d0,1d-8,0d0, ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,iret)
     !end select
-    exx=-uxx
-    eyy=-uyy
-    ezz=-uzz
-    exy=-0.5d0*(uxy+uyx)
-    eyz=-0.5d0*(uyz+uzy)
-    ezx=-0.5d0*(uzx+uxz)
+    exx=uxx
+    eyy=uyy
+    ezz=uzz
+    exy=0.5d0*(uxy+uyx)
+    eyz=0.5d0*(uyz+uzy)
+    ezx=0.5d0*(uzx+uxz)
     sxx=rigid*(exx+eyy+ezz)+2*rigid*exx
     syy=rigid*(exx+eyy+ezz)+2*rigid*eyy
     szz=rigid*(exx+eyy+ezz)+2*rigid*ezz
     sxy=2*rigid*exy
     sxz=2*rigid*ezx
     syz=2*rigid*eyz
- ! write(*,*)sxx,syy,szz,sxy,syz,sxz
 
-    rotang=ang(i)-ang(j)
+    !rotang=ang(i)-ang(j) !wrong
+    rotang=ang(j)-ang(i) !fixed Nov 24 2024
     dpang=angd(i)
 
     Arot(:,1)=(/cos(rotang),-sin(rotang),0d0/)
@@ -1076,8 +1076,6 @@ end function matels2dpa_ij
    call TensTrans(Sxx,Syy,Szz,Sxy,Sxz,Syz,Arot,&
    &p(1),p(2),p(3),p(4),p(5),p(6))
 
-
-  ! write(*,*)p
    !write(*,*)st_bemv%v
     select case(v)
       case('n')
