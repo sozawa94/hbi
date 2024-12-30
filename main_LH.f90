@@ -35,7 +35,7 @@ program main
   type(st_HACApK_LHp) :: st_LHp_s2,st_LHp_d2,st_LHp_n2
 
   !for MPI communication and time
-  integer::counts2,icomm,np,npd,ierr,my_rank,npgl,loc,rankloc,loc_,rank_mvel,mvel_loc(1),mvel_loc_
+  integer::counts2,icomm,np,npd,ierr,my_rank,npgl,noutloc,locid(10),rankloc(10),loc_(10),rank_mvel,mvel_loc(1),mvel_loc_
   integer,allocatable::displs(:),rcounts(:),vars(:)
   integer:: date_time(8)
   character(len=10):: sys_time(3)
@@ -51,7 +51,7 @@ program main
 
   !parameters for each elements
   real(8),allocatable::a(:),b(:),dc(:),f0(:),fw(:),vw(:),vc(:),taudot(:),tauddot(:),sigdot(:),vplv(:),values(:,:),etav(:),pre(:),vflow(:)
-  real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:),vplvg(:),cslipG(:),etavg(:)
+  real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),vcg(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:),vplvg(:),cslipG(:),etavg(:)
 
   !variables
   real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),slip(:),mu(:),rupt(:),islip(:),velp(:),cslip(:),sigma0(:),vslip(:)
@@ -59,7 +59,6 @@ program main
 
   real(8),allocatable::rdata(:)
   integer::lp,i,i_,j,k,kstart,kend,m,counts,interval,lrtrn,nl,ios,nmain,rk,nout(10),file_size,nrjct,ncol
-  integer,allocatable::locid(:)
   integer::hypoloc(1),load,eventcount,thec,inloc,sw
 
   !controls
@@ -67,7 +66,7 @@ program main
   logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,forward,inverse,geofromfile,restart,latticeh,debug,bgstress,relax
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw,param2(20)
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meanslip,meanslipG,moment0,mvel,mvelG,etav0
-  real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
+  real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit,vc0
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dtout_co,dtout_inter,dummy(10),tdil,cdil,nflow,MCNS,vref
   real(8)::alpha,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo,convangle,velth
 
@@ -165,12 +164,16 @@ program main
   viscous=.false.
   dtmax=1e10
   ncol=0
+  noutloc=0
+  locid=0
   nflow=1.0
-  
+  geofile="default"
+  parameter_file="default"
 
   errold=1.0
   fwid=1e8
   evlaw='aging'
+  i=0
   
   !number=0
 
@@ -207,6 +210,8 @@ program main
       read (pvalue,*) mu0
     case('vref')
       read (pvalue,*) vref
+    case('vc')
+      read (pvalue,*) vc0
     case('MCNS')
       read (pvalue,*) MCNS
     case('etav')
@@ -285,8 +290,6 @@ program main
       read(pvalue,'(a)') parameter_file
     case('evlaw')
       read(pvalue,'(a)') evlaw
-    case('loc')
-      read(pvalue,*) loc
     case('debug')
       read(pvalue,*) debug
     case('trelax')
@@ -307,6 +310,11 @@ program main
       read(pvalue,*) viscous
     case('parameter_file_ncol')
       read(pvalue,*) ncol
+    case('noutloc')
+      read(pvalue,*) noutloc
+    case('outloc')
+      i=i+1
+      read(pvalue,*) locid(i)
     case default
       if(my_rank==0) write(*,*) 'WARNING: ', trim(param), ' is an unknown parameter'
     end select
@@ -315,6 +323,14 @@ program main
   tmax=tmax*365*24*3600
   dtout_inter=dtout*365*24*3600
   if(interval==0) interval=Nstep
+
+  if(geofile=='default') then
+    write(geofile,'("examples/geo",i0,".dat")') number
+  end if
+
+  if(parameter_file=='default') then
+    write(parameter_file,'("examples/param",i0,".dat")') number
+  end if
 
   !limitsigma=.true.
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -354,7 +370,7 @@ program main
 
   !allocation
   allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg),dsl(NCELLg))
-  allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),f0g(NCELLg),etavg(NCELLg))
+  allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),f0g(NCELLg),etavg(NCELLg),vcg(NCELLg))
   allocate(taug(NCELLg),sigmag(NCELLg),velG(NCELLg),rake(NCELLg),cslipG(NCELLg))
   allocate(taudotg(NCELLg),sigdotg(NCELLg),vplvg(NCELLg))
 
@@ -527,6 +543,8 @@ program main
         dcg(:)=values(:,k)
       case('f0')
         f0g(:)=values(:,k)
+      case('vc')
+        vcg(:)=values(:,k)
       case('etav')
         etavg(:)=values(:,k)
       case('tau')
@@ -676,7 +694,7 @@ program main
   allocate(psi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),slip(NCELL),mu(NCELL))
   allocate(islip(NCELL),cslip(NCELL),sigma0(NCELL),etav(NCELL),pre(NCELL),vflow(NCELL),vslip(NCELL))
   psi=0d0;vel=0d0;tau=0d0;sigma=0d0;slip=0d0;etav=0d0;pre=0d0;vflow=0d0;vslip=0d0
-  allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL),lbds(NCELL),vplv(NCELL))
+  allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),vc(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL),lbds(NCELL),vplv(NCELL))
   taudot=0d0;sigdot=0d0
 
   !uniform frictional parameters
@@ -684,6 +702,7 @@ program main
   b=b0
   dc=dc0
   f0=mu0
+  vc=vc0
   vplv=vpl
   if(viscous) pre=1/etav0
 
@@ -716,6 +735,11 @@ program main
         do i=1,NCELL
           i_=st_sum%lodc(i)
           f0(i)=f0g(i_)
+        end do
+      case('vc')
+        do i=1,NCELL
+          i_=st_sum%lodc(i)
+          vc(i)=vcg(i_)
         end do
       case('etav')
         do i=1,NCELL
@@ -863,24 +887,26 @@ program main
       write(fname,'("output/EQslip",i0,"_",i0,".dat")') number,my_rank
       open(nout(5),file=fname,form='unformatted',access='stream',status='replace')
 
-      rankloc=-1
-    if(my_rank<npd) then
-      do i=1,ncell
-        if(st_sum%lodc(i)==loc) then
-          rankloc=my_rank
-          loc_=i
-          write(*,*) rankloc,loc_
-          write(*,*)  xcol(loc),ycol(loc),zcol(loc)
-          exit
-        end if
-      end do
-    end if
+    !   rankloc=-1
+    ! if(my_rank<npd) then
+    !   do i=1,ncell
+    !     if(st_sum%lodc(i)==loc) then
+    !       rankloc=my_rank
+    !       loc_=i
+    !       write(*,*) rankloc,loc_
+    !       write(*,*)  xcol(loc),ycol(loc),zcol(loc)
+    !       exit
+    !     end if
+    !   end do
+    ! end if
 
-    if(my_rank==rankloc) then
-      write(fname,'("output/local",i0,"-",i0,".dat")') number,loc
-      open(53,file=fname)
-      write(*,*) my_rank,loc
-    end if
+    ! if(my_rank==rankloc) then
+    !   do k=1,nloc
+    !     write(fname,'("output/local",i0,"-",i0,".dat")') number,loc(k)
+    !     open(53,file=fname)
+    !     write(*,*) my_rank,loc(k)
+    !   end do
+    ! end if
 
     end if
 
@@ -1031,25 +1057,28 @@ program main
       close(19)
     end if
 
-
     rankloc=-1
     if(my_rank<npd) then
+      do k=1,noutloc
       do i=1,ncell
-        if(st_sum%lodc(i)==loc) then
-          rankloc=my_rank
-          loc_=i
-          write(*,*) rankloc,loc_
-          write(*,*)  xcol(loc),ycol(loc),zcol(loc)
+        if(st_sum%lodc(i)==locid(k)) then
+          rankloc(k)=my_rank
+          loc_(k)=i
+          !write(*,*) rankloc(k),loc_(k)
+          write(*,*)  xcol(locid(k)),ycol(locid(k)),zcol(locid(k))
           exit
         end if
       end do
+     end do
     end if
 
-    if(my_rank==rankloc) then
-      write(fname,'("output/local",i0,"-",i0,".dat")') number,loc
-      open(53,file=fname)
-      write(*,*) my_rank,loc
-    end if
+    do k=1,10
+      if(my_rank==rankloc(k)) then
+        write(fname,'("output/local",i0,"-",i0,".dat")') number,locid(k)
+        open(53+k,file=fname)
+        !write(*,*) my_rank,locid(k)
+     end if
+   end do
 
     s=0d0
     do i=1,NCELL
@@ -1270,7 +1299,7 @@ program main
         !eventcount=eventcount+1
         !end of an event
         if(my_rank==0) then
-          write(44,'(i0,i7,f17.2,f14.4,i8)') eventcount,k,onset_time,(log10(moment*rigid*sg)+5.9)/1.5,hypoloc
+          write(44,'(i0,i8,f17.2,f14.4,i8)') eventcount,k,onset_time,(log10(moment*rigid*sg)+5.9)/1.5,hypoloc
         end if
         cslip=slip-islip
         call output_EQslip()
@@ -1323,9 +1352,11 @@ program main
     if(my_rank==0.and.k>kend) then
       call output_monitor()
     end if
-    if(my_rank==rankloc.and.k>kend) then
-      call output_local(loc_)
-    end if
+    do j=1,10
+      if(my_rank==rankloc(j).and.k>kend) then
+        call output_local(53+j,loc_(j))
+      end if
+    end do
     time4=MPI_Wtime()
     timer=timer+time4-time3
 
@@ -1386,10 +1417,10 @@ contains
     write(52,'(i7,f19.4,7e16.5,i4,f16.4)')k,x,log10(mvelG),meanslipG,meanmuG,maxnormG,minnormG,errmax_gb,dtdid,nrjct,time2-time1
   end subroutine
 
-  subroutine output_local(loc_)
+  subroutine output_local(nf,loc_)
     implicit none
-    integer,intent(in)::loc_
-    write(53,'(i7,f19.4,7e16.5)')k,x,log10(vel(loc_)),slip(loc_),tau(loc_),sigma(loc_),mu(loc_),psi(loc_),vflow(loc_)
+    integer,intent(in)::nf,loc_
+    write(nf,'(i7,f19.4,7e16.5)')k,x,log10(vel(loc_)),slip(loc_),tau(loc_),sigma(loc_),mu(loc_),psi(loc_),vflow(loc_)
   end subroutine
 
   subroutine get_mvelloc(mvel_loc)
@@ -1675,7 +1706,7 @@ end subroutine
       real(8),intent(out)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
       integer::i,j,k
       integer,parameter::ndata=256
-      real(8)::dipangle,xc,yc,zc,amp
+      real(8)::xc,yc,zc,amp
       real(4)::xl(ndata+1,ndata+1)
 
       open(30,file='examples/roughsurf.txt')
@@ -1690,8 +1721,8 @@ end subroutine
           !xcol(k)=(i-imax/2-0.5d0)*ds0
           !zcol(k)=-(j-0.5d0)*ds0-0.001d0
           xc=(i-imax/2-0.5)*ds0
-          yc=0.0
-          zc=(j-jmax/2-0.5)*ds0
+          yc=-(j-0.5)*ds0*cos(dipangle*pi/180d0)
+          zc=-(j-0.5)*ds0*sin(dipangle*pi/180d0)
   
           xs1(2*k-1)=xc-0.5d0*ds0
           xs2(2*k-1)=xc+0.5d0*ds0
@@ -1699,9 +1730,15 @@ end subroutine
           zs1(2*k-1)=zc+0.5d0*ds0
           zs2(2*k-1)=zc+0.5d0*ds0
           zs3(2*k-1)=zc-0.5d0*ds0
-          ys1(2*k-1)=xl(i,j)
-          ys2(2*k-1)=xl(i+1,j)
-          ys3(2*k-1)=xl(i,j+1)
+          ys1(2*k-1)=yc-0.5d0*ds0
+          ys2(2*k-1)=yc-0.5d0*ds0
+          ys3(2*k-1)=yc+0.5d0*ds0
+
+          ! ys2(2*k-1)=xl(i+1,j)
+          ! ys3(2*k-1)=xl(i,j+1)
+          ! ys1(2*k-1)=xl(i,j)
+          ! ys2(2*k-1)=xl(i+1,j)
+          ! ys3(2*k-1)=xl(i,j+1)
   
           xs2(2*k)=xc+0.5d0*ds0
           xs1(2*k)=xc+0.5d0*ds0
@@ -1709,9 +1746,12 @@ end subroutine
           zs2(2*k)=zc-0.5d0*ds0
           zs1(2*k)=zc+0.5d0*ds0
           zs3(2*k)=zc-0.5d0*ds0
-          ys2(2*k)=xl(i+1,j+1)
-          ys1(2*k)=xl(i+1,j)
-          ys3(2*k)=xl(i,j+1)
+          ys2(2*k)=yc+0.5d0*ds0
+          ys1(2*k)=yc-0.5d0*ds0
+          ys3(2*k)=yc+0.5d0*ds0
+          ! ys2(2*k)=xl(i+1,j+1)
+          ! ys1(2*k)=xl(i+1,j)
+          ! ys3(2*k)=xl(i,j+1)
   
         end do
       end do
@@ -1954,19 +1994,19 @@ end subroutine
         sum_gn(i)=sum_gn(i)+sigdot(i)
       end if
       !write(*,*) sum_gs(i)
-      call deriv(sum_gs(i),sum_gn(i),psitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
+      call deriv(sum_gs(i),sum_gn(i),psitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),vc(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
     enddo
     !$omp end parallel do
     !write(*,*) dydx
     return
   end subroutine
 
-  subroutine deriv(sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,dpsidt,dtaudt,dsigdt)
+  subroutine deriv(sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc,dpsidt,dtaudt,dsigdt)
     implicit none
     real(8)::fss,dvdtau,dvdsig,dvdpsi,mu,psiss,dcv,f
     real(8),parameter::fw=0.2,vw=0.1,V0=0.5,n=4,Cr=1.0
     !type(t_deriv),intent(in) ::
-    real(8),intent(in)::sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0
+    real(8),intent(in)::sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc
     real(8),intent(out)::dpsidt,dtaudt,dsigdt
     dsigdt=sum_gn
     !regularized slip law
@@ -1991,6 +2031,12 @@ end subroutine
       !dcv=dc*(1+(veltmp/vref)**2)**(0.5)
       !dcv=dc*(1+log((veltmp/vref)+1))
       dpsidt=-veltmp/dcv*(psitmp-psiss)
+    case('cutoff')
+      if(b==0) then
+        dpsidt=0d0
+      else 
+        dpsidt=b/dc*vref*(1.0+abs(veltmp)/vc)*dexp((f0-psitmp)/b)-b*abs(veltmp)/dc
+      end if
     case('mCNS')
       if(b==0) then
         dpsidt=0d0
@@ -2382,6 +2428,7 @@ end subroutine
     ret2=0d0
 
     vec=1d0
+    !vec(2)=-1d0
     !do i=1,NCELL
     !  i_=st_sum%lodc(i)
     !  if(ycol(i_)>5d0) vec(i)=1d0
