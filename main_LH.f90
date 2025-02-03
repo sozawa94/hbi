@@ -63,12 +63,12 @@ program main
 
   !controls
   logical::dilatancy,buffer,nuclei,slipping,outfield,structured,limitsigma,dcscale,slowslip,slipfinal,deepcreep,rakefromglobal,viscous
-  logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,forward,inverse,geofromfile,restart,latticeh,debug,bgstress,relax
+  logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,forward,inverse,geofromfile,restart,latticeh,debug,bgstress,relax,injection
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw,param2(20)
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meanslip,meanslipG,moment0,mvel,mvelG,etav0
   real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit,vc0
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dtout_co,dtout_inter,dummy(10),tdil,cdil,nflow,MCNS,vref
-  real(8)::alpha,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo,convangle,velth
+  real(8)::alpha,pf0,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo,convangle,velth
 
   !temporal variable
 
@@ -91,7 +91,8 @@ program main
   npd=int(sqrt(dble(np)))
   call MPI_COMM_RANK(MPI_COMM_WORLD,my_rank,ierr )
   if(my_rank==0) then
-    write(*,*) '# of MPI cores', np
+    write(*,*) 'HBI ver. 2025.2.0'
+    write(*,*) '# of MPI', np
   end if
   !input file must be specified when running
   !example) mpirun -np 16 ./ha.out default.in
@@ -100,7 +101,7 @@ program main
   open(33,file=input_file,status='old',iostat=ios)
   !if(my_rank==0) write(*,*) 'input_file',input_file
   if(ios /= 0) then
-    if(my_rank==0)write(*,*) 'error: Failed to open input file'
+    if(my_rank==0)write(*,*) 'ERROR: Failed to open input file'
     stop
   end if
 
@@ -146,9 +147,10 @@ program main
   slipfinal=.false.
   restart=.false.
   deepcreep=.false.
-  limitsigma=.false.
+  limitsigma=.true.
+  injection=.false.
   maxsig=300d0
-  minsig=0.2d0
+  minsig=0.1d0
   muinit=0d0
   dtout=365*24*3600
   dtout_co=1000.0
@@ -166,18 +168,16 @@ program main
   ncol=0
   noutloc=0
   locid=0
+  alpha=0.0
+  pf0=0.0
   nflow=1.0
   geofile="default"
   parameter_file="default"
-
   errold=1.0
   fwid=1e8
   evlaw='aging'
   i=0
   
-  !number=0
-
-
   do while(ios==0)
     read(33,*,iostat=ios) param,pvalue
     !write(*,*) param,pvalue
@@ -280,6 +280,10 @@ program main
       read(pvalue,*) tdil
     case('cdil')
       read(pvalue,*) cdil
+    case('alpha')
+      read(pvalue,*) alpha
+    case('pf0')
+      read(pvalue,*) pf0
     case('restart')
       read(pvalue,*) restart
     case('latticeh')
@@ -308,13 +312,13 @@ program main
       read(pvalue,*) dilatancy
     case('viscous')
       read(pvalue,*) viscous
+    case('injection')
+      read(pvalue,*) injection
     case('parameter_file_ncol')
       read(pvalue,*) ncol
-    case('noutloc')
-      read(pvalue,*) noutloc
     case('outloc')
-      i=i+1
-      read(pvalue,*) locid(i)
+      noutloc=noutloc+1
+      read(pvalue,*) locid(noutloc)
     case default
       if(my_rank==0) write(*,*) 'WARNING: ', trim(param), ' is an unknown parameter'
     end select
@@ -349,7 +353,7 @@ program main
     else
       open(12,file=geofile,iostat=ios)
       if(ios /= 0) then
-        if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
+        if(my_rank==0)write(*,*) 'ERROR: Failed to open geometry file'
         stop
       end if
       nl=0
@@ -364,7 +368,7 @@ program main
   end select
 
   if(ncellg == 0) then
-    if(my_rank == 0) write(*,*) 'error: Ncellg is zero'
+    if(my_rank == 0) write(*,*) 'ERROR: Ncellg is zero'
     stop
   end if
 
@@ -434,7 +438,7 @@ program main
   case('2dn','2dnh','25d')
     open(20,file=geofile,status='old',iostat=ios)
     if(ios /= 0) then
-      if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
+      if(my_rank==0)write(*,*) 'ERROR: Failed to open geometry file'
       stop
     end if
     do i=1,NCELLg
@@ -452,7 +456,7 @@ program main
   case('3dnr','3dhr')
     open(20,file=geofile,status='old',iostat=ios)
     if(ios /= 0) then
-     if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
+     if(my_rank==0)write(*,*) 'ERROR: Failed to open geometry file'
      stop
     end if
     do i=1,NCELLg
@@ -475,7 +479,7 @@ program main
       !.stl format
       open(12,file=geofile,iostat=ios)
       if(ios /= 0) then
-        if(my_rank==0)write(*,*) 'error: Failed to open geometry file'
+        if(my_rank==0)write(*,*) 'ERROR: Failed to open geometry file'
         stop
       end if
 
@@ -521,7 +525,7 @@ program main
   if(parameterfromfile) then
     open(99,file=parameter_file,iostat=ios)
     if(ios /= 0) then
-      if(my_rank==0) write(*,*) 'error: Failed to open parameter file'
+      if(my_rank==0) write(*,*) 'ERROR: Failed to open parameter file'
       stop
     end if
     read(99, *, iostat=ios) param2(1:ncol)
@@ -1188,10 +1192,27 @@ program main
     !timer=timer+time4-time3
 
     !if normal stress is bounded
+    if(limitsigma)then
       do i=1,NCELL
         if(y(3*i)<minsig) y(3*i)=minsig
         if(y(3*i)>maxsig) y(3*i)=maxsig
       end do
+    end if
+
+    if(injection) then
+      select case(problem)
+      case('2dp')
+        do i=1,NCELL
+          i_=st_sum%lodc(i)
+          y(3*i)=max(minsig,sigma0(i)-pf0*erfc(xcol(i_)/(2*sqrt(alpha*x))))
+        end do
+      case('3dp')
+        do i=1,NCELL
+          i_=st_sum%lodc(i)
+          y(3*i)=max(minsig,sigma0(i)-pf2d(pf0,alpha,x,xcol(i_),zcol(i_)))
+        end do
+      end select 
+    end if
 
     !compute physical values for control and output
     !$omp parallel do
@@ -2183,7 +2204,7 @@ end subroutine
 
       xnew=x+h
       if(xnew-x<1.d-15) then
-        if(my_rank.eq.0) write(*,*) 'error: Runge-Kutta method did not converge'
+        if(my_rank.eq.0) write(*,*) 'ERROR: Runge-Kutta method did not converge'
         stop
       end if
 
@@ -2283,7 +2304,7 @@ end subroutine
 
       xnew=x+h
       if(xnew-x<1.d-15) then
-        if(my_rank.eq.0)write(*,*)'error: Runge-Kutta method did not converge'
+        if(my_rank.eq.0)write(*,*)'ERROR: Runge-Kutta method did not converge'
         stop
       end if
 
@@ -2538,4 +2559,71 @@ end subroutine
     Call MPI_FINALIZE(ierr)
     stop
   end subroutine
+
+  FUNCTION pf2d(pf0,alpha,time,x,z)
+    implicit none
+    real(8)::pf2d,time,x,z,alpha,pf0
+    pf2d=pf0*expint(1,((x-0.0)**2+(z-0.0)**2)/4/alpha/time)
+    return
+  end function
+
+  FUNCTION expint(n,x)
+    INTEGER ::n,MAXIT
+    REAL(8) ::expint,x,EPS,FPMIN,EULER
+    integer,parameter:: MAXIT=100
+    real(8),parameter::EPS=1.e-7,FPMIN=1.e-30,EULER=.5772156649
+    INTEGER ::i,ii,nm1
+    REAL(8) ::a,b,c,d,del,fact,h,psi
+    nm1=n-1 
+    if(n.lt.0.or.x.lt.0..or.(x.eq.0..and.(n.eq.0.or.n.eq.1))) then
+        stop
+    else if(n.eq.0)then
+    expint=exp(-x)/x 
+    else if(x.eq.0.) then
+    expint=1./nm1 
+    else if(x.gt.1.)then
+        b=x+n   
+        c=1./FPMIN
+        d=1./b
+        h=d
+    
+    
+    do i=1,MAXIT
+        a=-i*(nm1+i)
+        b=b+2.
+        d=1./(a*d+b)
+        c=b+a/c
+        del=c*d
+        h=h*del 
+    if(abs(del-1.).lt.EPS)then
+        expint=h*exp(-x)
+    return 
+    endif
+    enddo
+    
+    else 
+        if(nm1.ne.0)then
+        expint=1./nm1
+    else
+        expint=-log(x)-EULER 
+    endif
+    fact=1.
+    
+    do i=1,MAXIT 
+        fact=-fact*x/i 
+        if(i.ne.nm1)then
+    del=-fact/(i-nm1) 
+    else
+    psi=-EULER
+    do ii=1,nm1
+    psi=psi+1./ii 
+    enddo
+    del=fact*(-log(x)+psi)
+    endif
+      expint=expint+del
+      if(abs(del).lt.abs(expint)*EPS) return 
+    enddo 
+    endif
+    return 
+  end 
 end program
