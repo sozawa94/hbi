@@ -12,7 +12,7 @@ module m_HACApK_calc_entry_ij
     real(8),pointer::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
     real(8),pointer::ys1(:),ys2(:),ys3(:),ys4(:)
     real(8),pointer::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:)
-    real(8),pointer::ds(:),dsl(:)
+    real(8),pointer::ds(:),dsl(:),dsd(:)
     real(8)::w
     !real(8),pointer::ds
     character(128)::v,md
@@ -31,6 +31,9 @@ contains
     select case(st_bemv%problem)
     case('2dp')
       HACApK_entry_ij=matels2dp_ij(i,j,st_bemv%xcol,st_bemv%xel,st_bemv%xer)
+
+    case('2dpfz')
+      HACApK_entry_ij=matels2dpFZ_ij(i,j,st_bemv%xcol,st_bemv%xel,st_bemv%xer,st_bemv%w)
 
     case('2dn_vector')
       HACApK_entry_ij=matel2dn_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
@@ -58,7 +61,7 @@ contains
     case('3dp')
       HACApK_entry_ij=matel3dp_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
       & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
-      & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
+      & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4,st_bemv%v, st_bemv%md)
     ! case('3dph')
     !   HACApK_entry_ij=matel3dph_ij(i,j,st_bemv%xcol,st_bemv%zcol,&
     !   & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
@@ -66,11 +69,11 @@ contains
     !   !write(*,*)HACApK_entry_ij
     case('3dhr','3dph')
       fullspace=.false.
-      HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%dsl,st_bemv%v,st_bemv%rake,st_bemv%w,fullspace)
+      HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%dsl,st_bemv%dsd,st_bemv%v,st_bemv%rake,st_bemv%w,fullspace)
       !write(*,*)HACApK_entry_ij
     case('3dnr')
       fullspace=.true.
-      HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%dsl,st_bemv%v,st_bemv%rake,st_bemv%w,fullspace)
+      HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%dsl,st_bemv%dsd,st_bemv%v,st_bemv%rake,st_bemv%w,fullspace)
       !write(*,*)HACApK_entry_ij
     case('3dn','3dnt')
       !HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
@@ -406,47 +409,64 @@ End Subroutine D2dip2
 
   end function
 
-  real(8) function matel3dp_ij(i,j,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
+  real(8) function matel3dp_ij(i,j,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4,v,md)
     implicit none
     integer,intent(in)::i,j
     real(8),intent(in)::xcol(:),zcol(:)
     real(8),intent(in)::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
+    character(128),intent(in)::md,v
 
     matel3dp_ij=ret3dp(xcol(i)-xs1(j),xcol(i)-xs2(j),xcol(i)-xs3(j),xcol(i)-xs4(j),&
-    & zcol(i)-zs1(j),zcol(i)-zs2(j),zcol(i)-zs3(j),zcol(i)-zs4(j))
+    & zcol(i)-zs1(j),zcol(i)-zs2(j),zcol(i)-zs3(j),zcol(i)-zs4(j),v,md)
 
   end function
-  real(8) function matel3dph_ij(i,j,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
+  real(8) function matel3dph_ij(i,j,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4,v,md)
     implicit none
     integer,intent(in)::i,j
     real(8),intent(in)::xcol(:),zcol(:)
     real(8),intent(in)::xs1(:),xs2(:),xs3(:),xs4(:),zs1(:),zs2(:),zs3(:),zs4(:)
+    character(128),intent(in)::md,v
     real(8)::tmp1,tmp2
 
     tmp1=ret3dp(xcol(i)-xs1(j),xcol(i)-xs2(j),xcol(i)-xs3(j),xcol(i)-xs4(j),&
-    & zcol(i)-zs1(j),zcol(i)-zs2(j),zcol(i)-zs3(j),zcol(i)-zs4(j))
+    & zcol(i)-zs1(j),zcol(i)-zs2(j),zcol(i)-zs3(j),zcol(i)-zs4(j),v,md)
     tmp2=ret3dp(xcol(i)-xs1(j),xcol(i)-xs2(j),xcol(i)-xs3(j),xcol(i)-xs4(j),&
-    & zcol(i)+zs1(j),zcol(i)+zs2(j),zcol(i)+zs3(j),zcol(i)+zs4(j))
+    & zcol(i)+zs1(j),zcol(i)+zs2(j),zcol(i)+zs3(j),zcol(i)+zs4(j),v,md)
     matel3dph_ij=tmp1-tmp2
    ! write(*,*)tmp1,tmp2
     !write(*,*) matel3dph_ij
   end function
 
-  real(8) function ret3dp(dx1,dx2,dx3,dx4,dz1,dz2,dz3,dz4)
+  real(8) function ret3dp(dx1,dx2,dx3,dx4,dz1,dz2,dz3,dz4,v,md)
     implicit none
     real(8),intent(in)::dx1,dx2,dx3,dx4,dz1,dz2,dz3,dz4
+    character(128),intent(in)::md,v
     real(8)::angle,dx,dy,sxx,sxy,syy,gtau(2),gsig(2),factor
-    real(8)::dr1,dr2,dr3,dr4,ret1,ret2,ret3
+    real(8)::dr1,dr2,dr3,dr4,ret1,ret2,ret3,alpha
+    ret3dp = 0.0
+
     factor = rigid/(4.d0 * pi)
     dr1=dsqrt(dx1**2+dz1**2)
     dr2=dsqrt(dx2**2+dz2**2)
     dr3=dsqrt(dx3**2+dz3**2)
     dr4=dsqrt(dx4**2+dz4**2)
+    alpha=1/(2-2*pois)
 
-    ret1=2.d0/3.d0*(dr4/(dx4*dz4)+dr2/(dx2*dz2)-dr3/(dx3*dz3)-dr1/(dx1*dz1))
-    ret2=1.d0/3.d0/dx1*(dr4/dz4+dz4/dr4-dr1/dz1-dz1/dr1)
-    ret3=1.d0/3.d0/dx2*(dr2/dz2+dz2/dr2-dr3/dz3-dz3/dr3)
-    ret3dp = factor*(ret1+ret2+ret3)
+    select case(md)
+    case("s","o")
+      if(v=="s") then
+        ret1=2.d0*(1-alpha)*(dr4/(dx4*dz4)+dr2/(dx2*dz2)-dr3/(dx3*dz3)-dr1/(dx1*dz1))
+        ret2=-(1-2*alpha)/dx1*(dr4/dz4+dz4/dr4-dr1/dz1-dz1/dr1)
+        ret3=-(1-2*alpha)/dx2*(dr2/dz2+dz2/dr2-dr3/dz3-dz3/dr3)
+        ret3dp = factor*(ret1+ret2+ret3)
+      end if
+    case('open')
+      if(v=="n") then
+        ret1=2.d0*(1-alpha)*(dr4/(dx4*dz4)+dr2/(dx2*dz2)-dr3/(dx3*dz3)-dr1/(dx1*dz1))
+        ret3dp = factor*ret1
+      end if
+    end select
+
   end function
 
   real(8) function matel2dn_ij(i,j,xcol,ycol,xel,xer,yel,yer,ang,v)
@@ -640,6 +660,28 @@ End Subroutine D2dip2
     matels2dp_ij=factor*(1.d0/(xcol(i)-xer(j))-1.d0/(xcol(i)-xel(j)))
   end function matels2dp_ij
 
+  real(8) function matels2dpFZ_ij(i,j,xcol,xel,xer,fwid)
+    implicit none
+    integer,intent(in)::i,j
+    real(8),intent(in)::xcol(:),xel(:),xer(:),fwid
+    !real(8),intent(in)::rigid,pois
+    integer::k
+    real(8)::factor,a,dx1,dx2
+
+    !antiplane shear
+    factor=rigid/(2.d0*pi)
+
+    matels2dpFZ_ij=1.d0/(xcol(i)-xer(j))-1.d0/(xcol(i)-xel(j))
+  do k=1,10
+    a=k*fwid
+    dx1=xcol(i)-xer(j)
+    dx2=xcol(i)-xel(j)
+    matels2dpFZ_ij=matels2dpFZ_ij+2*dx1*(dx1**3-3*a**2)/(a**2+dx1**2)**3-2*dx2*(dx2**3-3*a**2)/(a**2+dx2**2)**3
+  end do   
+  matels2dpFZ_ij=matels2dpFZ_ij*factor
+
+  end function matels2dpFZ_ij
+
   real(8) function matels2dpa_ij(i,j,xcol,xel,xer)
   implicit none
   integer,intent(in)::i,j
@@ -780,6 +822,9 @@ end function matels2dpa_ij
     case('s','o')
       call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake(i)),&
       &sin(st_bemv%rake(i)),0.d0,rigid,lambda,Sxx,Syy,Szz,Sxy,Sxz,Syz)
+    case('open')
+      call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,&
+      &0.d0,1.d0,rigid,lambda,Sxx,Syy,Szz,Sxy,Sxz,Syz)
     end select
 
 
@@ -795,7 +840,7 @@ end function matels2dpa_ij
     !case('d')
     !  matel3dn_ij=p(6)
     case('n')
-      matel3dn_ij=p(3)
+      matel3dn_ij=-p(3)
     case('s','o')
       matel3dn_ij=p(5)*cos(st_bemv%rake(i))+p(6)*sin(st_bemv%rake(i))
     !case('power')
@@ -827,6 +872,9 @@ end function matels2dpa_ij
     case('s','o')
       call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake(j)),&
       & sin(st_bemv%rake(j)),0.d0,rigid,lambda,Sxx,Syy,Szz,Sxy,Sxz,Syz)
+    case('open')
+      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,&
+      &0.d0,1.d0,rigid,lambda,Sxx,Syy,Szz,Sxy,Sxz,Syz)
     end select
 
     Arot(1,:)=(/st_bemv%ev11(i),st_bemv%ev21(i),st_bemv%ev31(i)/)
@@ -1014,16 +1062,16 @@ end function matels2dpa_ij
 
     return
   end subroutine
-  real(8) function okada_ij(i,j,xcol,ycol,zcol,ang,angd,dsl,v,rake,w,fullspace)
+  real(8) function okada_ij(i,j,xcol,ycol,zcol,ang,angd,dsl,dsd,v,rake,w,fullspace)
     implicit none
     integer,intent(in)::i,j
     !type(st_HACApK_calc_entry) :: st_bemv
-    real(8),intent(in)::xcol(:),ycol(:),zcol(:),ang(:),angd(:),dsl(:),rake(:),w
+    real(8),intent(in)::xcol(:),ycol(:),zcol(:),ang(:),angd(:),dsl(:),dsd(:),rake(:),w
     character(128),intent(in)::v
     logical,intent(in)::fullspace
     integer::iret
     real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha
-    real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,z,depth,dip,r
+    real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,z,depth,dip,rs,rd
 
     alpha=(1d0+(0.5d0/pois-1d0))/(1d0+2d0*(0.5d0/pois-1d0))
     !rotation so that strike is parallel to y axis
@@ -1041,13 +1089,15 @@ end function matels2dpa_ij
     z=zcol(i)
     depth=-zcol(j)
     dip=angd(j)*180/pi
-    r=dsl(j)/w
+    rs=dsl(j)/w
+    rd=dsd(j)/w
+
     !rake=st_bemv%rake
    !st_bemv%dip(j)=pi/180
    !write(*,*)w
    !
 
-    call okada(alpha,dx/w,dy/w,z/w,depth/w,dip,-0.5d0*r,0.5d0*r,-0.5d0*r,0.5d0*r,-cos(rake(j)),-sin(rake(j)),0d0,&
+    call okada(alpha,dx/w,dy/w,z/w,depth/w,dip,-0.5d0*rs,0.5d0*rs,-0.5d0*rd,0.5d0*rd,-cos(rake(j)),-sin(rake(j)),0d0,&
    &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,fullspace)
   ! write(*,*) st_bemv%zcol(i),-st_bemv%zcol(j),st_bemv%angd(j)*180/pi
    ! write(*,*)uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz

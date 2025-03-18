@@ -3,7 +3,6 @@ program main
   use m_HACApK_solve
   use m_HACApK_base
   use m_HACApK_use
-  !use mod_derivs
   use mod_constant
   use m_HACApK_calc_entry_ij
   implicit none
@@ -18,7 +17,7 @@ program main
   !for HACApK
   real(8),allocatable ::coord(:,:),vmax(:)
   real(8)::eps_h
-  type(st_HACApK_lcontrol) :: st_ctl,st_ctl2
+  type(st_HACApK_lcontrol) :: st_ctl,st_ctl2,st_ctl3,st_ctl4
   type(st_HACApK_leafmtxp) :: st_leafmtxps,st_leafmtxpn
   type(st_HACApK_leafmtxp) :: st_leafmtxp_s,st_leafmtxp_n,st_leafmtxp_d,st_leafmtxp_c
   type(st_HACApK_leafmtxp) :: st_leafmtxp_s2,st_leafmtxp_n2,st_leafmtxp_d2
@@ -42,7 +41,7 @@ program main
   real(8)::time1,time2,time3,time4,timer,timeH
 
   !for fault geometry
-  real(8),allocatable::xcol(:),ycol(:),zcol(:),ds(:),dsl(:)
+  real(8),allocatable::xcol(:),ycol(:),zcol(:),ds(:),dsl(:),dsd(:)
   real(8),allocatable::xs1(:),xs2(:),xs3(:),xs4(:) !for 3dp
   real(8),allocatable::zs1(:),zs2(:),zs3(:),zs4(:) !for 3dp
   real(8),allocatable::ys1(:),ys2(:),ys3(:),ys4(:) !for 3dn
@@ -50,11 +49,11 @@ program main
   real(8),allocatable::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:)
 
   !parameters for each elements
-  real(8),allocatable::a(:),b(:),dc(:),f0(:),fw(:),vw(:),vc(:),taudot(:),tauddot(:),sigdot(:),vplv(:),values(:,:),etav(:),pre(:),vflow(:)
-  real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),vcg(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:),vplvg(:),cslipG(:),etavg(:)
+  real(8),allocatable::a(:),b(:),dc(:),f0(:),fw(:),vw(:),vc(:),taudot(:),tauddot(:),sigdot(:),vplv(:),values(:,:),etav(:),pre(:),vflow(:),veln(:),slipn(:)
+  real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),vcg(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:),vplvg(:),cslipG(:),etavg(:),velnG(:)
 
   !variables
-  real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),slip(:),mu(:),rupt(:),islip(:),velp(:),cslip(:),sigma0(:),vslip(:)
+  real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),slip(:),mu(:),rupt(:),islip(:),velp(:),cslip(:),sigma0(:),tau0(:),vslip(:)
   real(8),allocatable::taus(:),taud(:),vels(:),veld(:),slips(:),slipd(:),rake(:),lbds(:)
 
   real(8),allocatable::rdata(:)
@@ -64,11 +63,12 @@ program main
   !controls
   logical::dilatancy,buffer,nuclei,slipping,outfield,structured,limitsigma,dcscale,slowslip,slipfinal,deepcreep,rakefromglobal,viscous
   logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,forward,inverse,geofromfile,restart,latticeh,debug,bgstress,relax,injection
+  logical::opening
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw,param2(20)
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meanslip,meanslipG,moment0,mvel,mvelG,etav0
-  real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit,vc0
+  real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dtout_co,dtout_inter,dummy(10),tdil,cdil,nflow,MCNS,vref
-  real(8)::alpha,pf0,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo,convangle,velth
+  real(8)::cdiff,pf0,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo,convangle,velth
 
   !temporal variable
 
@@ -91,7 +91,7 @@ program main
   npd=int(sqrt(dble(np)))
   call MPI_COMM_RANK(MPI_COMM_WORLD,my_rank,ierr )
   if(my_rank==0) then
-    write(*,*) 'HBI ver. 2025.2.0'
+    write(*,*) 'HBI ver. 2025.3.0'
     write(*,*) '# of MPI', np
   end if
   !input file must be specified when running
@@ -149,8 +149,9 @@ program main
   deepcreep=.false.
   limitsigma=.true.
   injection=.false.
+  opening=.false.
   maxsig=300d0
-  minsig=0.1d0
+  minsig=1d0
   muinit=0d0
   dtout=365*24*3600
   dtout_co=1000.0
@@ -168,7 +169,7 @@ program main
   ncol=0
   noutloc=0
   locid=0
-  alpha=0.0
+  cdiff=0.0
   pf0=0.0
   nflow=1.0
   geofile="default"
@@ -258,6 +259,8 @@ program main
       read (pvalue,*) limitsigma
     case('sigmaconst')
       read(pvalue,*) sigmaconst
+    case('opening')
+      read(pvalue,*) opening
     case('forward')
       read(pvalue,*) forward
     case('inverse')
@@ -280,8 +283,8 @@ program main
       read(pvalue,*) tdil
     case('cdil')
       read(pvalue,*) cdil
-    case('alpha')
-      read(pvalue,*) alpha
+    case('cdiff')
+      read(pvalue,*) cdiff
     case('pf0')
       read(pvalue,*) pf0
     case('restart')
@@ -373,9 +376,9 @@ program main
   end if
 
   !allocation
-  allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg),dsl(NCELLg))
+  allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg),dsl(NCELLg),dsd(NCELLg))
   allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),f0g(NCELLg),etavg(NCELLg),vcg(NCELLg))
-  allocate(taug(NCELLg),sigmag(NCELLg),velG(NCELLg),rake(NCELLg),cslipG(NCELLg))
+  allocate(taug(NCELLg),sigmag(NCELLg),velG(NCELLg),rake(NCELLg),cslipG(NCELLg),velnG(NCELLg))
   allocate(taudotg(NCELLg),sigdotg(NCELLg),vplvg(NCELLg))
 
   xcol=0d0;ycol=0d0;zcol=0d0;ds=0d0
@@ -452,6 +455,7 @@ program main
     call coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4)
     ds=ds0*ds0
     dsl=ds0
+    dsd=ds0
 
   case('3dnr','3dhr')
     open(20,file=geofile,status='old',iostat=ios)
@@ -460,8 +464,8 @@ program main
      stop
     end if
     do i=1,NCELLg
-     read(20,*) xcol(i),ycol(i),zcol(i),ang(i),angd(i),dsl(i)     
-     ds(i)=dsl(i)*dsl(i)
+     read(20,*) xcol(i),ycol(i),zcol(i),ang(i),angd(i),dsl(i),dsd(i)
+     ds(i)=dsl(i)*dsd(i)
     end do
     ds0=minval(dsl)
     close(20)
@@ -470,6 +474,7 @@ program main
     call coordinate3ddip(imax,jmax,ds0,dipangle)
     ds=ds0*ds0
     dsl=ds0
+    dsd=ds0
 
   case('3dnt','3dht')
 
@@ -620,7 +625,7 @@ program main
 
   case('3dhr','3dnr','3dph')
     allocate(st_bemv%xcol(NCELLg),st_bemv%ycol(NCELLg),st_bemv%zcol(NCELLg))
-    allocate(st_bemv%ang(NCELLg),st_bemv%angd(NCELLg),st_bemv%rake(NCELLg),st_bemv%dsl(NCELLg))
+    allocate(st_bemv%ang(NCELLg),st_bemv%angd(NCELLg),st_bemv%rake(NCELLg),st_bemv%dsl(NCELLg),st_bemv%dsd(NCELLg))
     st_bemv%xcol=xcol
     st_bemv%ycol=ycol
     st_bemv%zcol=zcol
@@ -629,6 +634,7 @@ program main
     st_bemv%problem=problem
     st_bemv%rake=rake
     st_bemv%dsl=dsl
+    st_bemv%dsd=dsd
     st_bemv%w=ds0
 
   case('3dht','3dnt')
@@ -677,6 +683,9 @@ program main
   case('2dp','2dn3','3dp','2dvs')
     sigmaconst=.true.
   end select
+  
+  if(opening) sigmaconst=.false.
+
   st_bemv%md='s'
   st_bemv%v='s'
   lrtrn=HACApK_generate(st_leafmtxp_s,st_bemv,st_ctl,coord,eps_h)
@@ -693,10 +702,23 @@ program main
     lrtrn=HACApK_generate(st_leafmtxp_n,st_bemv,st_ctl2,coord,eps_h)
     lrtrn=HACApK_construct_LH(st_LHp_n,st_leafmtxp_n,st_bemv,st_ctl2,coord,eps_h)
   end if
+  if(opening) then
+    lrtrn=HACApK_init(NCELLg,st_ctl3,st_bemv,icomm)
+    st_bemv%md='open'
+    st_bemv%v='s'
+    lrtrn=HACApK_generate(st_leafmtxp_s2,st_bemv,st_ctl3,coord,eps_h)
+    lrtrn=HACApK_construct_LH(st_LHp_s2,st_leafmtxp_s2,st_bemv,st_ctl3,coord,eps_h)
+    lrtrn=HACApK_init(NCELLg,st_ctl4,st_bemv,icomm)
+    st_bemv%md='open'
+    st_bemv%v='n'
+    lrtrn=HACApK_generate(st_leafmtxp_n2,st_bemv,st_ctl4,coord,eps_h)
+    lrtrn=HACApK_construct_LH(st_LHp_n2,st_leafmtxp_n2,st_bemv,st_ctl4,coord,eps_h)
+  end if
+
   !write(*,*) my_rank,st_ctl%lpmd(33),st_ctl%lpmd(37)
   allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL))
-  allocate(psi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),slip(NCELL),mu(NCELL))
-  allocate(islip(NCELL),cslip(NCELL),sigma0(NCELL),etav(NCELL),pre(NCELL),vflow(NCELL),vslip(NCELL))
+  allocate(psi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),slip(NCELL),mu(NCELL),veln(NCELL),slipn(ncell))
+  allocate(islip(NCELL),cslip(NCELL),sigma0(NCELL),tau0(NCELL),etav(NCELL),pre(NCELL),vflow(NCELL),vslip(NCELL))
   psi=0d0;vel=0d0;tau=0d0;sigma=0d0;slip=0d0;etav=0d0;pre=0d0;vflow=0d0;vslip=0d0
   allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),vc(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL),lbds(NCELL),vplv(NCELL))
   taudot=0d0;sigdot=0d0
@@ -942,7 +964,8 @@ program main
     !uniform values
     sigma=sigmainit
     tau=tauinit
-    vel=velinit   
+    vel=velinit
+    veln=0
     !if(my_rank==0) write(*,*) tau
     if(muinit.ne.0d0) tau=sigma*muinit
 
@@ -976,10 +999,13 @@ program main
     end if
 
     sigma0=sigma
+    tau0=tau
     mu=tau/sigma
     psi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
     if(evlaw=='mCNS') psi=tau/sigma-a*dlog(vel/vref)
     slip=0d0
+    slipn=0d0
+
 
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
@@ -1046,6 +1072,15 @@ program main
         nout(7)=nout(6)+1
         write(fname,'("output/vslip",i0,".dat")') number
         open(nout(7),file=fname,form='unformatted',access='stream',status='replace')
+      end if
+
+      if(opening) then
+        nout(8)=nout(7)+1
+        write(fname,'("output/veln",i0,".dat")') number
+        open(nout(8),file=fname,form='unformatted',access='stream',status='replace')
+        nout(9)=nout(8)+1
+        write(fname,'("output/slipn",i0,".dat")') number
+        open(nout(9),file=fname,form='unformatted',access='stream',status='replace')
       end if
       
 
@@ -1146,6 +1181,7 @@ program main
       call output_monitor()
     end if
     call output_field(mvel_loc)
+    !call output_field_sorted(mvel_loc)
     dtnxt = dtinit
   end if
 
@@ -1192,24 +1228,36 @@ program main
     !timer=timer+time4-time3
 
     !if normal stress is bounded
-    if(limitsigma)then
-      do i=1,NCELL
-        if(y(3*i)<minsig) y(3*i)=minsig
-        if(y(3*i)>maxsig) y(3*i)=maxsig
-      end do
-    end if
+    ! if(limitsigma)then
+    !   do i=1,NCELL
+    !     if(y(3*i)<minsig) y(3*i)=minsig
+    !     if(y(3*i)>maxsig) y(3*i)=maxsig
+    !   end do
+    ! end if
 
     if(injection) then
       select case(problem)
-      case('2dp')
+      case('2dp','2dn')
         do i=1,NCELL
           i_=st_sum%lodc(i)
-          y(3*i)=max(minsig,sigma0(i)-pf0*erfc(xcol(i_)/(2*sqrt(alpha*x))))
+          !along-fault diffusion
+          sigma0(i)=sigma0(i)+y(3*i)-sigma(i)
+          !y(3*i)=sigma0(i)-pf0*erfc(xcol(i_)/(2*sqrt(cdiff*x)))
+          y(3*i)=sigma0(i)-pf1d(pf0,cdiff,x,xcol(i_))
+          !y(3*i)=max(minsig,sigma0(i)-pf0*erfc(xcol(i_)/(2*sqrt(cdiff*x))))
+          !homogenous diffusion
+          !y(3*i)=max(minsig,sigma0(i)-pf2d(pf0,cdiff,x,xcol(i_),0.0))
         end do
       case('3dp')
         do i=1,NCELL
           i_=st_sum%lodc(i)
-          y(3*i)=max(minsig,sigma0(i)-pf2d(pf0,alpha,x,xcol(i_),zcol(i_)))
+           !along-fault diffusion
+          sigma0(i)=sigma0(i)+y(3*i)-sigma(i)
+          y(3*i)=sigma0(i)-pf2d(pf0,cdiff,x,xcol(i_),zcol(i_))
+          !y(3*i)=max(minsig,sigma0(i)-pf2d(pf0,cdiff,x,xcol(i_),zcol(i_)))
+          !homogenous diffusion
+          r=sqrt(xcol(i_)**2+zcol(i_)**2)
+          !y(3*i)=max(minsig,sigma0(i)-pf0*erfc(r/(2*sqrt(cdiff*x))/r))
         end do
       end select 
     end if
@@ -1227,6 +1275,11 @@ program main
         vslip(i)=vslip(i)+vflow(i)*dtdid*0.5d0
         vflow(i)=pre(i)*tau(i)**nflow
         vslip(i)=vslip(i)+vflow(i)*dtdid*0.5d0
+      end if
+      if(opening) then
+        veln(i)=vel(i)*(max(0.0,minsig-sigma(i))*1.0+min(0.0,maxsig-sigma(i))*1.0)
+        !veln(i)=-(sigma(i)-sigma0(i))*1e-12
+        slipn(i)=slipn(i)+veln(i)*dtdid
       end if
       slip(i)=slip(i)+(vel(i)+vflow(i))*dtdid*0.5d0
       mu(i)=tau(i)/sigma(i)
@@ -1264,7 +1317,7 @@ program main
     meanslip=0d0
     do i=1,NCELL
       i_=st_sum%lodc(i)
-      meanslip=meanslip+slip(i)*ds(i_)
+      meanslip=meanslip+abs(slip(i))*ds(i_)
     end do
     !call MPI_ALLREDUCE(meanslip,meanslipG,1,MPI_REAL8,MPI_SUM,MPI_COMM_WORLD,ierr)
     call MPI_reduce(meanslip,meanslipG,1,MPI_REAL8,MPI_SUM,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
@@ -1322,7 +1375,7 @@ program main
         if(my_rank==0) then
           write(44,'(i0,i8,f17.2,f14.4,i8)') eventcount,k,onset_time,(log10(moment*rigid*sg)+5.9)/1.5,hypoloc
         end if
-        cslip=slip-islip
+        cslip=abs(slip-islip)
         call output_EQslip()
         ! if(my_rank<npd) then
         !   write(nout5) cslip
@@ -1368,6 +1421,7 @@ program main
       end if
       !lattice H
        call output_field(mvel_loc)
+       !call output_field_sorted(mvel_loc)
     end if
 
     if(my_rank==0.and.k>kend) then
@@ -1441,7 +1495,7 @@ contains
   subroutine output_local(nf,loc_)
     implicit none
     integer,intent(in)::nf,loc_
-    write(nf,'(i7,f19.4,7e16.5)')k,x,log10(vel(loc_)),slip(loc_),tau(loc_),sigma(loc_),mu(loc_),psi(loc_),vflow(loc_)
+    write(nf,'(i7,f19.4,9e16.5)')k,x,log10(vel(loc_)),slip(loc_),tau(loc_),sigma(loc_),mu(loc_),psi(loc_),vflow(loc_),veln(loc_),slipn(loc_)
   end subroutine
 
   subroutine get_mvelloc(mvel_loc)
@@ -1465,7 +1519,7 @@ contains
     implicit none
     integer::nn,rcounts(npd),displs(npd+1)
     integer::mvel_loc(1)
-    real(8)::velG(NCELLg),tauG(NCELLg),sigmaG(Ncellg),slipG(ncellg),vflowg(ncellg),vslipG(ncellg)
+    real(8)::velG(NCELLg),tauG(NCELLg),sigmaG(Ncellg),slipG(ncellg),vflowg(ncellg),vslipG(ncellg),velnG(ncellg),slipnG(Ncellg)
     call MPI_GATHER(ncell,1,MPI_INT,rcounts,1,MPI_INT,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
 
     displs(1)=0
@@ -1481,6 +1535,10 @@ contains
       call MPI_GATHERv(vflow,NCELL,MPI_REAL8,vflowG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
       call MPI_GATHERv(vslip,NCELL,MPI_REAL8,vslipG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
     end if
+    if(opening) then
+      call MPI_GATHERv(veln,NCELL,MPI_REAL8,velnG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+      call MPI_GATHERv(slipn,NCELL,MPI_REAL8,slipnG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    end if
 
     if(my_rank==0) then
       mvel_loc=maxloc(abs(velG))
@@ -1491,6 +1549,62 @@ contains
       if(viscous) then
         write(nout(6)) vflowG
         write(nout(7)) vslipG
+      end if
+      if(opening) then
+        write(nout(8)) velnG
+        write(nout(9)) slipnG        
+      end if
+    end if
+
+  end subroutine
+
+  subroutine output_field_sorted(mvel_loc)
+    implicit none
+    integer::nn,rcounts(npd),displs(npd+1)
+    integer::mvel_loc(1),listG(NCELLg),i_
+    real(8)::velG(NCELLg),tauG(NCELLg),sigmaG(Ncellg),slipG(ncellg),vflowg(ncellg),vslipG(ncellg),velnG(ncellg),slipnG(Ncellg)
+    real(8)::velG2(NCELLg),tauG2(NCELLg),sigmaG2(Ncellg),slipG2(ncellg),vflowg2(ncellg),vslipG2(ncellg),velnG2(ncellg),slipnG2(Ncellg)
+    call MPI_GATHER(ncell,1,MPI_INT,rcounts,1,MPI_INT,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+
+    displs(1)=0
+    do nn=2,npd+1
+      displs(nn)=displs(nn-1)+rcounts(nn-1)
+    end do
+
+    call MPI_GATHERv(st_sum%lodc,NCELL,MPI_INTEGER,listG,rcounts,displs,MPI_INTEGER,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    call MPI_GATHERv(vel,NCELL,MPI_REAL8,velG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    call MPI_GATHERv(tau,NCELL,MPI_REAL8,tauG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    call MPI_GATHERv(sigma,NCELL,MPI_REAL8,sigmaG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    call MPI_GATHERv(slip,NCELL,MPI_REAL8,slipG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    if(viscous) then
+      call MPI_GATHERv(vflow,NCELL,MPI_REAL8,vflowG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+      call MPI_GATHERv(vslip,NCELL,MPI_REAL8,vslipG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    end if
+    if(opening) then
+      call MPI_GATHERv(veln,NCELL,MPI_REAL8,velnG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+      call MPI_GATHERv(slipn,NCELL,MPI_REAL8,slipnG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    end if
+
+    if(my_rank==0) then
+      do i=1, NCELLg
+        i_=listG(i)
+        velG2(i_)=velG(i)
+        slipG2(i_)=slipG(i)
+        sigmaG2(i_)=sigmaG(i)
+        tauG2(i_)=tauG2(i)
+      end do
+      mvel_loc=maxloc(abs(velG))
+      write(nout(1)) velG2
+      write(nout(2)) slipG2
+      write(nout(3)) sigmaG2
+      write(nout(4)) tauG2
+      if(viscous) then
+        write(nout(6)) vflowG
+        write(nout(7)) vslipG
+      end if
+      if(opening) then
+        write(nout(8)) velnG
+        write(nout(9)) slipnG        
       end if
     end if
 
@@ -1726,7 +1840,7 @@ end subroutine
       real(8),intent(out)::xcol(:),ycol(:),zcol(:)
       real(8),intent(out)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
       integer::i,j,k
-      integer,parameter::ndata=256
+      integer,parameter::ndata=256,nskip=22
       real(8)::xc,yc,zc,amp
       real(4)::xl(ndata+1,ndata+1)
 
@@ -1757,9 +1871,9 @@ end subroutine
 
           ! ys2(2*k-1)=xl(i+1,j)
           ! ys3(2*k-1)=xl(i,j+1)
-          ! ys1(2*k-1)=xl(i,j)
-          ! ys2(2*k-1)=xl(i+1,j)
-          ! ys3(2*k-1)=xl(i,j+1)
+          ys1(2*k-1)=xl(i+nskip,j+nskip)
+          ys2(2*k-1)=xl(i+1+nskip,j+nskip)
+          ys3(2*k-1)=xl(i+nskip,j+1+nskip)
   
           xs2(2*k)=xc+0.5d0*ds0
           xs1(2*k)=xc+0.5d0*ds0
@@ -1770,9 +1884,9 @@ end subroutine
           ys2(2*k)=yc+0.5d0*ds0
           ys1(2*k)=yc-0.5d0*ds0
           ys3(2*k)=yc+0.5d0*ds0
-          ! ys2(2*k)=xl(i+1,j+1)
-          ! ys1(2*k)=xl(i+1,j)
-          ! ys3(2*k)=xl(i,j+1)
+          ys2(2*k)=xl(i+1+nskip,j+1+nskip)
+          ys1(2*k)=xl(i+1+nskip,j+nskip)
+          ys3(2*k)=xl(i+nskip,j+1+nskip)
   
         end do
       end do
@@ -1949,7 +2063,7 @@ end subroutine
     real(8),intent(in) :: x
     real(8),intent(in) ::y(:)
     real(8),intent(out) :: dydx(:)
-    real(8) :: veltmp(NCELL),tautmp(NCELL),sigmatmp(NCELL),psitmp(NCELL),vflowtmp(NCELL)
+    real(8) :: veltmp(NCELL),tautmp(NCELL),sigmatmp(NCELL),psitmp(NCELL),vflowtmp(NCELL),velntmp(NCELL)
     real(8) :: sum_gs(NCELL),sum_gn(NCELL)!,velstmpG(NCELLg),veldtmpG(NCELLg)
     !real(8) :: sum_xx(NCELL),sum_xy(NCELL),sum_yy(NCELL)!,sum_xz(NCELL),sum_yz(NCELL),sum_zz(NCELL)
     !real(8) :: sum_xxG(NCELLg),sum_xyG(NCELLg),sum_yyG(NCELLg)!,sum_xzG(NCELLg),sum_yzG(NCELLg),sum_zzG(NCELLg)
@@ -1979,6 +2093,14 @@ end subroutine
       end do
     end if
 
+    !opening/wear
+    if(opening) then
+      do i=1,NCELL
+        velntmp(i)=max(0.0,minsig-sigmatmp(i))*abs(veltmp(i))
+        !velntmp(i)=-(sigmatmp(i)-sigma0(i))*1e-12
+      end do
+    end if
+
     !matrix-vector mutiplation
     if(backslip) then
       st_vel%vs=veltmp+vflowtmp-vplv
@@ -1992,15 +2114,33 @@ end subroutine
     else
       sum_gs(:)=st_sum%vs(:)
     end if
+   
 
     if(sigmaconst) then
       sum_gn=0d0
     else
-      call HACAPK_adot_lattice_hyp(st_sum,st_LHP_n,st_ctl,wws,st_vel)
+      call HACAPK_adot_lattice_hyp(st_sum,st_LHP_n,st_ctl2,wws,st_vel)
       if(problem=='3dnr'.or.problem=='3dhr'.or.problem=='3dph') then
         sum_gn(:)=st_sum%vs(:)/ds0
       else
         sum_gn(:)=st_sum%vs(:)
+      end if
+
+      if(opening) then
+        st_vel%vs=velntmp
+        call HACAPK_adot_lattice_hyp(st_sum,st_LHP_s2,st_ctl3,wws,st_vel)
+        if(problem=='3dnr'.or.problem=='3dhr'.or.problem=='3dph') then
+          sum_gs(:)=sum_gs(:)+st_sum%vs(:)/ds0
+        else
+          sum_gs(:)=sum_gs(:)+st_sum%vs(:)
+        end if
+
+        call HACAPK_adot_lattice_hyp(st_sum,st_LHP_n2,st_ctl4,wws,st_vel)
+        if(problem=='3dnr'.or.problem=='3dhr'.or.problem=='3dph') then
+          sum_gn(:)=sum_gn(:)+st_sum%vs(:)/ds0
+        else
+          sum_gn(:)=sum_gn(:)+st_sum%vs(:)
+        end if
       end if
     end if
     !time4=MPI_Wtime()
@@ -2008,13 +2148,13 @@ end subroutine
 
     !$omp parallel do
     do i=1,NCELL
+      sum_gn(i)=sum_gn(i)+sigdot(i)
       sum_gs(i)=sum_gs(i)+taudot(i)
       if(relax) then
-        sum_gn(i)=sum_gn(i)+sigdot(i)-(sigmatmp(i)-sigma0(i))/trelax
-      else
-        sum_gn(i)=sum_gn(i)+sigdot(i)
+        sum_gn(i)=sum_gn(i)-(sigmatmp(i)-sigma0(i))/trelax
+        sum_gs(i)=sum_gs(i)-(tautmp(i)-tau0(i))/trelax
       end if
-      !write(*,*) sum_gs(i)
+  
       call deriv(sum_gs(i),sum_gn(i),psitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),vc(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
     enddo
     !$omp end parallel do
@@ -2030,6 +2170,11 @@ end subroutine
     real(8),intent(in)::sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc
     real(8),intent(out)::dpsidt,dtaudt,dsigdt
     dsigdt=sum_gn
+    if(limitsigma)then
+      if(sigmatmp<minsig) dsigdt=0
+      if(sigmatmp>maxsig) dsigdt=0
+    end if
+   
     !regularized slip law
     !fss=mu0+(a(i_)-b(i_))*dlog(abs(veltmp(i))/vref)
     !fss=fw(i_)+(fss-fw(i_))/(1.d0+(veltmp(i)/vw(i_))**8)**0.125d0 !flash heating
@@ -2065,8 +2210,7 @@ end subroutine
         dpsidt=b*Vref/dc*((psitmp-f0)/b/(MCNS+1)+1)*(((psitmp-f0)/b/(MCNS+1)+1)**(-MCNS-1)-veltmp/vref)
       end if
     end select
-
-
+    
     if(dilatancy) dsigdt=-(sigmatmp-sigmainit)/tdil-cdil*dpsidt
 
     !regularized aing law
@@ -2162,8 +2306,7 @@ end subroutine
       !end do
 
       !check nan
-
-      do i=1,3*NCELL
+      do i=1,size(ytemp)
         if(abs(yerr(i)/ytemp(i))/eps>errmax) errmax=abs(yerr(i)/ytemp(i))/eps
         if(ytemp(i)-1 ==ytemp(i)) errmax=10.0
         !errmax=errmax+yerr(3*i-2)**2
@@ -2264,7 +2407,7 @@ end subroutine
         !errmax=errmax+yerr(3*i-2)**2
       !end do
 
-      do i=1,3*NCELL
+      do i=1,size(ytemp)
         if(abs(yerr(i)/ytemp(i))/eps>errmax) errmax=abs(yerr(i)/ytemp(i))/eps
         !errmax=errmax+yerr(3*i-2)**2
       end do
@@ -2444,7 +2587,6 @@ end subroutine
     implicit none
     real(8)::rr,lc,ret1(NCELLg),ret2(NCELLg),vec(NCELLg)
     integer::p
-    if(my_rank==0) write(*,*) 'Calculating stress field from uniform slip'
     ret1=0d0
     ret2=0d0
 
@@ -2567,11 +2709,18 @@ end subroutine
     return
   end function
 
+  FUNCTION pf1d(pf0,alpha,time,x)
+    implicit none
+    real(8)::pf1d,time,x,z,alpha,pf0
+    pf1d=pf0*sqrt(time)*(exp(-x**2/(4*alpha*time))/sqrt(pi)-abs(x)/sqrt(4*alpha*time)*erfc(abs(x)/sqrt(4*alpha*time)))
+    return
+  end function
+
   FUNCTION expint(n,x)
-    INTEGER ::n,MAXIT
-    REAL(8) ::expint,x,EPS,FPMIN,EULER
+    INTEGER ::n
+    REAL(8) ::expint,x
     integer,parameter:: MAXIT=100
-    real(8),parameter::EPS=1.e-7,FPMIN=1.e-30,EULER=.5772156649
+    real(8),parameter::EPS=1d-7,FPMIN=1d-30,EULER=.5772156649
     INTEGER ::i,ii,nm1
     REAL(8) ::a,b,c,d,del,fact,h,psi
     nm1=n-1 
