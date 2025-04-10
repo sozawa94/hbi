@@ -7,9 +7,9 @@ Features
 
 - Rectangular and triangular meshes for 3D problems (require .stl mesh file for triangular mesh)
 
-- Rate-State friction law (aging, slip, and modified CNS model)
+- Rate and state friction law (aging law, slip law, cut-off velocity model, and modified CNS model)
 
-- Fault-zone lienar and nonlinear viscous flow
+- Fault-zone linear and nonlinear viscous flow
 
 - Quasi-dynamic approximation using radiation-damping term
 
@@ -19,7 +19,7 @@ Features
 
 - Hybrid MPI/open-MP parallelization
 
-See [Documentation](https://github.com/sozawa94/hbi/blob/master/Documentation_for_HBI.pdf) for more information.
+See [Documentation](https://drive.google.com/file/d/11sz9B5U3q397B129x-DdEnj3AT5XTuxB/view?usp=sharing) for more information.
 
 This software is freely available under the MIT license.
 If you write a paper using this code, please cite the following paper:
