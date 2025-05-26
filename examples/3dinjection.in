@@ -1,0 +1,26 @@
+filenumber 1003
+problem 3dp
+q0 3e-4
+imax 200
+jmax 200 
+interval  30 !output and checkpointing every 100 steps
+nstep     20000 !time steps
+tmax   20.0 !maximum time (year)
+dtout 0.05
+ds 0.01 !element size
+parameterfromfile T !nonuniform parameters
+parameter_file "examples/param_3dinj.dat"
+backslip T
+vpl 0d0
+kpmax 1e-14
+kpmin 1e-14
+beta 5e-8
+eta 0.89e-3
+phi0 0.2
+kT 1e15
+kL 1e-3
+muinit 0.58
+sigmainit 30.0
+velinit 1d-10
+bc Neumann
+pfinit 0d0

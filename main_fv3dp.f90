@@ -63,15 +63,15 @@ program main
   integer::hypoloc(1),load,eventcount,thec,inloc,sw,errmaxloc,niter,mvelloc(1),locid(10)
 
   !controls
-  logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal,outpertime
+  logical::aftershock,buffer,nuclei,slipping,outfield,slipevery,limitsigma,dcscale,slowslip,slipfinal,outpertime,switch
   logical::initcondfromfile,parameterfromfile,injectionfromfile,backslip,sigmaconst,foward,inverse,geofromfile,restart,latticeh,pressuredependent,pfconst
-  character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,bcl,bcr,bc,evlaw,setting
+  character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,bcl,bcr,bcb,bct,bc,evlaw,setting
   character(128)::injection_file
   real(8)::a0,a1,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
-  real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
+  real(8)::vref,vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dummy(10)
   real(8)::ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,q0
-  real(8)::kpmax,kpmin,kp0,kT,kL,s0,ksinit,dtout,pfinit,pbcl,pbcr,lf,eta,beta,phi0,str,cc,td,cd
+  real(8)::kpmax,kpmin,kp0,kT,kL,s0,ksinit,dtout,pfinit,pbc,pbcl,pbcr,lf,eta,beta,phi0,str,cc,td,cd
 
   !random_number
   integer,allocatable::seed(:)
@@ -82,7 +82,7 @@ program main
   real(8),allocatable::y(:),yscal(:),dydx(:),yg(:)
   real(8)::eps_r,errmax_gb,dtinit,dtnxt,dttry,dtdid,dtmin,tp,fwid
 
-  integer::r1,r2,r3,NVER,amari,out,kmax,loci,locj,loc,stat,nth
+  integer::r1,r2,r3,NVER,amari,out,kmax,loci,locj,loc,stat,nth,nn
   integer,allocatable::rupsG(:)
 
   !initialize
@@ -91,8 +91,9 @@ program main
   call MPI_COMM_SIZE(MPI_COMM_WORLD,np,ierr )
   call MPI_COMM_RANK(MPI_COMM_WORLD,my_rank,ierr )
 
-  if(my_rank.eq.0) then
-    write(*,*) '# of MPI cores', np
+  if(my_rank==0) then
+    write(*,*) 'HBI Fluid 3D ver. 2025.5.0'
+    write(*,*) '# of MPI', np
   end if
   !input file must be specified when running
   !example) mpirun -np 16 ./ha.out default.in
@@ -117,9 +118,12 @@ program main
   time1=MPI_Wtime()
 
   !default parameters
+  switch=.false.
+  setting="injection"
   nmain=1000000
   eps_r=1d-4
   eps_h=1d-4
+  vref=1e-6
   velmax=1d7
   velmin=1d-16
   tmax=1d12
@@ -133,15 +137,22 @@ program main
   maxsig=300d0
   minsig=0d0
   dtinit=1d0
+  muinit=0d0
   tp=86400d0
+  dtmax=1e10
   outpertime=.false.
   initcondfromfile=.false.
   parameterfromfile=.false.
   injectionfromfile=.false.
   pressuredependent=.false.
   pfconst=.false.
-  bc='Neumann'
+  bc='default'
+  bcb='Neumann'
+  bct='Neumann'
+  bcl='Neumann'
+  bcr='Neumann'
   evlaw='aging'
+  nn=2
   !number=0
 
 
@@ -229,12 +240,16 @@ program main
       read (pvalue,*) cd
     case('td')
       read (pvalue,*) td
+    case('pbc')
+      read (pvalue,*) pbc
     case('pbcl')
       read (pvalue,*) pbcl
     case('pbcr')
       read (pvalue,*) pbcr
     case('tmax')
       read (pvalue,*) tmax
+    case('dtmax')
+      read (pvalue,*) dtmax
     case('eps_r')
       read (pvalue,*) eps_r
     case('eps_h')
@@ -277,6 +292,14 @@ program main
       read(pvalue,*) parameterfromfile
     case('parameter_file')
       read(pvalue,'(a)') parameter_file
+    case('bcl')
+      read (pvalue,'(a)') bcl
+    case('bcr')
+      read (pvalue,'(a)') bcr
+    case('bct')
+      read (pvalue,'(a)') bct
+    case('bcb')
+      read (pvalue,'(a)') bcb
     case('bc')
       read (pvalue,'(a)') bc
     case('evlaw')
@@ -287,10 +310,16 @@ program main
       read(pvalue,*) injectionfromfile
     case('injection_file')
       read(pvalue,'(a)') injection_file
+    case default
+      if(my_rank==0) write(*,*) 'WARNING: ', param, 'is an unknown parameter'
     end select
   end do
   close(33)
   tmax=tmax*365*24*3600
+  if(bc .ne. 'default') then
+    bcl=bc;bcr=bc;bct=bc;bcb=bc
+    pbcl=pbc;pbcr=pbc
+  end if
 
   !limitsigma=.true.
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
@@ -350,9 +379,13 @@ program main
   !   allocate(taui(NCELLg),sigmai(NCELLg))
   case('3dp','3dph')
     allocate(xs1(NCELLg),xs2(NCELLg),xs3(NCELLg),xs4(NCELLg))
+    allocate(ys1(NCELLg),ys2(NCELLg),ys3(NCELLg),ys4(NCELLg))
     allocate(zs1(NCELLg),zs2(NCELLg),zs3(NCELLg),zs4(NCELLg))
+    allocate(ang(NCELLg),angd(NCELLg))
     xs1=0d0; xs2=0d0; xs3=0d0; xs4=0d0
+    ys1=0d0; ys2=0d0; ys3=0d0; ys4=0d0
     zs1=0d0; zs2=0d0; zs3=0d0; zs4=0d0
+    
   allocate(psi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg),cslip(NCELLg),pf(NCELLg),sigmae(NCELLg),pfhyd(NCELLg))
   psi=0d0;vel=0d0;tau=0d0;sigma=0d0;disp=0d0
   allocate(a(NCELLg),b(NCELLg),dc(NCELLg),f0(NCELLg),taudot(NCELLg),sigdot(NCELLg),ks(NCELLg),kp(NCELLg),qflow(NCELLg),kLv(NCELLg),kTv(NCELLg),phi(NCELLg))
@@ -465,12 +498,18 @@ program main
   lrtrn=HACApK_init(NCELLg,st_ctl,st_bemv,icomm)
   allocate(coord(NCELLg,3))
 
-    allocate(st_bemv%xcol(NCELLg),st_bemv%zcol(NCELLg))
+    allocate(st_bemv%xcol(NCELLg),st_bemv%ycol(NCELLg),st_bemv%zcol(NCELLg))
     allocate(st_bemv%xs1(NCELLg),st_bemv%xs2(NCELLg),st_bemv%xs3(NCELLg),st_bemv%xs4(NCELLg))
     allocate(st_bemv%zs1(NCELLg),st_bemv%zs2(NCELLg),st_bemv%zs3(NCELLg),st_bemv%zs4(NCELLg))
-
+    allocate(st_bemv%ang(NCELLg),st_bemv%angd(NCELLg),st_bemv%rake(NCELLg),st_bemv%dsl(NCELLg))
     st_bemv%xcol=xcol
+    st_bemv%ycol=ycol
     st_bemv%zcol=zcol
+    ! st_bemv%angd=angd
+    ! st_bemv%ang=ang
+    ! st_bemv%rake=rake
+    ! st_bemv%dsl=ds0
+    ! st_bemv%w=ds0
     st_bemv%xs1=xs1
     st_bemv%xs2=xs2
     st_bemv%xs3=xs3
@@ -531,6 +570,8 @@ program main
   !setting initial condition
   !call initcond_bgflow()
   select case(setting)
+  case('thrust')
+    call initcond_thrust()
   case('injection')
     call initcond_injection()
   case('ss')
@@ -700,7 +741,7 @@ tout=dtout*365*24*60*60
       !sigma(i)=yg(4*i-1)+pf(i)
       ks(i)=yg(4*i)
     end do
-    !write(*,*) minval(tau)
+    !write(*,*) maxval(ks)
 
     !update pf with implicit solver
     !write(*,*)maxval(pf)
@@ -708,11 +749,11 @@ tout=dtout*365*24*60*60
     call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
     ! if(.not.pfconst) then
-    !   if(pressuredependent) then
-    !     !call implicitsolver(pf,sigma,ks,dtdid,x,dtnxt)
-    !   else
-    call implicitsolver2(pf,sigma,ks,dtdid,x,dtnxt,niter)
-      ! end if
+    if(pressuredependent) then
+      call implicitsolver(pf,sigma,ks,dtdid,x,dtnxt,niter)
+    else
+      call implicitsolver2(pf,sigma,ks,dtdid,x,dtnxt,niter)
+    end if
     ! end if
     !write(*,*)maxval(pf)
     call MPI_BARRIER(MPI_COMM_WORLD,ierr);time1=MPI_Wtime()
@@ -742,7 +783,7 @@ tout=dtout*365*24*60*60
       vel(i)= 2*vref*exp(-psi(i)/a(i))*sinh(tau(i)/sigmae(i)/a(i))
       disp(i)=disp(i)+vel(i)*dtdid*0.5d0
       mu(i)=tau(i)/sigmae(i)
-      kp(i)=ks(i)
+      kp(i)=ks(i)*exp(-sigmae(i)/s0)    
     end do
     !$omp end parallel do
     !write(*,*) vel(1489),pf(1489),sigmae(1489)
@@ -935,6 +976,47 @@ end subroutine
 
 
   !------------initond-----------------------------------------------------------!
+subroutine initcond_thrust()
+  implicit none
+    real(8),parameter::g=9.80,rhor=2.6d3,rhof=1.0d3,ofs=5.0,Qe=1d4,T0=1e0
+    real(8)::q(ncellg),Temp,qtmp,sigmaed(jmax),pfd(jmax)
+    integer::l
+
+  
+    sigma=g*rhor*(zcol+0.2)*1e-3
+    pfhyd=g*rhof*(zcol+0.2)*1e-3
+
+    pfd(1)=pfhyd(1)
+    sigmaed(1)=sigma(1)-pfd(1)
+    pbcl=pfhyd(1)
+    
+    kTv=kT
+    kpmax=kp0*(1+kL/kT/Vpl)-kpmin*kL/kT/Vpl
+    ks=kp0
+
+    do j=2,jmax
+      sigmaed(j)=sigmaed(j-1)+ds0*(sin(dipangle*pi/180d0)*(rhor-rhof)*g*1e-3-q0*eta/kp0*1e-3*exp(sigmaed(j-1)/s0))
+    end do
+    write(*,*) sigmaed
+
+    do l=1,Ncellg
+      i=(l-1)/jmax+1
+      j=l-(i-1)*jmax
+      sigmae(l)=sigmaed(j)
+      pf(l)=sigma(l)-sigmae(l)
+      kp(l)=ks(l)*exp(-sigmae(l)/s0)
+      phi(l)=phi0
+    end do
+    pbcr=pf(ncellg)
+    vel=velinit
+    tau=sigmae*(f0+(a-b)*log(vel/vref))*1.001
+    !tau=sigmae*0.5
+    ! vel=tau/abs(tau)*velinit
+    mu=tau/sigmae
+    psi=a*dlog(2*vref/vel*sinh(tau/sigmae/a))
+    disp=0d0
+    write(*,*) maxval(ks)
+end subroutine
 subroutine initcond_injection()
   implicit none
   real(8)::rr,rand
@@ -955,9 +1037,9 @@ subroutine initcond_injection()
 
   sigmae=sigma-pf
   vel=velinit
-  tau=sigmae*muinit
+  tau=tauinit
+  if(muinit.ne.0d0) tau=sigmae*muinit
   ! vel=tau/abs(tau)*velinit
-  mu=muinit
   psi=a*dlog(2*vref/vel*sinh(tau/sigmae/a))
 
   !randomize initial state
@@ -1021,7 +1103,7 @@ subroutine input_well()
   integer::k,kwell
   open(77,file=injection_file)
   read(77,*) nwell
-  write(*,*) 'nwell',nwell
+  if(my_rank==0) write(*,*) 'nwell',nwell
   allocate(iwell(nwell),jwell(nwell),qvals(nwell,50),qtimes(nwell,50),kleng(nwell))
   do kwell=1,nwell
     read(77,*) iwell(kwell),jwell(kwell),kleng(kwell)
@@ -1105,6 +1187,7 @@ subroutine coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4
       k=(i-1)*jmax+j
       xcol(k)=(i-imax/2-0.5d0)*dx
       zcol(k)=-(j-jmax/2-0.5d0)*dz
+      !zcol(k)=(j-0.5d0)*dz
       xs1(k)=xcol(k)+0.5d0*dx
       xs2(k)=xcol(k)-0.5d0*dx
       xs3(k)=xcol(k)-0.5d0*dx
@@ -1118,44 +1201,61 @@ subroutine coordinate3dp(imax,jmax,ds0,xcol,zcol,xs1,xs2,xs3,xs4,zs1,zs2,zs3,zs4
   return
 end subroutine coordinate3dp
 
-  subroutine coordinate3ddip(imax,jmax,ds0,dipangle)
-    implicit none
-    integer,intent(in)::imax,jmax
-    real(8),intent(in)::ds0,dipangle
-    !integer,intent(in)::NCELLg
-    !real(8),intent(out)::xcol(:),ycol(:),zcol(:)
-    !real(8),intent(out)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
-    integer::i,j,k
-    real(8)::xc,yc,zc,amp,yr(0:imax),zr(0:imax),stangle
+subroutine coordinate3ddip(imax,jmax,ds0,dipangle)
+  implicit none
+  integer,intent(in)::imax,jmax
+  real(8),intent(in)::ds0,dipangle
+  !integer,intent(in)::NCELLg
+  !real(8),intent(out)::xcol(:),ycol(:),zcol(:)
+  !real(8),intent(out)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
+  integer::i,j,k
+  real(8)::xc,yc,zc,amp,yr(0:jmax),zr(0:jmax),stangle
 
 
-      !dipangle=dipangle*pi/180d0
-      stangle=0d0*pi/180d0
-       k=0
-       yr(0)=0d0
-       zr(0)=0d0
-       !nb=int(50.0*jmax/320.0)
-       !if(my_rank==0) write(*,*)nb
+    !dipangle=dipangle*pi/180d0
+    stangle=0d0*pi/180d0
+     k=0
+     yr(0)=0d0
+     zr(0)=0d0
+     !nb=int(50.0*jmax/320.0)
+     !if(my_rank==0) write(*,*)nb
+     do j=1,jmax
+     yr(j)=yr(j-1)-ds0*cos(dipangle*pi/180d0)
+     zr(j)=zr(j-1)-ds0*sin(dipangle*pi/180d0)
+     end do
+     do i=1,imax
        do j=1,jmax
-       yr(j)=yr(j-1)-ds0*cos(dipangle*pi/180d0)
-       zr(j)=zr(j-1)-ds0*sin(dipangle*pi/180d0)
-       end do
-       do i=1,imax
-         do j=1,jmax
-         k=k+1
-           xcol(k)=(i-imax/2-0.5d0)*ds0
-           ycol(k)=0.5d0*(yr(j-1)+yr(j)) !-(j-0.5d0)*ds0*cos(dipangle)
-           zcol(k)=0.5d0*(zr(j-1)+zr(j)) !-(j-0.5d0)*ds0*sin(dipangle)
+       k=k+1
+         xcol(k)=(i-imax/2-0.5d0)*ds0
+         !ys1(k)=yr(j-1)
+         !ys2(k)=yr(j-1)
+         !ys3(k)=yr(j)
+         !ys4(k)=yr(j)
+         ycol(k)=0.5d0*(yr(j-1)+yr(j)) !-(j-0.5d0)*ds0*cos(dipangle)
+         zcol(k)=0.5d0*(zr(j-1)+zr(j)) !-(j-0.5d0)*ds0*sin(dipangle)
+         !xcol(k)=(i-imax/2-0.5d0)*ds0
+         !zcol(k)=(j-jmax/2-0.5d0)*ds0
+         !xs1(k)=xcol(k)+0.5d0*ds0
+         !xs2(k)=xcol(k)-0.5d0*ds0
+         !xs3(k)=xcol(k)-0.5d0*ds0
+         !xs4(k)=xcol(k)+0.5d0*ds0
+         !zs1(k)=zcol(k)+0.5d0*ds0*sin(dipangle)
+         !zs2(k)=zcol(k)+0.5d0*ds0*sin(dipangle)
+         !zs3(k)=zcol(k)-0.5d0*ds0*sin(dipangle)
+         !zs4(k)=zcol(k)-0.5d0*ds0*sin(dipangle)
+         !ys1(k)=ycol(k)+0.5d0*ds0*cos(dipangle)*sin(stangle)
+         !ys2(k)=ycol(k)-0.5d0*ds0*cos(dipangle)*sin(stangle)
+         !ys3(k)=ycol(k)-0.5d0*ds0*cos(dipangle)*sin(stangle)
+         !ys4(k)=ycol(k)+0.5d0*ds0*cos(dipangle)*sin(stangle)
+         angd(k)=datan2(zr(j-1)-zr(j),yr(j-1)-yr(j))
+         ang(k)=0d0
+         !write(*,*)angd(k)
+         if(my_rank==0)write(111,*)xcol(k),ycol(k),zcol(k)
+         end do
+     end do
 
-           angd(k)=datan2(zr(j-1)-zr(j),yr(j-1)-yr(j))
-           ang(k)=0d0
-           !write(*,*)angd(k)
-           if(my_rank==0)write(111,*)xcol(k),ycol(k),zcol(k)
-           end do
-       end do
-
-    return
-  end subroutine coordinate3ddip
+  return
+end subroutine coordinate3ddip
 
   subroutine varscalc(NCELL,displs,vars)
     implicit none
@@ -1211,31 +1311,44 @@ end subroutine coordinate3dp
     end do
 
   end subroutine
-  subroutine implicitsolver2(pf,sigma,ks,h,time,dtnxt,niter)
+  subroutine implicitsolver(pf,sigma,ks,h,time,dtnxt,niter)
     implicit none
     integer::kit,errloc(1),l,l_
     integer,intent(out)::niter
     real(8),intent(inout)::pf(:),dtnxt
     real(8),intent(in)::h,time,sigma(:),ks(:)
-    real(8)::dpf(ncellg),pfd(imax,jmax),pfnew(imax,jmax),sigmae(ncellg),cdiff(imax,jmax),err,err0,adpf(ncellg)
+    real(8)::dpf(ncellg),pfd(imax,jmax),pftry(imax,jmax),pfnew(imax,jmax),sigmae(ncellg),cdiff(imax,jmax),err,err0,adpf(ncellg),pfhydd(imax,jmax)
     real(8),parameter::dpth=0.1
     !real(8),parameter::cc=1d-12 !beta(1e-8)*phi(1e-1)*eta(1e-3)
     cdiff=0d0
-
     do l=1,ncellg
-      !sigma(l)=sigmae(l)+pf(l)
       i=(l-1)/jmax+1
       j=l-(i-1)*jmax
-      cc=eta*beta*phi0
       pfd(i,j)=pf(l)
-      cdiff(i,j)=ks(l)/cc*1d-6 !Pa-->MPa
-      !cdiff(i,j)=kpmax/cc*1d-6 !Pa-->MPa
-      !write(*,*) l_,i,j
+      pfhydd(i,j)=pfhyd(l)
     end do
-    !write(*,*) pfd
+    pftry=pfd
+    cc=eta*beta*phi0
+    !write(*,*) 'cc',cc
 
-    err=0d0
-      call Beuler(pfd,cdiff,h,pfnew,time,niter)
+
+    do kit=1,20
+      do l=1,ncellg
+        i=(l-1)/jmax+1
+        j=l-(i-1)*jmax
+        cdiff(i,j)=ks(l)*exp(-(sigma(l)-pftry(i,j))/s0)/cc*1d-6 !Pa-->MPa
+      end do
+      !write(*,*) maxval(cdiff),maxval(sigma),maxval(ks)
+
+      err=0d0
+      call Beuler(pfd,cdiff,h,pfnew,time,niter,pfhydd)
+
+      err=maxval(abs(pftry-pfnew))
+      !write(*,*) 'err',err
+      if(err<1e-5) exit
+      pftry=pfnew
+      err0=err
+    end do
 
       do l=1,ncellg
         i=(l-1)/jmax+1
@@ -1252,17 +1365,75 @@ end subroutine coordinate3dp
     return
   end subroutine
 
-  subroutine Beuler(pf,cdiff,h,pfnew,time,niter)
+  subroutine implicitsolver2(pf,sigma,ks,h,time,dtnxt,niter)
+    implicit none
+    integer::kit,errloc(1),l,l_
+    integer,intent(out)::niter
+    real(8),intent(inout)::pf(:),dtnxt
+    real(8),intent(in)::h,time,sigma(:),ks(:)
+    real(8)::dpf(ncellg),pfd(imax,jmax),pfnew(imax,jmax),sigmae(ncellg),cdiff(imax,jmax),err,err0,adpf(ncellg),pfhydd(imax,jmax)
+    real(8),parameter::dpth=0.1,tny=1d0
+    !real(8),parameter::cc=1d-12 !beta(1e-8)*phi(1e-1)*eta(1e-3)
+    cdiff=0d0
+
+    do l=1,ncellg
+      !sigma(l)=sigmae(l)+pf(l)
+      i=(l-1)/jmax+1
+      j=l-(i-1)*jmax
+      cc=eta*beta*phi0
+      pfd(i,j)=pf(l)
+      pfhydd(i,j)=pfhyd(l)
+      cdiff(i,j)=ks(l)/cc*1d-6 !Pa-->MPa
+      !cdiff(i,j)=kpmax/cc*1d-6 !Pa-->MPa
+      !write(*,*) l_,i,j
+    end do
+    !write(*,*) pfd
+
+    err=0d0
+    call Beuler(pfd,cdiff,h,pfnew,time,niter,pfhydd)
+
+    do l=1,ncellg
+      i=(l-1)/jmax+1
+      j=l-(i-1)*jmax
+      dpf(l)=pfnew(i,j)-pf(l)
+      pf(l)=pfnew(i,j)
+    end do
+      !write(*,*)sum(pf)
+
+    !write(*,*) 'niter',niter
+      adpf=abs(dpf)
+    !write(*,*) 'dpf',maxval(adpf)
+    if(dtnxt/h*maxval(adpf)>dpth)  dtnxt=dpth*h/maxval(adpf)
+
+    !check if next time step is after the change in the injection rate
+    if(switch) then
+        dtnxt=2e1
+        switch=.false.
+    end if
+    if(injectionfromfile) then
+      if(x+dtnxt>qtimes(1,nn)) then
+        !if(my_rank==0) write(*,*) x
+        dtnxt=qtimes(1,nn)-x-tny
+        switch=.true.
+        nn=nn+2
+        !if(my_rank==0) write(*,*) nn,qtimes(1,nn),x+dtnxt
+      end if
+    end if
+    
+    return
+  end subroutine
+
+  subroutine Beuler(pf,cdiff,h,pfnew,time,niter,pfhyd)
     implicit none
     integer,parameter::itermax=1000
-    real(8),intent(in)::pf(:,:),h,cdiff(:,:),time
+    real(8),intent(in)::pf(:,:),h,cdiff(:,:),time,pfhyd(:,:)
     real(8),intent(out)::pfnew(:,:)
     integer,intent(out)::niter
     real(8)::Dxx(imax,jmax,3),Dyy(imax,jmax,3),Amx(imax,jmax,3),Amy(imax,jmax,3),mx(imax,jmax),my(imax,jmax)
     real(8)::p(imax,jmax),m(imax,jmax),r(imax,jmax),x(imax,jmax),b(imax,jmax),SAT(imax,jmax)
     integer::n,iter,i,j,k,kwell
-    real(8)::p0=0.0,rsold,rsnew,tmp1,tmp2,alpha,v1,v0,t1,t0,qtmp
-    real(8),parameter::tol=1e-4
+    real(8)::p0=0.0,rsold,rsnew,tmp1,tmp2,alpha,v1,v0,t1,t0,qtmp,qdt
+    real(8),parameter::tol=1e-6
     !real(8),parameter::str=1e-11 !beta(1e-9)*phi(1e-2)
     niter=0
     p=0d0;m=0d0;r=0d0;x=0d0;b=0d0
@@ -1270,7 +1441,7 @@ end subroutine coordinate3dp
     Dxx=0d0 
     do i=1,imax
         !compute Dxx for Dirichlet BC
-        select case(bc)
+        select case(bct)
         case('Dirichlet')
         Dxx(i,1,1)=-cdiff(i,1)-cdiff(i,2)
         Dxx(i,1,2)=cdiff(i,2)-cdiff(i,1)
@@ -1285,7 +1456,7 @@ end subroutine coordinate3dp
         Dxx(i,j,1:3)=(/cdiff(i,j-1)/2+cdiff(i,j)/2, -cdiff(i,j-1)/2-cdiff(i,j)-cdiff(i,j+1)/2, cdiff(i,j)/2+cdiff(i,j+1)/2/)
         end do
 
-        select case(bc)
+        select case(bcb)
         case('Dirichlet')
         Dxx(i,jmax-1,1:3)=(/cdiff(i,jmax-2)/2+cdiff(i,jmax-1)/2, -cdiff(i,jmax-2)/2-cdiff(i,jmax-1)-cdiff(i,jmax)/2, -cdiff(i,jmax)/2+cdiff(i,jmax-1)/2/)
         Dxx(i,jmax,3)=-cdiff(i,jmax)-cdiff(i,jmax-1)
@@ -1302,7 +1473,7 @@ end subroutine coordinate3dp
     Dyy=0d0
     do j=1,jmax
         !compute Dxx for Dirichlet BC
-        select case(bc)
+        select case(bcl)
         case('Dirichlet')
         Dyy(1,j,1)=-cdiff(1,j)-cdiff(2,j)
         Dyy(1,j,2)=cdiff(2,j)-cdiff(1,j)
@@ -1317,7 +1488,7 @@ end subroutine coordinate3dp
         Dyy(i,j,1:3)=(/cdiff(i-1,j)/2+cdiff(i,j)/2, -cdiff(i-1,j)/2-cdiff(i,j)-cdiff(i+1,j)/2, cdiff(i,j)/2+cdiff(i+1,j)/2/)
         end do
 
-        select case(bc)
+        select case(bcr)
         case('Dirichlet')
         Dyy(imax-1,j,1:3)=(/cdiff(imax-2,j)/2+cdiff(imax-1,j)/2, -cdiff(imax-2,j)/2-cdiff(imax-1,j)-cdiff(imax,j)/2, -cdiff(imax,j)/2+cdiff(imax-1,j)/2/)
         Dyy(imax,j,3)=-cdiff(imax,j)-cdiff(imax-1,j)
@@ -1355,29 +1526,41 @@ end subroutine coordinate3dp
 
     SAT=0d0
   
-    x=pf !initial guess
+    x=pf-pfhyd !initial guess
 
     if(setting=='ss') then
       SAT(1,:)=-q0/beta/phi0*1e-9*h/ds0*2
       SAT(imax,:)=q0/beta/phi0*1e-9*h/ds0*2
     end if
+    if(setting=='thrust') then
+      SAT(:,1)=-1.0*cdiff(:,1)/ds0/ds0*(pbcl-pfhyd(:,1))*h*2
+      SAT(:,2)=-0.5*cdiff(:,1)/ds0/ds0*(pbcl-pfhyd(:,1))*h*2
+      !SAT(:,1)=q0/beta/phi0*1e-9*h/ds0*2
+      select case(bcb)
+      case('Neumann')
+        SAT(:,jmax)=-q0/beta/phi0*1e-9*h/ds0*2
+      case('Dirichlet')
+        SAT(:,jmax)=-1.0*cdiff(:,jmax)/ds0/ds0*(pbcr-pfhyd(:,jmax))*h*2
+        SAT(:,jmax-1)=-0.5*cdiff(:,jmax)/ds0/ds0*(pbcr-pfhyd(:,jmax))*h*2
+      end select
+    end if
 
-    b=pf-SAT
+    b=pf-SAT-pfhyd
 
     if(setting=='injection') then
     if(injectionfromfile) then
       qtmp=0d0
       do kwell=1,nwell
         do k=1,kleng(kwell)-1
-        t0=qtimes(kwell,k)
-        t1=qtimes(kwell,k+1)
-        v0=qvals(kwell,k)
-        v1=qvals(kwell,k+1)
-        if (time >= t0 .and. time <= t1) then
-          qtmp=(v1-v0)/(t1-t0)*(time-t0)+v0
-        else if (time > t1.and. k == kleng(kwell)-1) then
-          qtmp=v1
-        end if
+          t0=qtimes(kwell,k)
+          t1=qtimes(kwell,k+1)
+          v0=qvals(kwell,k)
+          v1=qvals(kwell,k+1)
+          if (time >= t0 .and. time <= t1) then
+            qtmp=(v1-v0)/(t1-t0)*(time-t0)+v0
+          else if (time> t1.and. k == kleng(kwell)-1) then
+            qtmp=v1
+          end if
         end do
         i=iwell(kwell)
         j=jwell(kwell)
@@ -1460,7 +1643,7 @@ end subroutine coordinate3dp
       end do
 
       if(niter==itermax) write(*,*) "Maximum iteration"
-      100 pfnew=x
+      100 pfnew=x+pfhyd
 
     return
     end subroutine
@@ -1507,6 +1690,10 @@ end subroutine coordinate3dp
       else
         lrtrn=HACApK_adot_pmt_lfmtx_hyp(st_leafmtxps,st_bemv,st_ctl,sum_gsG,veltmpG)
       end if
+      if(problem=='3dnr'.or.problem=='3dhr'.or.problem=='3dph') then
+        sum_gsg(:)=sum_gsg(:)/ds0
+      end if
+
       call MPI_SCATTERv(sum_gsg,rcounts,displs,MPI_REAL8,sum_gs,NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
      
 
@@ -1622,16 +1809,14 @@ end subroutine coordinate3dp
   
         xnew=x+h
         if(xnew-x<1.d-15) then
-          if(my_rank.eq.0)write(*,*)'error: dt is too small'
+          if(my_rank.eq.0)write(*,*)'ERROR: Runge-Kutta method did not converge'
           stop
         end if
   
       end do
   
       hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW))
-      if(outpertime) then
-        hnext=min(hnext,dtout*365*24*3600)
-      end if
+      hnext=min(hnext,dtmax)
       !if(load==0)hnext=min(hnext,dtmax)
       !hnext=max(0.249d0*ds0/vs,SAFETY*h*(errmax_gb**PGROW))
   
