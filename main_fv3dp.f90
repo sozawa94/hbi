@@ -597,14 +597,13 @@ program main
     ! end do
     ! close(nout(1))
 
-    ! write(fname,'("output/xyz",i0,"_",i0,".dat")') number,my_rank
-    ! nout(1)=my_rank+100
-    ! open(nout(1),file=fname)
-    ! do i=1,ncell
-    !   i_=st_sum%lodc(i)
-    !   write(nout(1),'(3e15.6)') xcol(i_),ycol(i_),zcol(i_)
-    ! end do
-    ! close(nout(1))
+    write(fname,'("output/xyz",i0,".dat")') number
+    nout(1)=my_rank+100
+    open(nout(1),file=fname)
+    do i=1,ncellg
+      write(nout(1),'(3e15.6)') xcol(i),ycol(i),zcol(i)
+    end do
+    close(nout(1))
     nout(1)=100
 
     write(fname,'("output/vel",i0,".dat")') number
