@@ -49,8 +49,10 @@ program main
   real(8),allocatable::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:)
 
   !parameters for each elements
-  real(8),allocatable::a(:),b(:),dc(:),f0(:),fw(:),vw(:),vc(:),taudot(:),tauddot(:),sigdot(:),vplv(:),values(:,:),etav(:),pre(:),vflow(:),veln(:),slipn(:)
-  real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),vcg(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:),vplvg(:),cslipG(:),etavg(:),velnG(:)
+  real(8),allocatable::a(:),b(:),dc(:),f0(:),fw(:),vw(:),vc(:),taudot(:),tauddot(:),sigdot(:)
+  real(8),allocatable::vplv(:),values(:,:),etav(:),etab(:),pre(:),vflow(:),veln(:),slipn(:)
+  real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),vcg(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:)
+  real(8),allocatable::vplvg(:),cslipG(:),etavg(:),etabg(:),velnG(:)
 
   !variables
   real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),slip(:),mu(:),rupt(:),islip(:),velp(:),cslip(:),sigma0(:),tau0(:),vslip(:)
@@ -63,10 +65,10 @@ program main
   !controls
   logical::dilatancy,buffer,nuclei,slipping,outfield,structured,limitsigma,dcscale,slowslip,slipfinal,deepcreep,rakefromglobal,viscous
   logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,forward,inverse,geofromfile,restart,latticeh,debug,bgstress,relax,injection
-  logical::opening
+  logical::opening,sorted,bingham
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw,param2(20)
-  real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meanslip,meanslipG,moment0,mvel,mvelG,etav0
-  real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
+  real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meanslip,meanslipG,moment0,mvel,mvelG,etav0,etab0
+  real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit,etab
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dtout_co,dtout_inter,dummy(10),tdil,cdil,nflow,MCNS,vref
   real(8)::cdiff,pf0,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo,convangle,velth
 
@@ -91,7 +93,7 @@ program main
   npd=int(sqrt(dble(np)))
   call MPI_COMM_RANK(MPI_COMM_WORLD,my_rank,ierr )
   if(my_rank==0) then
-    write(*,*) 'HBI ver. 2025.3.0'
+    write(*,*) 'HBI ver. 2025.6.0'
     write(*,*) '# of MPI', np
   end if
   !input file must be specified when running
@@ -139,6 +141,7 @@ program main
   tmax=1d4
   interval=0
   velth=1e-2
+  sorted=.false.
   bgstress=.false.
   nuclei=.false.
   sigmaconst=.false.
@@ -150,6 +153,7 @@ program main
   limitsigma=.true.
   injection=.false.
   opening=.false.
+  bingham=.false.
   maxsig=300d0
   minsig=1d0
   muinit=0d0
@@ -221,6 +225,8 @@ program main
       read (pvalue,*) wid
     case('nflow')
       read (pvalue,*) nflow
+    case('etab')
+      read (pvalue,*) etab0
     case('sr')
       read (pvalue,*) sr
     case('vpl')
@@ -317,6 +323,10 @@ program main
       read(pvalue,*) viscous
     case('injection')
       read(pvalue,*) injection
+    case('sorted')
+      read(pvalue,*) sorted
+    case('bingham')
+      read(pvalue,*) bingham
     case('parameter_file_ncol')
       read(pvalue,*) ncol
     case('outloc')
@@ -377,7 +387,7 @@ program main
 
   !allocation
   allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg),dsl(NCELLg),dsd(NCELLg))
-  allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),f0g(NCELLg),etavg(NCELLg),vcg(NCELLg))
+  allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),f0g(NCELLg),etavg(NCELLg),etabg(NCELLg),vcg(NCELLg))
   allocate(taug(NCELLg),sigmag(NCELLg),velG(NCELLg),rake(NCELLg),cslipG(NCELLg),velnG(NCELLg))
   allocate(taudotg(NCELLg),sigdotg(NCELLg),vplvg(NCELLg))
 
@@ -556,6 +566,8 @@ program main
         vcg(:)=values(:,k)
       case('etav')
         etavg(:)=values(:,k)
+      case('etab')
+        etabg(:)=values(:,k)
       case('tau')
         taug(:)=values(:,k)
       case('sigma')
@@ -718,8 +730,8 @@ program main
   !write(*,*) my_rank,st_ctl%lpmd(33),st_ctl%lpmd(37)
   allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL))
   allocate(psi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),slip(NCELL),mu(NCELL),veln(NCELL),slipn(ncell))
-  allocate(islip(NCELL),cslip(NCELL),sigma0(NCELL),tau0(NCELL),etav(NCELL),pre(NCELL),vflow(NCELL),vslip(NCELL))
-  psi=0d0;vel=0d0;tau=0d0;sigma=0d0;slip=0d0;etav=0d0;pre=0d0;vflow=0d0;vslip=0d0
+  allocate(islip(NCELL),cslip(NCELL),sigma0(NCELL),tau0(NCELL),etav(NCELL),etab(NCELL),pre(NCELL),vflow(NCELL),vslip(NCELL))
+  psi=0d0;vel=0d0;tau=0d0;sigma=0d0;slip=0d0;etav=0d0;etab=0d0;pre=0d0;vflow=0d0;vslip=0d0
   allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),vc(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL),lbds(NCELL),vplv(NCELL))
   taudot=0d0;sigdot=0d0
 
@@ -730,6 +742,7 @@ program main
   f0=mu0
   vc=vc0
   vplv=vpl
+  if(bingham) etab=etab0
   if(viscous) pre=1/etav0
 
   if(.not.backslip) then
@@ -788,6 +801,11 @@ program main
           i_=st_sum%lodc(i)
           vplv(i)=vplvg(i_)
         end do
+      case('etab')
+        do i=1,NCELL
+          i_=st_sum%lodc(i)
+          etab(i)=etabg(i_)
+        end do
       end select
     end do
     ! do i=1,NCELL
@@ -836,112 +854,190 @@ program main
   if(restart) then
     if(my_rank==0)then
       write(fname,'("output/monitor",i0,".dat")') number
-      open(52,file=fname,status='old')
+      open(52,file=fname,status='old',iostat=ios)
+      if(ios /= 0) then
+        write(*,*) 'ERROR: monitor file is not found'
+        stop
+      end if
+
       do while(.true.)
         read(52,*,iostat=ios)k,dummy(1:9)
-        if(mod(k,interval)==0) then
-          kstart=k+1
-          x=dummy(1)
-          dtnxt=min(2*dummy(8),0.9*dummy(8)*(dummy(7)**(-0.2)))
-        end if
+        kstart=k+1
+        x=dummy(1)
+        dtnxt=min(2*dummy(8),0.9*dummy(8)*(dummy(7)**(-0.2)))
         if(ios<0) exit
       end do
       close(52)
       write(fname,'("output/monitor",i0,".dat")') number
       open(52,file=fname,status='old',position='append')
+      write(fname,'("output/time",i0,".dat")') number
+      open(50,file=fname,status='old',position='append')
 
       kend=k
-      write(*,*) kstart,x,dtnxt
+      write(*,*) "Restarting: time step=", kstart
+      write(*,*) "Time (yr)=", x/365/24/3600
 
       write(fname,'("output/event",i0,".dat")') number
-      open(44,file=fname,position='append')
+      open(44,file=fname)
+      do while(.true.)
+        read(44,*,iostat=ios) k
+        if(ios<0) exit
+      end do
+      eventcount=k
+      close(44)
+
+      write(fname,'("output/event",i0,".dat")') number
+      open(44,file=fname,status='old',position='append')
+
+
       open(19,file='job.log',position='append')
       call date_and_time(sys_time(1), sys_time(2), sys_time(3), date_time)
-      write(19,'(a20,i0,a6,a12,a6,a12)') 'Starting job number=',number,'date',sys_time(1),'time',sys_time(2)
+      write(19,'(a20,i0,a6,a12,a6,a12)') 'Restarting job number=',number,'date',sys_time(1),'time',sys_time(2)
       close(19)
 
     end if
     call MPI_bcast(kstart,1,MPI_INTEGER,0,MPI_COMM_WORLD,ierr)
     call MPI_bcast(dtnxt,1,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
 
-    if(my_rank<npd) then
-      nout(1)=my_rank+100
-      write(fname,'("output/vel",i0,"_",i0,".dat")') number,my_rank
+    nout(1)=my_rank+100
+    write(fname,'("output/vel",i0,".dat")') number
+    open(nout(1),file=fname,form='unformatted',access='stream')
+    inquire(nout(1),size=file_size)
+    m=file_size/8
+    allocate(rdata(m))
+    read(nout(1)) rdata
+    close(nout(1))
+    do i=1,NCELL
+      i_=st_sum%lodc(i)
+      vel(i)=rdata(m-NCELLg+i_)
+    end do
+    
+
+    write(fname,'("output/slip",i0,".dat")') number
+    open(nout(1),file=fname,form='unformatted',access='stream')
+    read(nout(1)) rdata
+    close(nout(1))
+    do i=1,NCELL
+      i_=st_sum%lodc(i)
+      slip(i)=rdata(m-NCELLg+i_)
+    end do
+
+    write(fname,'("output/sigma",i0,".dat")') number
+    open(nout(1),file=fname,form='unformatted',access='stream')
+    read(nout(1)) rdata
+    close(nout(1))
+    do i=1,NCELL
+      i_=st_sum%lodc(i)
+      sigma(i)=rdata(m-NCELLg+i_)
+    end do
+
+    write(fname,'("output/tau",i0,".dat")') number
+    open(nout(1),file=fname,form='unformatted',access='stream')
+    read(nout(1)) rdata
+    close(nout(1))
+    do i=1,NCELL
+      i_=st_sum%lodc(i)
+      tau(i)=rdata(m-NCELLg+i_)
+    end do
+
+    if(viscous) then
+      write(fname,'("output/vflow",i0,".dat")') number
       open(nout(1),file=fname,form='unformatted',access='stream')
-      inquire(nout(1),size=file_size)
-      m=file_size/8
-      allocate(rdata(m))
       read(nout(1)) rdata
-      vel(1:NCELL)=rdata(m-NCELL+1:m)
-      !write(*,*) my_rank,vel
       close(nout(1))
+      do i=1,NCELL
+        i_=st_sum%lodc(i)
+        vflow(i)=rdata(m-NCELLg+i_)
+      end do
 
-      write(fname,'("output/slip",i0,"_",i0,".dat")') number,my_rank
+      write(fname,'("output/vslip",i0,".dat")') number
       open(nout(1),file=fname,form='unformatted',access='stream')
       read(nout(1)) rdata
-      slip(1:NCELL)=rdata(m-NCELL+1:m)
       close(nout(1))
-
-      write(fname,'("output/sigma",i0,"_",i0,".dat")') number,my_rank
-      open(nout(1),file=fname,form='unformatted',access='stream')
-      read(nout(1)) rdata
-      sigma(1:NCELL)=rdata(m-NCELL+1:m)
-      close(nout(1))
-
-      write(fname,'("output/tau",i0,"_",i0,".dat")') number,my_rank
-      open(nout(1),file=fname,form='unformatted',access='stream')
-      read(nout(1)) rdata
-      tau(1:NCELL)=rdata(m-NCELL+1:m)
-      close(nout(1))
-      !write(*,*) my_rank,m
-
-      psi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
-      !write(*,*) tau
-      write(fname,'("output/vel",i0,"_",i0,".dat")') number,my_rank
-      open(nout(1),file=fname,form='unformatted',access='stream',status='old',position='append')
-      nout(2)=nout(1)+np
-      write(fname,'("output/slip",i0,"_",i0,".dat")') number,my_rank
-      open(nout(2),file=fname,form='unformatted',access='stream',status='old',position='append')
-      nout(3)=nout(2)+np
-      write(fname,'("output/sigma",i0,"_",i0,".dat")') number,my_rank
-      open(nout(3),file=fname,form='unformatted',access='stream',status='old',position='append')
-      nout(4)=nout(3)+np
-      write(fname,'("output/tau",i0,"_",i0,".dat")') number,my_rank
-      open(nout(4),file=fname,form='unformatted',access='stream',status='old',position='append')
-
-      nout(5)=nout(4)+np
-      write(fname,'("output/EQslip",i0,"_",i0,".dat")') number,my_rank
-      open(nout(5),file=fname,form='unformatted',access='stream',status='replace')
-
-    !   rankloc=-1
-    ! if(my_rank<npd) then
-    !   do i=1,ncell
-    !     if(st_sum%lodc(i)==loc) then
-    !       rankloc=my_rank
-    !       loc_=i
-    !       write(*,*) rankloc,loc_
-    !       write(*,*)  xcol(loc),ycol(loc),zcol(loc)
-    !       exit
-    !     end if
-    !   end do
-    ! end if
-
-    ! if(my_rank==rankloc) then
-    !   do k=1,nloc
-    !     write(fname,'("output/local",i0,"-",i0,".dat")') number,loc(k)
-    !     open(53,file=fname)
-    !     write(*,*) my_rank,loc(k)
-    !   end do
-    ! end if
-
+      do i=1,NCELL
+        i_=st_sum%lodc(i)
+        vslip(i)=rdata(m-NCELLg+i_)
+      end do
     end if
 
-    call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-    call MPI_bcast(psi,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
-    call MPI_bcast(vel,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
-    call MPI_bcast(tau,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
-    call MPI_bcast(sigma,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
-    call MPI_bcast(slip,NCELL,MPI_REAL8,0,st_ctl%lpmd(35),ierr)
+    if(opening) then
+     write(fname,'("output/veln",i0,".dat")') number
+     open(nout(1),file=fname,form='unformatted',access='stream')
+     read(nout(1)) rdata
+     close(nout(1))
+     do i=1,NCELL
+       i_=st_sum%lodc(i)
+       veln(i)=rdata(m-NCELLg+i_)
+     end do
+     write(fname,'("output/slipn",i0,".dat")') number
+     open(nout(1),file=fname,form='unformatted',access='stream')
+     read(nout(1)) rdata
+     close(nout(1))
+     do i=1,NCELL
+       i_=st_sum%lodc(i)
+       slipn(i)=rdata(m-NCELLg+i_)
+     end do
+  
+    end if
+    !write(*,*) my_rank,m
+
+    psi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
+    !write(*,*) tau
+    write(fname,'("output/vel",i0,".dat")') number
+    open(nout(1),file=fname,form='unformatted',access='stream',status='old',position='append')
+    nout(2)=nout(1)+np
+    write(fname,'("output/slip",i0,".dat")') number
+    open(nout(2),file=fname,form='unformatted',access='stream',status='old',position='append')
+    nout(3)=nout(2)+np
+    write(fname,'("output/sigma",i0,".dat")') number
+    open(nout(3),file=fname,form='unformatted',access='stream',status='old',position='append')
+    nout(4)=nout(3)+np
+    write(fname,'("output/tau",i0,".dat")') number
+    open(nout(4),file=fname,form='unformatted',access='stream',status='old',position='append')
+    nout(5)=nout(4)+np
+    write(fname,'("output/EQslip",i0,".dat")') number
+    open(nout(5),file=fname,form='unformatted',access='stream',status='replace')
+
+    if(viscous) then
+        nout(6)=nout(5)+1
+        write(fname,'("output/vflow",i0,".dat")') number
+        open(nout(6),file=fname,form='unformatted',access='stream',status='old',position='append')
+        nout(7)=nout(6)+1
+        write(fname,'("output/vslip",i0,".dat")') number
+        open(nout(7),file=fname,form='unformatted',access='stream',status='old',position='append')
+    end if
+
+    if(opening) then
+        nout(8)=nout(7)+1
+        write(fname,'("output/veln",i0,".dat")') number
+        open(nout(8),file=fname,form='unformatted',access='stream',status='old',position='append')
+        nout(9)=nout(8)+1
+        write(fname,'("output/slipn",i0,".dat")') number
+        open(nout(9),file=fname,form='unformatted',access='stream',status='old',position='append')
+    end if
+
+    rankloc=-1
+    if(my_rank<npd) then
+      do k=1,noutloc
+      do i=1,ncell
+        if(st_sum%lodc(i)==locid(k)) then
+          rankloc(k)=my_rank
+          loc_(k)=i
+          !write(*,*) rankloc(k),loc_(k)
+          write(*,*)  xcol(locid(k)),ycol(locid(k)),zcol(locid(k))
+          exit
+        end if
+      end do
+     end do
+    end if
+
+    do k=1,10
+      if(my_rank==rankloc(k)) then
+        write(fname,'("output/local",i0,"-",i0,".dat")') number,locid(k)
+        open(53+k,file=fname,position='append')
+        !write(*,*) my_rank,locid(k)
+     end if
+   end do
 
     s=0d0
     do i=1,NCELL
@@ -1089,7 +1185,7 @@ program main
       write(fname,'("output/monitor",i0,".dat")') number
       open(52,file=fname)
       write(fname,'("output/event",i0,".dat")') number
-      open(44,file=fname)
+      open(44,file=fname,status='replace')
       open(19,file='job.log',position='append')
       call date_and_time(sys_time(1), sys_time(2), sys_time(3), date_time)
       write(19,'(a20,i0,a6,a12,a6,a12,a4,i0)') 'Starting job number=',number,'date',sys_time(1),'time',sys_time(2),'np',np
@@ -1114,7 +1210,7 @@ program main
     do k=1,10
       if(my_rank==rankloc(k)) then
         write(fname,'("output/local",i0,"-",i0,".dat")') number,locid(k)
-        open(53+k,file=fname)
+        open(53+k,file=fname,position='append')
         !write(*,*) my_rank,locid(k)
      end if
    end do
@@ -1180,8 +1276,13 @@ program main
       write(*,*) 'initial mu_avg',meanmuG
       call output_monitor()
     end if
-    call output_field(mvel_loc)
-    !call output_field_sorted(mvel_loc)
+    if(sorted) then
+      call output_field_sorted(mvel_loc)
+    else
+      call output_field(mvel_loc)
+    end if
+    
+    !
     dtnxt = dtinit
   end if
 
@@ -1246,8 +1347,10 @@ program main
           y(3*i)=sigma0(i)-pf1d(pf0,cdiff,x,xcol(i_))
           !y(3*i)=max(minsig,sigma0(i)-pf0*erfc(xcol(i_)/(2*sqrt(cdiff*x))))
           !homogenous diffusion
-          !y(3*i)=max(minsig,sigma0(i)-pf2d(pf0,cdiff,x,xcol(i_),0.0))
+          y(3*i)=sigma0(i)-pf2d(pf0,cdiff,x,xcol(i_),ycol(i_)-0.2)
         end do
+        
+
       case('3dp')
         do i=1,NCELL
           i_=st_sum%lodc(i)
@@ -1399,6 +1502,9 @@ program main
     if(mod(k,interval)==0) then
       outfield=.true.
     end if
+    if(x>tmax) then
+      outfield=.true.
+    end if
     !if(k>3800.and.k<4200.and.mod(k,10)==0) outfield=.true.
     if(x>tout) then
       outfield=.true.
@@ -1420,8 +1526,11 @@ program main
         open(52,file=fname,position='append')
       end if
       !lattice H
-       call output_field(mvel_loc)
-       !call output_field_sorted(mvel_loc)
+      if(sorted) then
+        call output_field_sorted(mvel_loc)
+      else
+        call output_field(mvel_loc)
+      end if
     end if
 
     if(my_rank==0.and.k>kend) then
@@ -1437,15 +1546,15 @@ program main
 
     !stop controls
     if(mvelG>velmax) then
-      if(my_rank == 0) write(*,*) 'slip rate above vmax at time step=', k
+      if(my_rank == 0) write(*,*) 'Slip rate above vmax at time step=', k
       exit
     end if
     if(mvelG<velmin) then
-      if(my_rank == 0) write(*,*) 'slip rate below vmin at time step=', k
+      if(my_rank == 0) write(*,*) 'Slip rate below vmin at time step=', k
       exit
     end if
     if(x>tmax) then
-      if(my_rank == 0) write(*,*) 'time exceeds tmax at time step=', k
+      if(my_rank == 0) write(*,*) 'Time exceeds tmax at time step=', k
       exit
     end if
     !if(maxval(sigma)>=maxsig) then
@@ -1495,7 +1604,7 @@ contains
   subroutine output_local(nf,loc_)
     implicit none
     integer,intent(in)::nf,loc_
-    write(nf,'(i7,f19.4,9e16.5)')k,x,log10(vel(loc_)),slip(loc_),tau(loc_),sigma(loc_),mu(loc_),psi(loc_),vflow(loc_),veln(loc_),slipn(loc_)
+    write(nf,'(i7,f19.4,9e16.5)')k,x,log10(abs(vel(loc_))),slip(loc_),tau(loc_),sigma(loc_),mu(loc_),psi(loc_),vflow(loc_),veln(loc_),slipn(loc_)
   end subroutine
 
   subroutine get_mvelloc(mvel_loc)
@@ -1591,21 +1700,21 @@ contains
         velG2(i_)=velG(i)
         slipG2(i_)=slipG(i)
         sigmaG2(i_)=sigmaG(i)
-        tauG2(i_)=tauG2(i)
+        tauG2(i_)=tauG(i)
       end do
       mvel_loc=maxloc(abs(velG))
       write(nout(1)) velG2
       write(nout(2)) slipG2
       write(nout(3)) sigmaG2
       write(nout(4)) tauG2
-      if(viscous) then
-        write(nout(6)) vflowG
-        write(nout(7)) vslipG
-      end if
-      if(opening) then
-        write(nout(8)) velnG
-        write(nout(9)) slipnG        
-      end if
+      ! if(viscous) then
+      !   write(nout(6)) vflowG
+      !   write(nout(7)) vslipG
+      ! end if
+      ! if(opening) then
+      !   write(nout(8)) velnG
+      !   write(nout(9)) slipnG        
+      ! end if
     end if
 
   end subroutine
@@ -2155,19 +2264,19 @@ end subroutine
         sum_gs(i)=sum_gs(i)-(tautmp(i)-tau0(i))/trelax
       end if
   
-      call deriv(sum_gs(i),sum_gn(i),psitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),vc(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
+      call deriv(sum_gs(i),sum_gn(i),psitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),vc(i),etab(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
     enddo
     !$omp end parallel do
     !write(*,*) dydx
     return
   end subroutine
 
-  subroutine deriv(sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc,dpsidt,dtaudt,dsigdt)
+  subroutine deriv(sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc,etab,dpsidt,dtaudt,dsigdt)
     implicit none
     real(8)::fss,dvdtau,dvdsig,dvdpsi,mu,psiss,dcv,f
     real(8),parameter::fw=0.2,vw=0.1,V0=0.5,n=4,Cr=1.0
     !type(t_deriv),intent(in) ::
-    real(8),intent(in)::sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc
+    real(8),intent(in)::sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc,etab
     real(8),intent(out)::dpsidt,dtaudt,dsigdt
     dsigdt=sum_gn
     if(limitsigma)then
@@ -2220,16 +2329,10 @@ end subroutine
     !dpsidt(i)=b(i_)/dc(i_)*vref*dexp((f0(i_)-psitmp(i))/b(i_))*(1d0-abs(veltmp(i))/vref*(exp((psitmp(i)-f0(i_))/b(i_))-vref/vc(i_)))
 
     dvdtau=2*vref*dexp(-psitmp/a)*dcosh(tautmp/sigmatmp/a)/(a*sigmatmp)
-    !mu=tautmp(i)/sigmatmp(i)
-    !dvdtau=vref*(exp((mu-psitmp(i))/a(i))+exp((-mu-psitmp(i))/a(i)))/(a(i)*sigmatmp(i))
     dvdsig=-2*vref*dexp(-psitmp/a)*dcosh(tautmp/sigmatmp/a)*tautmp/(a*sigmatmp**2)
-    !dvdpsi=2*vref*exp(-psitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
     dvdpsi=-veltmp/a
-    !dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(dvdpsi*psitmp(i)*dvdsig*sigmatmp(i))
-    
-    !f=(1+(veltmp/V0)**n)**(1/n-1)*(veltmp/V0)**(n-1)
-    dtaudt=sum_gs-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*dsigdt)!*f*Cr
-    dtaudt=dtaudt/(1d0+0.5d0*rigid/vs*dvdtau)
+    dtaudt=(sum_gs-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*dsigdt))/(1d0+0.5d0*rigid/vs*dvdtau)
+    if(bingham) dtaudt=(sum_gs-(etab+0.5d0*rigid/vs)*(dvdpsi*dpsidt+dvdsig*dsigdt))/(1d0+(etab+0.5d0*rigid/vs)*dvdtau)
     !write(*,*) rigid/vs*dvdtau
     if(veltmp<=0d0) then
       dvdtau=2*vref*dexp(-psitmp/a)*dcosh(tautmp/sigmatmp/a)/(a*sigmatmp)
@@ -2237,7 +2340,6 @@ end subroutine
       !sign ok?
       !dvdpsi=2*vref*exp(-psitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
       dvdpsi=-veltmp/a
-      !dtaudt(i)=sum_gs(i)-0.5d0*rigid/vs*(-dvdpsi*psitmp(i)*dvdsig*sigmatmp(i))
       dtaudt=sum_gs-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*dsigdt)
       dtaudt=dtaudt/(1d0+0.5d0*rigid/vs*dvdtau)
     end if
@@ -2353,8 +2455,6 @@ end subroutine
 
     end do
 
-    hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW))
-    hnext=min(hnext,dtmax)
     ! if(outpertime) then
     !   hnext=min(hnext,dtout*365*24*3600)
     ! end if
@@ -2366,6 +2466,10 @@ end subroutine
     hdid=h
     x=x+h
     y(:)=ytemp(:)
+
+    hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW))
+    hnext=min(hnext,dtmax)
+    if(x+hnext>tmax) hnext=tmax-x+1e-5
 
   end subroutine
   !---------------------------------------------------------------------
