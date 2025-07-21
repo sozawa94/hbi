@@ -2,7 +2,7 @@
 #F90= mpifort -fbacktrace -g -fallow-argument-mismatch -ffree-form -ffree-line-length-none -O3 -march=native -fopenmp
 
 #Sherlock (intel MPI)
-#F90 = mpiifort -O3 -qopenmp -ip -g -traceback
+#F90 = mpiifort -O3 -qopenmp -heap-arrays -ip -g -traceback
 
 #wisteria (Fujitsu compiler)
 F90=mpifrtpx -Kfast -Kopenmp
