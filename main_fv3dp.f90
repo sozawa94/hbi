@@ -70,7 +70,7 @@ program main
   real(8)::a0,a1,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::vref,vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dummy(10)
-  real(8)::ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,q0
+  real(8)::ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,q0,tinj
   real(8)::kpmax,kpmin,kp0,kT,kL,s0,ksinit,dtout,pfinit,pbc,pbcl,pbcr,lf,eta,beta,phi0,str,cc,td,cd
 
   !random_number
@@ -125,7 +125,7 @@ program main
   eps_h=1d-4
   vref=1e-6
   velmax=1d7
-  velmin=1d-16
+  velmin=1d-20
   tmax=1d12
   td=tmax
   dipangle=0d0
@@ -135,11 +135,12 @@ program main
   slipfinal=.false.
   restart=.false.
   maxsig=300d0
-  minsig=0d0
+  minsig=1d0
   dtinit=1d0
   muinit=0d0
   tp=86400d0
   dtmax=1e10
+  tinj=1e6
   outpertime=.false.
   initcondfromfile=.false.
   parameterfromfile=.false.
@@ -218,6 +219,8 @@ program main
       read (pvalue,*) sparam
     case('q0')
       read (pvalue,*) q0
+    case('tinj')
+      read (pvalue,*) tinj
     case('eta')
       read (pvalue,*) eta
     case('phi0')
@@ -667,6 +670,7 @@ program main
   dtdid=0d0
   mvelG=maxval(vel)
   meanmuG=sum(mu)/NCELLg
+  write(*,*) meanmuG
   minnormG=minval(sigmae)
   maxnormG=maxval(sigmae)
   meandispG=sum(disp)/NCELLg
@@ -730,14 +734,14 @@ tout=dtout*365*24*60*60
     do i=1,NCELLg
       psi(i) = yg(4*i-3)
       tau(i) = yg(4*i-2)
-      sigmae(i)=yg(4*i-1)
+      sigmae(i)=max(yg(4*i-1), minsig)
       !sigma(i)=sigmainit
       !sigmae(i)=sigma(i)-pf(i)
 
       mu(i)=tau(i)/sigmae(i)
-      vel(i)= 2*vref*exp(-psi(i)/a(i))*sinh(tau(i)/sigmae(i)/a(i))
+      vel(i)=2*vref*exp(-psi(i)/a(i))*sinh(tau(i)/sigmae(i)/a(i))
       !disp(i)=disp(i)+vel(i)*dtdid*0.5d0
-      !sigma(i)=yg(4*i-1)+pf(i)
+      sigma(i)=yg(4*i-1)+pf(i)
       ks(i)=yg(4*i)
     end do
     !write(*,*) maxval(ks)
@@ -764,7 +768,7 @@ tout=dtout*365*24*60*60
     !limitsigma
     ! if(limitsigma) then
       do i=1,NCELLg
-        if(yg(4*i-1)<minsig) sigma(i)=pf(i)+minsig
+        !if(yg(4*i-1)<minsig) sigma(i)=pf(i)+minsig
         !if(yg(4*i-1)>maxsig) yg(4*i-1)=maxsig
       end do
     ! end if
@@ -775,8 +779,8 @@ tout=dtout*365*24*60*60
     do i = 1, NCELLg
       ! psi(i) = yg(4*i-3)
       ! tau(i) = yg(4*i-2)
-      sigmae(i)=sigma(i)-pf(i)
-      yg(4*i-1)=sigmae(i)
+      yg(4*i-1)=sigma(i)-pf(i)
+      sigmae(i)=max(yg(4*i-1), minsig)
       ! ks(i)=yg(4*i)
       disp(i)=disp(i)+vel(i)*dtdid*0.5d0 !2nd order
       vel(i)= 2*vref*exp(-psi(i)/a(i))*sinh(tau(i)/sigmae(i)/a(i))
@@ -898,7 +902,8 @@ tout=dtout*365*24*60*60
         !eventcount=eventcount+1
         !end of an event
         if(my_rank==0) then
-          write(51,'(i0,i7,f17.2,i7,e15.6,f14.4)') eventcount,k,onset_time,hypoloc,moment,(log10(moment*rigid*sg)+5.9)/1.5
+          !write(51,'(i0,i7,f17.2,i7,e15.6,f14.4)') eventcount,k,onset_time,hypoloc,moment,(log10(moment*rigid*sg)+5.9)/1.5
+          write(51,'(i0,i8,f17.2,f14.4,i8)') eventcount,k,onset_time,(log10(moment*rigid*sg)+5.9)/1.5,hypoloc
         end if
         cslip=disp-idisp
         if(my_rank==0) write(nout(8)) cslip
@@ -982,8 +987,8 @@ subroutine initcond_thrust()
     integer::l
 
   
-    sigma=g*rhor*(zcol+0.2)*1e-3
-    pfhyd=g*rhof*(zcol+0.2)*1e-3
+    sigma=g*rhor*(zcol+0.02)*1e-3
+    pfhyd=g*rhof*(zcol+0.02)*1e-3
 
     pfd(1)=pfhyd(1)
     sigmaed(1)=sigma(1)-pfd(1)
@@ -1040,6 +1045,7 @@ subroutine initcond_injection()
   if(muinit.ne.0d0) tau=sigmae*muinit
   ! vel=tau/abs(tau)*velinit
   psi=a*dlog(2*vref/vel*sinh(tau/sigmae/a))
+  mu=tau/sigmae
 
   !randomize initial state
   ! do i=1,ncellg
@@ -1566,7 +1572,8 @@ end subroutine coordinate3ddip
         !write(*,*)i,j,qtmp
         b(i,j)=b(i,j)+h*qtmp/beta/phi0*1e-12/ds0/ds0
       end do
-    else
+    else if(time<tinj*365*24*3600) then
+    write(*,*) "injection"
       b(imax/2,jmax/2)=b(imax/2,jmax/2)+h*q0/beta/phi0*1e-12/ds0/ds0
     end if
     end if
@@ -1670,7 +1677,7 @@ end subroutine coordinate3ddip
         i_=vars(i)
         psitmp(i) = y(4*i-3)
         tautmp(i) = y(4*i-2)
-        sigmaetmp(i) = y(4*i-1)
+        sigmaetmp(i) = max(y(4*i-1),minsig)
         kstmp(i)=y(4*i)
         veltmp(i) = 2*vref*dexp(-psitmp(i)/a(i_))*dsinh(tautmp(i)/sigmaetmp(i)/a(i_))
         !if(abs(i-ncellg/2)<5) write(*,*) psitmp(i)
