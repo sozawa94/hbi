@@ -1,13 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
-yr=365*24*3600
+plt.rcParams["font.size"] = 14  
+year=365*24*3600
 
 #fault geoemtry in 2D
-def geomplot(jobid):
+def geomplot(jobid,alpha=1,size=10):
     coord=np.loadtxt('xyz'+str(jobid)+'.dat')
     x=coord[:,0]
     y=coord[:,1]
-    plt.plot(x,y)
+    plt.scatter(x,y,alpha=alpha,s=size)
     
 #fault geoemtry in 3D    
 def geomplot3d(jobid):
@@ -18,7 +19,7 @@ def geomplot3d(jobid):
     plt.scatter(x,y,z,s=3)
     
 #space time step plot in 2D    
-def ssplot(jobid,field):
+def ssplot(jobid,field,vmin=0,vmax=0):
     coord=np.loadtxt('xyz'+str(jobid)+'.dat')
     dep=coord[:,0]
     ncell=len(dep)
@@ -31,15 +32,17 @@ def ssplot(jobid,field):
     ary=ary[:n*ncell]
     d=ary.reshape(n,ncell)
     d=d.T
-    if field=='vel':
-        d=np.log10(d)
+    if field=='vel' or field=='veln':
+        d=np.log10(abs(d))
     x=np.arange(0,n,1)
     
     fig=plt.figure(figsize=(12,4))
-    if field=='vel':
-        plt.pcolormesh(x,dep,d,cmap=plt.cm.viridis,vmin=-12,vmax=0)
-    else:
-        plt.pcolormesh(x,dep,d,cmap=plt.cm.viridis)
+    if vmin==0:
+        vmin=np.min(d)
+    if vmax==0:
+        vmax=np.max(d)
+    plt.pcolormesh(x,dep,d,cmap=plt.cm.viridis,vmin=vmin,vmax=vmax)
+    
     switcher = {
         "vel": "log10 Slip rate (m/s)",
         "slip": "Slip (m)",
@@ -55,7 +58,7 @@ def ssplot(jobid,field):
     #plt.ylim([zmax,0])
     
 #space time plot in 2D    
-def stplot(jobid,field):
+def stplot(jobid,field, vmin=0,vmax=0):
     coord=np.loadtxt('xyz'+str(jobid)+'.dat')
     dep=coord[:,0]
     ncell=len(dep)
@@ -71,13 +74,15 @@ def stplot(jobid,field):
     ary=ary[:n*ncell]
     d=ary.reshape(n,ncell)
     d=d.T
+    if vmin==0:
+        vmin=np.min(d)
+    if vmax==0:
+        vmax=np.max(d)
     if field=='vel':
         d=np.log10(d)
     fig=plt.figure(figsize=(12,4))
-    if field=='vel':
-        plt.pcolormesh(time/yr,dep,d,cmap=plt.cm.bwr,vmin=-12,vmax=-6)
-    else:
-        plt.pcolormesh(time/yr,dep,d,cmap=plt.cm.viridis)
+
+    plt.pcolormesh(time/year,dep,d,cmap=plt.cm.viridis)
     switcher = {
         "vel": "log10 Slip rate (m/s)",
         "slip": "Slip (m)",
@@ -86,7 +91,6 @@ def stplot(jobid,field):
         "pf": "Fluid pressure (MPa)",
     }
     plt.colorbar(label=switcher.get(field))
-    plt.colorbar()
     plt.xlabel('Time (yr)')
     plt.ylabel('Location (km)')
     #plt.title('jobid='+str(job))
@@ -120,7 +124,7 @@ def stvelplot(jobid):
     d=np.log10(d3)
     fig=plt.figure(figsize=(12,4))
 
-    plt.pcolormesh(time/yr,dep,d,cmap=plt.cm.bwr,vmin=-12,vmax=-6)
+    plt.pcolormesh(time/year,dep,d,cmap=plt.cm.bwr,vmin=-12,vmax=-6)
     plt.axhline(20)
 
     plt.colorbar(label='log10 slip rate [m/s]')
@@ -152,7 +156,7 @@ def cumslip(jobid):
     plt.ylabel('x [km]')
 
 #snapshot at a given time step in 2D     
-def snap(jobid,field,ts=0):
+def snap(jobid,field,ts=0,label="none",xindex=False):
     coord=np.loadtxt('xyz'+str(jobid)+'.dat')
     loc=coord[:,0]
     ncell=len(loc)
@@ -166,10 +170,13 @@ def snap(jobid,field,ts=0):
     d=ary.reshape(n,ncell)
     d=d.T
     if field=='vel':
-        d=np.log10(d)
+        d=np.log10(abs(d))
    
     #fig=plt.figure(figsize=(6,4))
-    plt.plot(loc,d[:,ts])
+    if xindex:
+        plt.plot(d[:,ts],label=label)
+    else:
+        plt.plot(loc,d[:,ts],label=label)
     #plt.xlabel('Time step')
     #plt.ylabel('x [km]')
     
@@ -219,7 +226,7 @@ def initplot(field,jobid):
     plt.ylabel('x [km]')
 
 #plot the slip distribution for each earthquake in 2D
-def EQslip(jobid):
+def EQslip(jobid,xindex=False):
     coord=np.loadtxt('xyz'+str(jobid)+'.dat')
     loc=coord[:,0]
     ncell=len(loc)
@@ -234,14 +241,21 @@ def EQslip(jobid):
     d=d.T
    
     fig=plt.figure(figsize=(6,4))
-    plt.plot(loc,d[:,:])
+    if xindex:
+        plt.plot(d[:,:])
+    else:
+        plt.plot(loc,d[:,:])
     plt.xlabel('x (km)')
     plt.ylabel('Slip (m)')
 
 #plot the time series from monitorX.dat
-def monitorplot(jobid, ycol=2,label='none'):
+def monitorplot(jobid, ycol=2,label='none',time='year',offset=0):
     dd=np.loadtxt('monitor'+str(jobid)+'.dat')
-    plt.plot(dd[:,1]/yr,dd[:,ycol],label=label)
+    
+    if time=="year":
+        plt.plot((dd[:,1]-offset)/year,dd[:,ycol],label=label)
+    if time=="sec":
+        plt.plot(dd[:,1]-offset,dd[:,ycol],label=label)
     plt.xlabel('time (yr)')
     switcher = {
         2: "log10 max slip rate (m/s)",
@@ -267,9 +281,9 @@ def monitortsplot(jobid, ycol=2):
     plt.ylabel(switcher.get(ycol))
 
 #plot time series for local data
-def localplot(jobid,loc,col):
+def localplot(jobid,loc,ycol):
     dd=np.loadtxt('local'+str(jobid)+'-'+str(loc)+'.dat')
-    plt.plot(dd[:,1]/yr,dd[:,col])
+    plt.plot(dd[:,1]/year,dd[:,ycol])
     plt.xlabel('time (yr)')
 
 #3D snapshot (only for single MPI)
@@ -293,58 +307,87 @@ def snap3drec(jobid,field,imax, jmax, ts=0, xax='x', yax='z'):
     plt.colorbar(label=field)
 
 #3D snapshot (both for rectangular and triangular)
-def snap3d(jobid,field,ts=0, xax='x', yax='y',size=8):
+def snap3d(jobid,field,ts=0, xax='x', yax='y',size=8, vmin=0, vmax=0, time=True,cmap='viridis'):
     plt.figure(figsize=(size,size))
     plt.axes().set_aspect('equal')
     ary1=np.loadtxt('xyz'+ str(jobid) +'.dat')
     nc=len(ary1)
     #print(nc)
-    x=ary1[:,0]
-    y=ary1[:,1]
-    z=ary1[:,2]
+    switcher = {
+        "x": 0,
+        "y": 1,
+        "z": 2,
+    }
+    x=ary1[:,switcher.get(xax)]
+    y=ary1[:,switcher.get(yax)]
     fp = open(field+ str(jobid) +'.dat','rb')
     d = np.fromfile(fp, np.float64, -1)
     fp.close()
     nt=int(len(d)/nc)
     print(nt)
     d=d[ts*nc:(ts+1)*nc]
-    if field=='vel':
-        d=np.log10(d)
+    if field=='vel' or field=='veln':
+        d=np.log10(abs(d))
     #plt.tripcolor(x, z, d, cmap="viridis")
-    plt.scatter(x, y, c=d, s=1000/np.sqrt(nc), cmap="viridis")
-    plt.xlabel('X (km)')
-    plt.ylabel('Y (km)')
+    if vmin==0 and vmax==0:
+        plt.scatter(x, y, c=d, s=1000/np.sqrt(nc), cmap=cmap)
+    else:
+        plt.scatter(x, y, c=d, s=1000/np.sqrt(nc), cmap=cmap,vmin=vmin, vmax=vmax)
+    plt.xlabel(xax + '(km)')
+    plt.ylabel(yax + '(km)')
+    if time:
+        d=np.loadtxt('time'+str(jobid)+'.dat')
+        time=d[:,1]/year
+        plt.title('Time = %f (yr)' %time[ts])
     plt.colorbar(label=field)
     
 #plot the slip distribution for each earthquake in 2D
-def EQslip3d(jobid): 
+def EQslip3d(jobid, nstart=0, ne = 0, xax='x', yax='y',magmin=0): 
     ary1=np.loadtxt('xyz'+ str(jobid) +'.dat')
     nc=len(ary1)
+    switcher = {
+        "x": 0,
+        "y": 1,
+        "z": 2,
+    }
+    x=ary1[:,switcher.get(xax)]
+    y=ary1[:,switcher.get(yax)]
     fp = open('EQslip'+ str(jobid) +'.dat','rb')
     ary2 = np.fromfile(fp, np.float64, -1)
     fp.close()
 
     d=np.loadtxt('event'+ str(jobid) +'.dat',skiprows=0)
     hypo=d[:,4]
-    ne=len(d)
+    net=len(d)
+    if ne == 0:
+        ne=len(d)
 
-    hypox=np.zeros(ne)
-    hypoy=np.zeros(ne)
-    hypoz=np.zeros(ne)
+    hypox=np.zeros(net)
+    hypoy=np.zeros(net)
+    hypoz=np.zeros(net)
+    time=d[:,2]/year
+    mag=d[:,3]
 
-
-    for i in range(ne):
+    for i in range(net):
         n=int(hypo[i])
     #print(n)
         hypox[i]=ary1[n-1,0]
         hypoy[i]=ary1[n-1,1]
         hypoz[i]=ary1[n-1,2]
 
-    for k in range(ne):
-        dd=ary2[k*nc:(k+1)*nc]
-        fig = plt.figure(figsize=(6,3))
-        plt.scatter(ary1[:,0],ary1[:,1],c=dd,s=5,cmap='Blues')#,vmin=-12,vmax=0)
-        plt.scatter(hypox[k], hypoy[k],c='r')
+    for k in range(nstart,nstart+ne):
+        if d[k,3]>magmin:
+            dd=ary2[k*nc:(k+1)*nc]
+            # Sort by values so that smaller values are plotted first
+            sorted_indices = np.argsort(dd)
+            xs = x[sorted_indices]
+            ys = y[sorted_indices]
+            dds = dd[sorted_indices]
+            fig = plt.figure(figsize=(6,6))
+            plt.axes().set_aspect('equal')
+            plt.scatter(xs,ys,c=dds,s=3,cmap='Blues',vmin=0,vmax=0.001)
+            plt.scatter(hypox[k], hypoy[k],c='r')
+            plt.title(f'Event ID = {k}, Time = {time[k]:.3f} (yr), Mw = {mag[k]:.3g}')
 
 #moment duration scaling for a given velocity threshold
 def momentvsduration(jobid,velth):
