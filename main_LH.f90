@@ -65,7 +65,7 @@ program main
   !controls
   logical::dilatancy,buffer,nuclei,slipping,outfield,structured,limitsigma,dcscale,slowslip,slipfinal,deepcreep,rakefromglobal,viscous
   logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,forward,inverse,geofromfile,restart,latticeh,debug,bgstress,relax,injection
-  logical::opening,sorted,bingham
+  logical::opening,sorted,bingham,meshisinmeter
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw,param2(20)
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meanslip,meanslipG,moment0,mvel,mvelG,etav0,etab0
   real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
@@ -93,7 +93,7 @@ program main
   npd=int(sqrt(dble(np)))
   call MPI_COMM_RANK(MPI_COMM_WORLD,my_rank,ierr )
   if(my_rank==0) then
-    write(*,*) 'HBI ver. 2025.6.0'
+    write(*,*) 'HBI ver. 2025.7.0'
     write(*,*) '# of MPI', np
   end if
   !input file must be specified when running
@@ -154,6 +154,7 @@ program main
   injection=.false.
   opening=.false.
   bingham=.false.
+  meshisinmeter=.false.
   maxsig=300d0
   minsig=1d0
   muinit=0d0
@@ -327,6 +328,8 @@ program main
       read(pvalue,*) sorted
     case('bingham')
       read(pvalue,*) bingham
+    case('meshisinmeter')
+      read(pvalue,*) meshisinmeter
     case('parameter_file_ncol')
       read(pvalue,*) ncol
     case('outloc')
@@ -511,6 +514,11 @@ program main
         read(12,*) !end loop
         read(12,*) !endfacet
         read(12,*) !facet
+        if(meshisinmeter) then
+          xs1(k)=xs1(k)/1e3;ys1(k)=ys1(k)/1e3;zs1(k)=zs1(k)/1e3
+          xs2(k)=xs2(k)/1e3;ys2(k)=ys2(k)/1e3;zs2(k)=zs2(k)/1e3
+          xs3(k)=xs3(k)/1e3;ys3(k)=ys3(k)/1e3;zs3(k)=zs3(k)/1e3
+        end if
         xcol(k)=(xs1(k)+xs2(k)+xs3(k))/3
         ycol(k)=(ys1(k)+ys2(k)+ys3(k))/3
         zcol(k)=(zs1(k)+zs2(k)+zs3(k))/3
@@ -821,7 +829,7 @@ program main
   end if
 
   if(deepcreep) then
-    if(my_rank == 0) write(*,*) 'loading rate is calculated from deep creep'
+    if(my_rank == 0) write(*,*) 'Loading rate is calculated from deep creep'
     select case(problem)
     case('3dph')
       call taudot_3dph()
@@ -1049,7 +1057,7 @@ program main
     call MPI_bcast(mvelG,1,MPI_REAL8,st_ctl%lpmd(33),st_ctl%lpmd(35),ierr)
 
     call MPI_BARRIER(MPI_COMM_WORLD,ierr); time2=MPI_Wtime()
-    if(my_rank==0) write(*,*) 'Finished all initial processing, time(s)=',time2-time1
+    if(my_rank==0) write(*,*) 'Finished all initial processing, time (s)=',time2-time1
     time1=MPI_Wtime()
   
   !no restart
@@ -1112,7 +1120,7 @@ program main
     end do
     !if(my_rank==0) write(*,*) 'Lb/ds~',rigid*dc(1)/b(1)/sigma(1)/ds0
     if(minval(lbds) < 2.0) then
-      write(*,*) 'warning: element size may be too large. min(Lb/ds)=',minval(lbds)
+      write(*,*) 'Warning: element size may be too large. min(Lb/ds)=',minval(lbds)
     end if
     
     x=0d0
@@ -1188,7 +1196,7 @@ program main
       open(44,file=fname,status='replace')
       open(19,file='job.log',position='append')
       call date_and_time(sys_time(1), sys_time(2), sys_time(3), date_time)
-      write(19,'(a20,i0,a6,a12,a6,a12,a4,i0)') 'Starting job number=',number,'date',sys_time(1),'time',sys_time(2),'np',np
+      write(19,'(a20,i0,a6,a12,a6,a12,a4,i4)') 'Starting job number=',number,'date',sys_time(1),'time',sys_time(2),'np',np
       close(19)
     end if
 
