@@ -462,7 +462,7 @@ End Subroutine D2dip2
       end if
     case('open')
       if(v=="n") then
-        ret1=2.d0*(1-alpha)*(dr4/(dx4*dz4)+dr2/(dx2*dz2)-dr3/(dx3*dz3)-dr1/(dx1*dz1))
+        ret1=2.d0*alpha*(dr4/(dx4*dz4)+dr2/(dx2*dz2)-dr3/(dx3*dz3)-dr1/(dx1*dz1))
         ret3dp = factor*ret1
       end if
     end select
