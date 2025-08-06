@@ -92,17 +92,17 @@ program main
   call MPI_COMM_RANK(MPI_COMM_WORLD,my_rank,ierr )
 
   if(my_rank==0) then
-    write(*,*) 'HBI Fluid 3D ver. 2025.5.0'
+    write(*,*) 'HBI Fluid 3D ver. 2025.8.0'
     write(*,*) '# of MPI', np
   end if
   !input file must be specified when running
-  !example) mpirun -np 16 ./ha.out default.in
+  !example) mpirun -np 16 ./lhbiem default.in
   call get_command_argument(1,input_file,status=stat)
 
-  open(33,file=input_file,iostat=ios)
-  !if(my_rank.eq.0) write(*,*) 'input_file',input_file
+  open(33,file=input_file,status='old',iostat=ios)
+  !if(my_rank==0) write(*,*) 'input_file',input_file
   if(ios /= 0) then
-    write(*,*) 'Failed to open inputfile'
+    if(my_rank==0)write(*,*) 'ERROR: Failed to open input file'
     stop
   end if
 
@@ -113,6 +113,13 @@ program main
     !write(*,*) input_file
     read(input_file,*) number
     !write(*,*) number
+  end if
+
+  if(my_rank==0) then
+  outdir='output'
+  write(command, *) 'if [ ! -d ', trim(outdir), ' ]; then mkdir -p ', trim(outdir), '; fi'
+  !write(*, *) trim(command)
+  call system(command)
   end if
 
   time1=MPI_Wtime()
@@ -765,13 +772,6 @@ tout=dtout*365*24*60*60
     !time4=MPI_Wtime()
     !timer=timer+time4-time3
 
-    !limitsigma
-    ! if(limitsigma) then
-      do i=1,NCELLg
-        !if(yg(4*i-1)<minsig) sigma(i)=pf(i)+minsig
-        !if(yg(4*i-1)>maxsig) yg(4*i-1)=maxsig
-      end do
-    ! end if
 
     !compute physical values for control and output
     !write(*,*) vel(1489),pf(1489),sigmae(1489)
@@ -1420,7 +1420,8 @@ end subroutine coordinate3ddip
         !if(my_rank==0) write(*,*) x
         dtnxt=qtimes(1,nn)-x-tny
         switch=.true.
-        nn=nn+2
+        nn=nn+1
+        if(qtimes(1,nn)-qtimes(1,nn-1)<1e0) nn=nn+1
         !if(my_rank==0) write(*,*) nn,qtimes(1,nn),x+dtnxt
       end if
     end if
@@ -1567,13 +1568,14 @@ end subroutine coordinate3ddip
             qtmp=v1
           end if
         end do
+        if(qtmp<0) qtmp=0d0
         i=iwell(kwell)
         j=jwell(kwell)
         !write(*,*)i,j,qtmp
         b(i,j)=b(i,j)+h*qtmp/beta/phi0*1e-12/ds0/ds0
       end do
     else if(time<tinj*365*24*3600) then
-    write(*,*) "injection"
+    !write(*,*) "injection"
       b(imax/2,jmax/2)=b(imax/2,jmax/2)+h*q0/beta/phi0*1e-12/ds0/ds0
     end if
     end if
