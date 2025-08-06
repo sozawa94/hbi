@@ -1,0 +1,18 @@
+filenumber 1
+problem      2dn
+ncellg 1024 !number of elements
+interval     100 !output and checkpointing every 100 steps
+nstep     20000 !time  steps 
+tmax   2000 !maximum time (year)
+backslip F
+sr 3e-9
+limitsigma T
+minsig 1.0
+a 0.015
+b 0.02
+dc 1.5e-3
+f0 0.6
+tauinit 16.0
+sigmainit 25.0
+velinit 1e-9
+geometry_file 'examples/rough_geo.dat'
