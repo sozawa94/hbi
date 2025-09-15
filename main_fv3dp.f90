@@ -511,15 +511,16 @@ program main
     allocate(st_bemv%xcol(NCELLg),st_bemv%ycol(NCELLg),st_bemv%zcol(NCELLg))
     allocate(st_bemv%xs1(NCELLg),st_bemv%xs2(NCELLg),st_bemv%xs3(NCELLg),st_bemv%xs4(NCELLg))
     allocate(st_bemv%zs1(NCELLg),st_bemv%zs2(NCELLg),st_bemv%zs3(NCELLg),st_bemv%zs4(NCELLg))
-    allocate(st_bemv%ang(NCELLg),st_bemv%angd(NCELLg),st_bemv%rake(NCELLg),st_bemv%dsl(NCELLg))
+    allocate(st_bemv%ang(NCELLg),st_bemv%angd(NCELLg),st_bemv%rake(NCELLg),st_bemv%dsl(NCELLg),st_bemv%dsd(NCELLg))
     st_bemv%xcol=xcol
     st_bemv%ycol=ycol
     st_bemv%zcol=zcol
-    ! st_bemv%angd=angd
-    ! st_bemv%ang=ang
-    ! st_bemv%rake=rake
-    ! st_bemv%dsl=ds0
-    ! st_bemv%w=ds0
+    st_bemv%angd=angd
+    st_bemv%ang=ang
+    st_bemv%rake=0d0
+    st_bemv%dsl=ds0
+    st_bemv%dsd=ds0
+    st_bemv%w=ds0
     st_bemv%xs1=xs1
     st_bemv%xs2=xs2
     st_bemv%xs3=xs3
