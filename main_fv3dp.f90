@@ -70,7 +70,7 @@ program main
   real(8)::a0,a1,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meandisp,meandispG,moment0,mvel,mvelG
   real(8)::vref,vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dummy(10)
-  real(8)::ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,q0,tinj
+  real(8)::ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,q0,tinj,ztop
   real(8)::kpmax,kpmin,kp0,kT,kL,s0,ksinit,dtout,pfinit,pbc,pbcl,pbcr,lf,eta,beta,phi0,str,cc,td,cd
 
   !random_number
@@ -148,6 +148,7 @@ program main
   tp=86400d0
   dtmax=1e10
   tinj=1e6
+  ztop=0d0
   outpertime=.false.
   initcondfromfile=.false.
   parameterfromfile=.false.
@@ -296,6 +297,8 @@ program main
       read(pvalue,*) restart
     case('latticeh')
       read(pvalue,*) latticeh
+    case('ztop')
+      read(pvalue,*) ztop
     case('dtout')
       read(pvalue,*) dtout
     case('parameterfromfile')
@@ -1222,7 +1225,7 @@ subroutine coordinate3ddip(imax,jmax,ds0,dipangle)
     stangle=0d0*pi/180d0
      k=0
      yr(0)=0d0
-     zr(0)=0d0
+     zr(0)=ztop
      !nb=int(50.0*jmax/320.0)
      !if(my_rank==0) write(*,*)nb
      do j=1,jmax
