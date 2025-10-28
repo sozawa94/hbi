@@ -1,9 +1,6 @@
-filenumber 1015
+filenumber 1016
 problem 3dp
-tinj 3.0
-injection flowrate
 pressurediffusion T
-qinj 3e-4
 imax 100
 jmax 100 
 interval  50 !output and checkpointing every 100 steps
@@ -12,16 +9,22 @@ dtout 0.05
 ds 0.01 !element size
 backslip T
 vpl 0d0
-a 0.01
-b 0.02
+bcl Neumann
+bcr Neumann
+bct Dirichlet
+bcb Neumann
+pbct 0.0
+qbcb 1e-6
+a 0.02
+b 0.015
 dc 0.0005
 f0 0.6
-kp 1e-15
+kp 1e-14
+phi 0.2
 beta 5e-8
 eta 0.89e-3
-phi 0.2
 muinit 0.57
 sigmainit 30.0
-tmax 5.0
+tmax 50.0
 velinit 1e-12 
 

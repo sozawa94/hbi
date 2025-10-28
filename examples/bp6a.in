@@ -1,22 +1,25 @@
-problem 2dp !to run this input file main_fv.f90 needs to be used
+problem 2dp
+pressurediffusion T
+injection flowrate
+qinj 1.25e-6
+tinj 0.27397
 ncellg 4000 
-filenumber    0 !id of output files
+filenumber    3 !id of output files
 interval     100 !output and checkpointing every 100 steps
 nstep     50000 !time steps
+dtout 0.01
 tmax   2.0 !maximum time (yr)
-tinj 0.27397
 ds 0.01 !element size
-parameterfromfile F !nonuniform parameters
-kpmax 1e-13
-kpmin 1e-13
+kp 1e-13
 eta 1e-3
 beta 1e-8 
-phi0 0.1
-q0 1.25e-6
+phi 0.1
 a 0.007
 b 0.005
 dc 0.004
 f0 0.60
+bcl Neumann
+bcr Neumann
 tauinit 29.2
 sigmainit 50.0
 velinit 1d-12

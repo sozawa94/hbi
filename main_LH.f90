@@ -812,7 +812,7 @@ program main
     if(my_rank==0) write(*,*) 'Finished all initial processing, time (s)=',time2-time1
     time1=MPI_Wtime()
   
-  !no restart
+  !no restart--------------------------------------------------------------------------------------------
   else 
 
     !setting initial condition
@@ -865,9 +865,9 @@ program main
     tau0=tau
     
     if(param_diff%injection=='pressure') then
-      pf(Ncellg/2)=param_diff%pinj
-      sigma(Ncellg/2)=sigmainit-pf(Ncellg/2)
-      tau(Ncellg/2)=muinit*sigma(Ncellg/2)
+      pfG(Ncellg/2)=param_diff%pinj
+      !sigma(Ncellg/2)=sigmainit-pf(Ncellg/2)
+      !tau(Ncellg/2)=muinit*sigma(Ncellg/2)
     end if
 
     mu=tau/sigma
@@ -877,23 +877,7 @@ program main
     slip=0d0
     slipn=0d0
 
-
-    call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-
-    !calculate Lb/ds
-    if(my_rank==0) then
-      do i=1,ncellg
-        lbds(i)=rigid*dc(i)/b(i)/sigma(i)/st_bemv%dsl(1)
-      end do
-      !if(my_rank==0) write(*,*) 'Lb/ds~',rigid*dc(1)/b(1)/sigma(1)/ds0
-      if(minval(lbds) < 2.0) then
-        write(*,*) 'Warning: element size may be too large. min(Lb/ds)=',minval(lbds)
-      end if
-    end if
-
-
-
-    
+    call MPI_BARRIER(MPI_COMM_WORLD,ierr) 
     x=0d0
     kstart=1
     kend=0

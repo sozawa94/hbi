@@ -264,7 +264,7 @@ end subroutine
       r=r-alpha*m
       !write(*,'(9e15.6)')r
       rsnew = sum(r*r)
-      write(*,*)iter,rsnew
+      !write(*,*)iter,rsnew
       if(rsnew<tol**2*n) then
           niter=iter
         exit

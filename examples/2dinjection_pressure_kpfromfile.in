@@ -1,0 +1,28 @@
+problem 2dp
+ncellg 2000 
+pressurediffusion T
+analyticalinjection F
+injection pressure
+pinj 10.0
+filenumber    114 !id of output files
+interval     100 !output and checkpointing every 100 steps
+nstep     10000 !time steps
+dtinit      100.0 !initial time step
+dtout 0.01
+tmax 100.0
+ds 0.01 !element size
+parameterfromfile T !nonuniform parameters
+parameter_file "examples/kp.dat"
+parameter_file_ncol 1
+a 0.005
+b 0.01
+dc 0.0007
+f0 0.60
+beta 1e-8
+phi 0.1
+eta 1e-3
+bcl Neumann
+bcr Neumann
+muinit 0.5
+sigmainit 50.0
+velinit 1d-12
