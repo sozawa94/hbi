@@ -2,8 +2,16 @@ This directory contains some examples for input file (.in) and python script to 
 
 [Simple problems (spatially uniform parameters)]
 -2dp.in: a planar fault (plane strain) in a 2D elastic full space
+-2dn_rough.in: a nonplanar fault in a 2D elastic full space
 -uni3dp.in: a planar fault in a 3D elastic full space
 -uni3dthrust.in: a planar thrust fault (30 deg dip) in a 3D elastic half space
+
+[Fluid problems]
+-2dinjection_pressure_kpfromfile.in: constant pressure injection with non-uniform permeability from file
+-3dinjection.in: 3D injection problem
+-3dinjection_wells.in: 3D injection problem with xomplex injection histoty from external file
+-3dinjection_permev.in: 3D injection problem with permeability evolution by slip
+-3dinjection_complexBC.in: 3D injection problem with complex boundary condition
 
 [SCEC SEAS benchmark problems](https://strike.scec.org/cvws/seas/benchmark_descriptions.html)
 Run the corresponding Python script to generate the parameter file before running the simulations.
@@ -11,6 +19,6 @@ Run the corresponding Python script to generate the parameter file before runnin
 -bp3dip30thrust.in: BP3 thrust fault with dip = 30 degrees
 -bp5r.in: BP5 with rectangular elements 
 -bp5t.in: BP5 with triangular elements 
--bp6a.in: BP6 with aging law (use main_fv.f90 to compile the code).
+-bp6a.in: BP6 with aging law
 -bp7r.in: BP7 (no initial perturbation) with rectangular elements and aging law
 -bp7t.in: BP7 (no initial perturbation) with triangular elements and aging law
