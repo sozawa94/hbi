@@ -13,7 +13,7 @@ module m_HACApK_calc_entry_ij
     real(8),pointer::ys1(:),ys2(:),ys3(:),ys4(:)
     real(8),pointer::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:)
     real(8),pointer::ds(:),dsl(:),dsd(:)
-    real(8)::w
+    real(8)::w,fwid
     !real(8),pointer::ds
     character(128)::v,md
   end type st_HACApK_calc_entry
@@ -41,7 +41,7 @@ contains
 
     case('2dn')
       HACApK_entry_ij=tensor2d_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
-      & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang,st_bemv%v,st_bemv%md)
+      & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang,st_bemv%v,st_bemv%md,st_bemv%rake)
 
     case('2dph','2dnh')
       HACApK_entry_ij=matel2dph2_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
@@ -67,10 +67,12 @@ contains
     !   & st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%xs4,&
     !   & st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%zs4)
     !   !write(*,*)HACApK_entry_ij
+
     case('3dhr','3dph')
       fullspace=.false.
       HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%dsl,st_bemv%dsd,st_bemv%v,st_bemv%rake,st_bemv%w,fullspace)
       !write(*,*)HACApK_entry_ij
+
     case('3dnr')
       fullspace=.true.
       HACApK_entry_ij=okada_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%ang,st_bemv%angd,st_bemv%dsl,st_bemv%dsd,st_bemv%v,st_bemv%rake,st_bemv%w,fullspace)
@@ -83,7 +85,7 @@ contains
       !HACApK_entry_ij=matelh1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol,st_bemv%strike,st_bemv%dip,st_bemv%v,st_bemv%md)
     case('25d')
       !HACApK_entry_ij=matels1_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%zcol, st_bemv%xs1,st_bemv%xs2,st_bemv%xs3,st_bemv%ys1,st_bemv%ys2,st_bemv%ys3,st_bemv%zs1,st_bemv%zs2,st_bemv%zs3,st_bemv%v,st_bemv%md)
-      HACApK_entry_ij=matelrec_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%ds,st_bemv%ang,st_bemv%w,st_bemv%v)
+      HACApK_entry_ij=matelrec_ij(i,j,st_bemv%xcol,st_bemv%ycol,st_bemv%ds,st_bemv%ang,st_bemv%fwid,st_bemv%v)
     end select
     !stop
     return
@@ -297,10 +299,10 @@ End Subroutine D2dip2
     return
   End Subroutine res
 
-  real(8) function tensor2d_ij(i,j,xcol,ycol,xel,xer,yel,yer,ang,v,md)
+  real(8) function tensor2d_ij(i,j,xcol,ycol,xel,xer,yel,yer,ang,v,md,rake)
     implicit none
     integer,intent(in)::i,j
-    real(8),intent(in)::xcol(:),ycol(:),xel(:),xer(:),yel(:),yer(:),ang(:)
+    real(8),intent(in)::xcol(:),ycol(:),xel(:),xer(:),yel(:),yer(:),ang(:),rake(:)
     character(128),intent(in)::v,md
     real(8)::xp,xm,yp,ym,kern11,kern12,kern22,sin2,cos2,ds,sum_xx,sum_xy,sum_yy
 
@@ -332,9 +334,9 @@ End Subroutine D2dip2
 
     select case(v)
     case('s')
-      tensor2d_ij=0.5d0*(sum_xx-sum_yy)*dsin(-2*ang(i))+sum_xy*dcos(-2*ang(i))
+      tensor2d_ij=(0.5d0*(sum_xx-sum_yy)*dsin(-2*ang(i))+sum_xy*dcos(-2*ang(i)))*rake(i)*rake(j)
     case('n')
-      tensor2d_ij=-(0.5d0*(sum_xx+sum_yy)-0.5d0*(sum_xx-sum_yy)*dcos(2*ang(i))-sum_xy*dsin(2*ang(i)))
+      tensor2d_ij=-(0.5d0*(sum_xx+sum_yy)-0.5d0*(sum_xx-sum_yy)*dcos(2*ang(i))-sum_xy*dsin(2*ang(i)))*rake(j)
     end select
   end function
 
@@ -450,7 +452,9 @@ End Subroutine D2dip2
     dr2=dsqrt(dx2**2+dz2**2)
     dr3=dsqrt(dx3**2+dz3**2)
     dr4=dsqrt(dx4**2+dz4**2)
+
     alpha=1/(2-2*pois)
+    !alpha=0.5
 
     select case(md)
     case("s","o")
@@ -896,6 +900,7 @@ end function matels2dpa_ij
     !   matel3dh_ij=p(5)-0.6*p(3)
     end select
   end function matel3dh_ij
+
   real(8) function matelh1_ij(i,j,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,v,md)
     implicit none
     integer,intent(in)::i,j
@@ -931,6 +936,7 @@ end function matels2dpa_ij
     end select
     return
   end function matelh1_ij
+
   real(8) function matelrec_ij(i,j,xcol,ycol,ds,strike,w,v)
     implicit none
     integer,intent(in)::i,j
@@ -959,6 +965,7 @@ end function matels2dpa_ij
 
     return
   end function matelrec_ij
+  
   subroutine  dc3d25(alpha,x,y,dl,dw,sxx,sxy,syy)
     implicit none
     real(8),intent(in)::alpha,x,y,dl,dw

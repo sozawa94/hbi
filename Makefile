@@ -12,9 +12,7 @@ F90FLAGS = $(OPTFLAG)
 
 LINK=$(F90)
 
-#Lattice H square
-OBJS= m_const.o okada.o TDstressFS.o HACApK_lib.o m_HACApK_calc_entry_ij.o m_HACApK_base.o m_HACApK_solve.o m_HACApK_use.o main_LH.o \
-
+OBJS= m_const.o m_diffusion.o okada.o TDstressFS.o HACApK_lib.o m_HACApK_calc_entry_ij.o m_HACApK_base.o m_HACApK_solve.o m_HACApK_use.o main_LH.o\
 
 TARGET=lhbiem
 
@@ -22,6 +20,12 @@ TARGET=lhbiem
 
 $(TARGET): $(OBJS)
 			$(LINK) -o $@ $(OBJS) $(LDFLAGS)
+
+# m_HACApK_use.o: m_HACApK_solve.o m_HACApK_base.o
+# m_HACApK_solve.o: m_HACApK_base.o
+# m_HACApK_base.o: m_HACApK_calc_entry_ij.o
+# m_HACApK_calc_entry_ij.o: m_const.o TDstressFS.o okada.o
+# main_LH.o: m_diffusion.o m_const.o m_HACApK_use.o m_HACApK_solve.o m_HACApK_base.o m_HACApK_calc_entry_ij.o
 
 .f90.o: *.f90
 			$(F90) -c $< $(F90FLAGS)
