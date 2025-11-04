@@ -8,8 +8,9 @@ What's new in Version 2025.10.0
 - Improved output (now the arrays are NOT reordered in output)
 
 Future extensions
--Fault opening
--GPU optimization
+
+- Fault opening
+- GPU optimization
 
 Features
 
