@@ -1,13 +1,23 @@
 # HBI
 Multi-dimensional earthquake cycle simulation code based on Boundary Element Method with H-matrices.
 
+What's new in Version 2025.10.0
+
+- Merged fluid versions (main_fv.f90 and main_fv3dp.d90) to main_LH.f90 with more flexible parameters and boundary conditions
+- Simulations using analytical solutions of fluid pressure for point injection source
+- Improved output (now the arrays are NOT reordered in output)
+
+Future extensions
+-Fault opening
+-GPU optimization
+
 Features
 
 - 2D and 3D planar/nonplanar faults in a full/half space
 
 - Rectangular and triangular meshes for 3D problems (require .stl mesh file for triangular mesh)
 
-- Rate and state friction law (aging law, slip law, cut-off velocity model, and modified CNS model)
+- Rate and state friction law (aging law, slip law, cut-off velocity model, flash heating, and modified CNS model)
 
 - Fault-zone linear and nonlinear viscous flow
 
@@ -27,7 +37,9 @@ If you write a paper using this code, please cite the following paper:
 So Ozawa, Akihiro Ida, Tetsuya Hoshino, Ryosuke Ando (2023),
 "Large-scale earthquake sequence simulations of 3D geometrically complex faults using the boundary element method accelerated by lattice H-matrices", Geophysical Journal International,232 (3), 1471-1481 https://doi.org/10.1093/gji/ggac386
 
-See also [SC22 Poster](https://sc22.supercomputing.org/presentation/?id=rpost105&sess=sess274)
+If you write a paper using this code with fluid pressure evolution, please cite the following paper:
+
+So Ozawa, Yuyun Yang, Eric M. Dunham (2024), "Fault Valve Instability: A mechanism for slow slip events", Journal of Geophysical Research: Solid Earth, 129,  https://doi.org/10.1029/2024JB029165,
 
 https://github.com/user-attachments/assets/d1331cee-73f1-4077-9a82-a148b9e94dba
 
