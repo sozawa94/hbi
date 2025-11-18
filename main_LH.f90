@@ -1460,19 +1460,29 @@ contains
         sigmaG2(i_)=sigmaG(i)
         tauG2(i_)=tauG(i)
       end do
-
-     !mvel_loc=maxloc(abs(velG))
       write(nout(1)) velG2
       write(nout(2)) slipG2
       write(nout(3)) sigmaG2
       write(nout(4)) tauG2
+
       if(viscous) then
-        write(nout(6)) vflowG
-        write(nout(7)) vslipG
+        do i=1, NCELLg
+          i_=listG(i)
+          vflowG2(i_)=vflowG(i)
+          vslipG2(i_)=vslipG(i)
+        end do
+        write(nout(6)) vflowG2
+        write(nout(7)) vslipG2
       end if
+
       if(opening) then
-        write(nout(8)) velnG
-        write(nout(9)) slipnG        
+        do i=1, NCELLg
+          i_=listG(i)
+          velnG2(i_)=velnG(i)
+          slipnG2(i_)=slipnG(i)
+        end do
+        write(nout(8)) velnG2
+        write(nout(9)) slipnG2
       end if
       if(pressurediffusion) then
         write(nout(10)) pfG
