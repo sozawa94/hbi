@@ -30,7 +30,7 @@ contains
     type(st_HACApK_calc_entry) :: st_bemv
     select case(st_bemv%problem)
     case('2dp')
-      HACApK_entry_ij=matels2dp_ij(i,j,st_bemv%xcol,st_bemv%xel,st_bemv%xer)
+      HACApK_entry_ij=matels2dp_ij(i,j,st_bemv%xcol,st_bemv%xel,st_bemv%xer,st_bemv%v,st_bemv%md)
 
     case('2dpfz')
       HACApK_entry_ij=matels2dpFZ_ij(i,j,st_bemv%xcol,st_bemv%xel,st_bemv%xer,st_bemv%w)
@@ -649,15 +649,21 @@ End Subroutine D2dip2
     retn = gsig(2)-gsig(1)
   end function retn
 
-  real(8) function matels2dp_ij(i,j,xcol,xel,xer)
+  real(8) function matels2dp_ij(i,j,xcol,xel,xer,v,md)
     implicit none
     integer,intent(in)::i,j
     real(8),intent(in)::xcol(:),xel(:),xer(:)
+    character(128),intent(in)::v,md
     !real(8),intent(in)::rigid,pois
     real(8)::factor
 
     !inplane shear
-    factor=rigid/(2.d0*pi*(1.d0-pois))
+    factor=0.d0
+    if(v.eq.'s'.and.md.eq.'s') then
+       factor=rigid/(2.d0*pi*(1.d0-pois))
+       else if(v.eq.'n'.and.md.eq.'open') then
+       factor=-rigid/(2.d0*pi*(1.d0-pois))
+    end if
     !antiplane shear
     !factor=rigid/(2.d0*pi)
 
@@ -702,7 +708,7 @@ end function matels2dpa_ij
     implicit none
     real(8)::x1,x2,t,ss,sp,inte,pa,inte12s,r
     r=sqrt(x1**2+x2**2)
-    pa=vs/vp
+    pa=sqrt((1-2*pois)/(2-2*pois))
     inte12s=2*vs/pi*(1-pa**2)*x1*(x1**2-x2**2)/r**4
     return
   end function
@@ -711,7 +717,7 @@ end function matels2dpa_ij
     implicit none
     real(8)::x1,x2,t,ss,sp,inte,pa,inte11s,r
     r=sqrt(x1**2+x2**2)
-    pa=vs/vp
+    pa=sqrt((1-2*pois)/(2-2*pois))
     inte11s=-2*vs/pi*(1-pa**2)*x2*(3*x1**2+x2**2)/r**4
     return
   end function
@@ -720,7 +726,7 @@ end function matels2dpa_ij
     implicit none
     real(8)::x1,x2,t,ss,sp,inte,pa,inte22s,r
     r=sqrt(x1**2+x2**2)
-    pa=vs/vp
+    pa=sqrt((1-2*pois)/(2-2*pois))
     inte22s=2*vs/pi*(1-pa**2)*x2*(x1**2-x2**2)/r**4
     return
   end function
@@ -729,7 +735,7 @@ end function matels2dpa_ij
     implicit none
     real(8)::x1,x2,t,ss,sp,inte,pa,inte12o,r
     r=sqrt(x1**2+x2**2)
-    pa=vs/vp
+    pa=sqrt((1-2*pois)/(2-2*pois))
     inte12o=2*vs/pi*(1-pa**2)*x2*(x1**2-x2**2)/r**4
     return
   end function
@@ -738,7 +744,7 @@ end function matels2dpa_ij
     implicit none
     real(8)::x1,x2,t,ss,sp,inte,pa,inte11o,r
     r=sqrt(x1**2+x2**2)
-    pa=vs/vp
+    pa=sqrt((1-2*pois)/(2-2*pois))
     inte11o=2*vs/pi*(1-pa**2)*x1*(x1**2-x2**2)/r**4
     return
   end function
@@ -747,7 +753,7 @@ end function matels2dpa_ij
     implicit none
     real(8)::x1,x2,t,ss,sp,inte,pa,inte22o,r
     r=sqrt(x1**2+x2**2)
-    pa=vs/vp
+    pa=sqrt((1-2*pois)/(2-2*pois))
     inte22o=2*vs/pi*(1-pa**2)*x1*(3*x1**2+x2**2)/r**4
     return
   end function

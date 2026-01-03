@@ -316,6 +316,7 @@ program main
      st_bemv%ds(i)=st_bemv%dsl(i)*st_bemv%dsd(i)
     end do
     ds0=minval(st_bemv%dsl)
+    st_bemv%w=st_bemv%dsl(1)
     close(20)
 
   case('3dph')
@@ -865,7 +866,7 @@ program main
     tau0=tau
     
     if(param_diff%injection=='pressure') then
-      pfG(Ncellg/2)=param_diff%pinj
+      !pfG(Ncellg/2)=param_diff%pinj
       !sigma(Ncellg/2)=sigmainit-pf(Ncellg/2)
       !tau(Ncellg/2)=muinit*sigma(Ncellg/2)
     end if
@@ -1079,7 +1080,7 @@ program main
           if(param_diff%injection=='pressure') then
             y(3*i)=sigma0(i)-param_diff%pinj*erfc(abs(st_bemv%xcol(i_)-st_bemv%xcol(ncellg/2))/(2*sqrt(cdiff*x)))
           else if(param_diff%injection=='flowrate') then
-            y(3*i)=sigma0(i)-pf1d(param_diff%pinj,cdiff,x,st_bemv%xcol(i_))
+            y(3*i)=sigma0(i)-pf1d(param_diff%pinj,cdiff,x,st_bemv%xcol(i_)-st_bemv%xcol(ncellg/2))
           end if
           !y(3*i)=max(minsig,sigma0(i)-pf0*erfc(xcol(i_)/(2*sqrt(cdiff*x))))
           !homogenous pressurediffusion
@@ -1611,8 +1612,8 @@ end subroutine
       st_bemv%ds(i)=ds0
       st_bemv%xel(i)=(i-1)*ds0*cos(dipangle*pi/180)
       st_bemv%xer(i)=i*ds0*cos(dipangle*pi/180)
-      st_bemv%yel(i)=(i-1)*ds0*sin(dipangle*pi/180)
-      st_bemv%yer(i)=i*ds0*sin(dipangle*pi/180)
+      st_bemv%yel(i)=(i-1)*ds0*sin(dipangle*pi/180)-ztop
+      st_bemv%yer(i)=i*ds0*sin(dipangle*pi/180)-ztop
       st_bemv%xcol(i)=0.5d0*(st_bemv%xel(i)+st_bemv%xer(i))
       st_bemv%ycol(i)=0.5d0*(st_bemv%yel(i)+st_bemv%yer(i))
       st_bemv%ang(i)=datan2(st_bemv%yer(i)-st_bemv%yel(i),st_bemv%xer(i)-st_bemv%xel(i))
@@ -1955,6 +1956,7 @@ end subroutine
         velntmp(i)=max(0.0,minsig-sigmatmp(i))*abs(veltmp(i))
         !velntmp(i)=-(sigmatmp(i)-sigma0(i))*1e-12
       end do
+      if(maxval(velntmp)>0.0) write(*,*) 'max opening vel=',maxval(velntmp)
     end if
 
     !matrix-vector mutiplation
@@ -2687,6 +2689,12 @@ end subroutine
       read (pvalue,*) velmax
     case('velmin')
       read (pvalue,*) velmin
+    case('rigid')
+      read (pvalue,*) rigid
+    case('pois')
+      read (pvalue,*) pois
+    case('vs')
+      read (pvalue,*) vs
     case('a')
       read (pvalue,*) a0
     case('b')
