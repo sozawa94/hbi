@@ -1,14 +1,14 @@
 module mod_diffusion
 use mod_constant
   type :: t_params
-  integer::nwell,nn
+  integer::nwell,nn,npoint
   integer,pointer::kleng(:),iwell(:),jwell(:)
-  real(8)::phi0,beta,eta,s0,kp0,kpmin,kpmax,kL,kT,pinj,pbcl,pbcr,pbct,pbcb,qinj,q0
+  real(8)::phi0,beta,eta,sigmastar,kp0,kpmin,kpmax,kL,kT,pinj,pbcl,pbcr,pbct,pbcb,qinj,q0
   real(8)::qbcl,qbcr,qbct,qbcb
   real(8)::tinj=1d5
-  real(8),pointer::kp(:),kpG(:),qtimes(:,:),qvals(:,:),pfhyd(:,:),phi(:),phiG(:)
+  real(8),pointer::kp(:),kpG(:),qtimes(:),qvals(:,:),pfhyd(:,:),phi(:),phiG(:)
   character(128)::bc,bcl,bcr,bct,bcb,setting,injection,injection_file
-  logical::injectionfromfile,switch,permev
+  logical::injectionfromfile,switch,permev,permsigma
   end type t_params
 contains
 subroutine input_well(param_diff)
@@ -16,16 +16,16 @@ subroutine input_well(param_diff)
   type(t_params):: param_diff
   integer::k,kwell
   open(77,file=param_diff%injection_file)
-  write(*,*) "Read injection file"
   read(77,*) param_diff%nwell
-  allocate(param_diff%iwell(param_diff%nwell),param_diff%jwell(param_diff%nwell),param_diff%qvals(param_diff%nwell,50))
-  allocate(param_diff%qtimes(param_diff%nwell,50),param_diff%kleng(param_diff%nwell))
+  read(77,*) param_diff%npoint
+  allocate(param_diff%iwell(param_diff%nwell),param_diff%jwell(param_diff%nwell),param_diff%qvals(param_diff%nwell,param_diff%npoint))
+  allocate(param_diff%qtimes(param_diff%npoint))
+  read(77,*) param_diff%qtimes(1:param_diff%npoint)
   do kwell=1,param_diff%nwell
-    read(77,*) param_diff%iwell(kwell),param_diff%jwell(kwell),param_diff%kleng(kwell)
-    !write(*,*) iwell(kwell),jwell(kwell)
-    read(77,*) param_diff%qvals(kwell,1:param_diff%kleng(kwell))
-    read(77,*) param_diff%qtimes(kwell,1:param_diff%kleng(kwell))
+    read(77,*) param_diff%iwell(kwell),param_diff%jwell(kwell)
+    read(77,*) param_diff%qvals(kwell,1:param_diff%npoint)
   end do
+  
   close(77)
   param_diff%switch=.false.
   param_diff%nn=2
@@ -74,6 +74,51 @@ end subroutine
 
   ! pressure-independent permeability (ks=kp)
   subroutine diffusion2dwop(pf,h,ds0,time,dtnxt,param_diff)
+    implicit none
+    integer::kit,errloc(1),i,n,niter
+    real(8),intent(inout)::pf(:),dtnxt
+    real(8),intent(in)::h,time,ds0
+    real(8),dimension(size(pf))::dpf,pftry,pfnew,sigmae,sigma,cdiff,str
+    real(8)::err,err0,cc
+    real(8),parameter::dpth=0.2
+    type(t_params):: param_diff
+
+    !real(8),parameter::cc=1d-12 !beta(1e-8)*phi(1e-1)*eta(1e-3)
+    n=size(pf)
+
+
+    !$omp parallel do
+    do i=1,size(pf)
+      pftry(i)=pf(i)
+      !sigmae(i)=y(4*i-1)
+      !sigma(i)=sigmae(i)+pf(i)
+    end do
+    !$omp end parallel do
+
+    err=0d0
+
+      !calculate diffusion coefficient
+    cdiff=param_diff%kpG/(param_diff%eta*param_diff%beta*param_diff%phiG)*1d-6
+    str=param_diff%beta*param_diff%phiG
+    !write(*,*) cdiff(1),str(1)
+
+    call Beuler1d(n,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter)
+
+    !$omp parallel do
+    do i=1,size(pf)
+      dpf(i)=pfnew(i)-pf(i)
+      pf(i)=pfnew(i)
+      !y(4*i-1)=y(4*i-1)-dpf(i) !update effective normal stress
+    end do
+    !$omp end parallel do
+
+    !write(*,*) 'niter',niter
+    !write(*,*) 'dpf',maxval(dpf)
+    if(dtnxt/h*maxval(dpf)>dpth)  dtnxt=dpth*h/maxval(dpf)
+    return
+  end subroutine
+
+  subroutine diffusion2dwp(pf,h,ds0,time,dtnxt,param_diff)
     implicit none
     integer::kit,errloc(1),i,n,niter
     real(8),intent(inout)::pf(:),dtnxt
@@ -192,8 +237,9 @@ end subroutine
     case('Dirichlet')
       !SAT(1)=-1.0*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
       !SAT(2)=-0.5*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
-      SAT(1)=-1.0*cdiff(1)/ds0/ds0*pbcl*h*2
-      SAT(2)=-0.5*cdiff(1)/ds0/ds0*pbcl*h*2
+  param_diff%bcl='Neumann'
+      SAT(1)=-1.0*cdiff(1)/ds0/ds0*param_diff%pbcl*h*2
+      SAT(2)=-0.5*cdiff(1)/ds0/ds0*param_diff%pbcl*h*2
     case('Neumann')
       SAT(1)=-param_diff%qbcl/str(1)*1e-9*h/ds0*2
     end select
@@ -201,7 +247,7 @@ end subroutine
     select case(param_diff%bcr)
     case('Dirichlet')
       !SAT(n)=-1*cdiff(n)/ds0/ds0*(pbcr-pfhyd(n))*h*2
-      SAT(n)=-1*cdiff(n)/ds0/ds0*pbcr*h*2
+      SAT(n)=-1*cdiff(n)/ds0/ds0*param_diff%pbcr*h*2
       SAT(n-1)=SAT(n)/2
     case('Neumann')
       SAT(n)=param_diff%qbcr/str(n)*1e-9*h/ds0*2
@@ -275,7 +321,7 @@ end subroutine
 
     end do
 
-    if(niter==itermax) write(*,*) "Maximum iteration"
+    if(niter==itermax) write(*,*) "Warning: Maximum iteration"
     100 pfnew=x!+pfhyd
     return
   end subroutine
@@ -330,11 +376,11 @@ end subroutine
         param_diff%switch=.false.
     end if
     if(param_diff%injectionfromfile) then
-      if(time+dtnxt>param_diff%qtimes(1,param_diff%nn)) then
-        dtnxt=param_diff%qtimes(1,param_diff%nn)-time-tny
+      if(time+dtnxt>param_diff%qtimes(param_diff%nn)) then
+        dtnxt=param_diff%qtimes(param_diff%nn)-time-tny
         param_diff%switch=.true.
         param_diff%nn=param_diff%nn+1
-        if(param_diff%qtimes(1,param_diff%nn)-param_diff%qtimes(1,param_diff%nn-1)<1e0) param_diff%nn=param_diff%nn+1
+        if(param_diff%qtimes(param_diff%nn)-param_diff%qtimes(param_diff%nn-1)<1e0) param_diff%nn=param_diff%nn+1
         !write(*,*) param_diff%nn,param_diff%qtimes(1,param_diff%nn),time+dtnxt
       end if
     end if
@@ -486,14 +532,14 @@ end subroutine
     if(param_diff%injectionfromfile) then
       qtmp=0d0
       do kwell=1,param_diff%nwell
-        do k=1,param_diff%kleng(kwell)-1
-          t0=param_diff%qtimes(kwell,k)
-          t1=param_diff%qtimes(kwell,k+1)
+        do k=1,param_diff%npoint-1
+          t0=param_diff%qtimes(k)
+          t1=param_diff%qtimes(k+1)
           v0=param_diff%qvals(kwell,k)
           v1=param_diff%qvals(kwell,k+1)
           if (time >= t0 .and. time <= t1) then
             qtmp=(v1-v0)/(t1-t0)*(time-t0)+v0
-          else if (time> t1.and. k == param_diff%kleng(kwell)-1) then
+          else if (time> t1.and. k == param_diff%npoint-1) then
             qtmp=v1
           end if
         end do
