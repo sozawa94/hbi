@@ -1,6 +1,11 @@
 # HBI
 Multi-dimensional earthquake cycle simulation code based on Boundary Element Method with H-matrices.
 
+What's new in Version 2026.1.0
+
+- Modified the format of well files
+- Rigidity, S-wave speed, and poisson ratio can be set in the input file
+
 What's new in Version 2025.10.0
 
 - Merged fluid versions (main_fv.f90 and main_fv3dp.d90) to main_LH.f90 with more flexible parameters and boundary conditions
