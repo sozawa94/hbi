@@ -1,14 +1,14 @@
 module mod_diffusion
 use mod_constant
   type :: t_params
-  integer::nwell,nn,npoint
+  integer::nwell,nn,npoint,n1,i1,i2
   integer,pointer::kleng(:),iwell(:),jwell(:)
   real(8)::phi0,beta,eta,sigmastar,kp0,kpmin,kpmax,kL,kT,pinj,pbcl,pbcr,pbct,pbcb,qinj,q0
   real(8)::qbcl,qbcr,qbct,qbcb
   real(8)::tinj=1d5
   real(8),pointer::kp(:),kpG(:),qtimes(:),qvals(:,:),pfhyd(:,:),phi(:),phiG(:)
   character(128)::bc,bcl,bcr,bct,bcb,setting,injection,injection_file
-  logical::injectionfromfile,switch,permev,permsigma
+  logical::injectionfromfile,switch,permev,permsigma,network
   end type t_params
 contains
 subroutine input_well(param_diff)
@@ -31,46 +31,49 @@ subroutine input_well(param_diff)
   param_diff%nn=2
 end subroutine 
      !pressure dependent permeability
-  ! subroutine implicitsolver(pf,sigma,ks,phi,beta,eta,s0,h,time,dtnxt)
-  !   implicit none
-  !   integer::kit,errloc(1),niter,i,n
-  !   real(8),intent(inout)::pf(:),dtnxt
-  !   real(8),intent(in)::h,time,sigma(:),ks(:),phi,eta,beta,s0
-  !   real(8),dimension(size(pf))::dpf,pftry,pfnew,sigmae,cdiff
-  !   real(8)::err,err0,cc
-  !   real(8),parameter::dpth=0.3
-  !   !real(8),parameter::cc=1d-12 !beta(1e-8)*phi(1e-1)*eta(1e-3) !BP6
-  !   !real(8),parameter::cc=1d-15 !beta(1e-9)*phi(1e-2)*eta(1e-4) !Zhu et al.
-  !   pftry=pf
-  !   n=size(pf)
+  subroutine diffusion2dwp(pf,sigma,h,ds0,time,dtnxt,param_diff)
+    implicit none
+    integer::kit,errloc(1),i,n,niter
+    real(8),intent(inout)::pf(:),sigma(:),dtnxt
+    real(8),intent(in)::h,time,ds0
+    real(8),dimension(size(pf))::dpf,pftry,pfnew,sigmae,cdiff,str
+    real(8)::err,err0,cc
+    real(8),parameter::dpth=0.2
+    type(t_params):: param_diff
 
-  !   err=0d0
-  !   do kit=1,20
-  !     !calculate diffusion coefficient
-  !     cc=eta*beta*phi
-  !     cdiff=ks*exp(-(sigma-pftry)/s0)/cc*1d-6
-  !       !cdiff(i)=ks(i)/cc*1d-6
+    pftry=pf
+    n=size(pf)
 
-  !     call Beuler(n,pf,cdiff,h,pfnew,time,niter,bc)
-  !     err=maxval(abs(pftry-pfnew))
-  !     !write(*,*) pftry
-  !     !write(*,*) pfnew
-  !     errloc=maxloc(abs(pftry-pfnew))
-  !     !write(*,*) 'err',err
-  !     if(err<1e-3) exit
-  !     pftry=pfnew
-  !     err0=err
-  !   end do
+    err=0d0
+    do kit=1,20
+      !calculate diffusion coefficient
+      cdiff=param_diff%kpG*exp(-(sigma-pftry)/param_diff%sigmastar)/(param_diff%eta*param_diff%beta*param_diff%phiG)*1d-6
+      str=param_diff%beta*param_diff%phiG
+      !write(*,*) cdiff(1),str(1)
+      if(param_diff%network) then
+        call Beuler1db(n,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter)
+      else
+        call Beuler1d(n,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter)
+      end if
+      err=maxval(abs(pftry-pfnew))
+      !write(*,*) pftry
+      !write(*,*) pfnew
+      errloc=maxloc(abs(pftry-pfnew))
+      !write(*,*) 'err',err
+      if(err<1e-3) exit
+      pftry=pfnew
+      err0=err
+    end do
 
-  !   do i=1,size(pf)
-  !     dpf(i)=pfnew(i)-pf(i)
-  !     pf(i)=pfnew(i)
-  !     !y(4*i-2)=y(4*i-2)-mu(i)*dpf(i)
-  !   end do
+    do i=1,size(pf)
+      dpf(i)=pfnew(i)-pf(i)
+      pf(i)=pfnew(i)
+      !y(4*i-2)=y(4*i-2)-mu(i)*dpf(i)
+    end do
 
-  !   if(dtnxt/h*maxval(dpf)>dpth)  dtnxt=dpth*h/maxval(dpf)
-  !   return
-  ! end subroutine
+    if(dtnxt/h*maxval(dpf)>dpth)  dtnxt=dpth*h/maxval(dpf)
+    return
+  end subroutine
 
   ! pressure-independent permeability (ks=kp)
   subroutine diffusion2dwop(pf,h,ds0,time,dtnxt,param_diff)
@@ -83,71 +86,16 @@ end subroutine
     real(8),parameter::dpth=0.2
     type(t_params):: param_diff
 
-    !real(8),parameter::cc=1d-12 !beta(1e-8)*phi(1e-1)*eta(1e-3)
     n=size(pf)
-
-
-    !$omp parallel do
-    do i=1,size(pf)
-      pftry(i)=pf(i)
-      !sigmae(i)=y(4*i-1)
-      !sigma(i)=sigmae(i)+pf(i)
-    end do
-    !$omp end parallel do
-
-    err=0d0
-
-      !calculate diffusion coefficient
+    !calculate diffusion coefficient
     cdiff=param_diff%kpG/(param_diff%eta*param_diff%beta*param_diff%phiG)*1d-6
     str=param_diff%beta*param_diff%phiG
     !write(*,*) cdiff(1),str(1)
-
-    call Beuler1d(n,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter)
-
-    !$omp parallel do
-    do i=1,size(pf)
-      dpf(i)=pfnew(i)-pf(i)
-      pf(i)=pfnew(i)
-      !y(4*i-1)=y(4*i-1)-dpf(i) !update effective normal stress
-    end do
-    !$omp end parallel do
-
-    !write(*,*) 'niter',niter
-    !write(*,*) 'dpf',maxval(dpf)
-    if(dtnxt/h*maxval(dpf)>dpth)  dtnxt=dpth*h/maxval(dpf)
-    return
-  end subroutine
-
-  subroutine diffusion2dwp(pf,h,ds0,time,dtnxt,param_diff)
-    implicit none
-    integer::kit,errloc(1),i,n,niter
-    real(8),intent(inout)::pf(:),dtnxt
-    real(8),intent(in)::h,time,ds0
-    real(8),dimension(size(pf))::dpf,pftry,pfnew,sigmae,sigma,cdiff,str
-    real(8)::err,err0,cc
-    real(8),parameter::dpth=0.2
-    type(t_params):: param_diff
-
-    !real(8),parameter::cc=1d-12 !beta(1e-8)*phi(1e-1)*eta(1e-3)
-    n=size(pf)
-
-
-    !$omp parallel do
-    do i=1,size(pf)
-      pftry(i)=pf(i)
-      !sigmae(i)=y(4*i-1)
-      !sigma(i)=sigmae(i)+pf(i)
-    end do
-    !$omp end parallel do
-
-    err=0d0
-
-      !calculate diffusion coefficient
-    cdiff=param_diff%kpG/(param_diff%eta*param_diff%beta*param_diff%phiG)*1d-6
-    str=param_diff%beta*param_diff%phiG
-    !write(*,*) cdiff(1),str(1)
-
-    call Beuler1d(n,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter)
+    if(param_diff%network) then
+      call Beuler1db(n,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter)
+    else
+      call Beuler1d(n,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter)
+    end if
 
     !$omp parallel do
     do i=1,size(pf)
@@ -187,7 +135,7 @@ end subroutine
       Dxx(1,2)=cdiff(2)-cdiff(1)
       Dxx(2,1:3)=(/cdiff(2)/2-cdiff(1)/2, -cdiff(1)/2-cdiff(2)-cdiff(3)/2, cdiff(2)/2+cdiff(3)/2/)
     case('Neumann')
-      Dxx(1,1)=-cdiff(1)-cdiff(2)
+      Dxx(1,1)=-cdiff(1)/2-cdiff(2)/2
       Dxx(1,2)=-Dxx(1,1)
       Dxx(2,1:3)=(/cdiff(1)/2+cdiff(2)/2, -cdiff(1)/2-cdiff(2)-cdiff(3)/2, cdiff(2)/2+cdiff(3)/2/)
     end select
@@ -204,7 +152,7 @@ end subroutine
 
     case('Neumann')
       Dxx(n-1,1:3)=(/cdiff(n-2)/2+cdiff(n-1)/2, -cdiff(n-2)/2-cdiff(n-1)-cdiff(n)/2, cdiff(n-1)/2+cdiff(n)/2/)
-      Dxx(n,3)=-cdiff(n)-cdiff(n-1)
+      Dxx(n,3)=-cdiff(n)/2-cdiff(n-1)/2
       Dxx(n,2)=-Dxx(n,3)
     end select
 
@@ -226,10 +174,6 @@ end subroutine
     end do
      !$omp end parallel do
 
-    do i=1,n
-      !write(*,'(3e15.6)') Am(i,:)
-    end do
-
     SAT=0d0
 
     !penalty vector
@@ -237,11 +181,10 @@ end subroutine
     case('Dirichlet')
       !SAT(1)=-1.0*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
       !SAT(2)=-0.5*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
-  param_diff%bcl='Neumann'
       SAT(1)=-1.0*cdiff(1)/ds0/ds0*param_diff%pbcl*h*2
       SAT(2)=-0.5*cdiff(1)/ds0/ds0*param_diff%pbcl*h*2
     case('Neumann')
-      SAT(1)=-param_diff%qbcl/str(1)*1e-9*h/ds0*2
+      SAT(1)=-param_diff%qbcl/str(1)*1e-9*h/ds0*1
     end select
 
     select case(param_diff%bcr)
@@ -250,7 +193,7 @@ end subroutine
       SAT(n)=-1*cdiff(n)/ds0/ds0*param_diff%pbcr*h*2
       SAT(n-1)=SAT(n)/2
     case('Neumann')
-      SAT(n)=param_diff%qbcr/str(n)*1e-9*h/ds0*2
+      SAT(n)=param_diff%qbcr/str(n)*1e-9*h/ds0*1
       !if(setting=='thrust') SAT(n)=qin(2000)/str(n)*1e-9*h/ds0*2
     end select
 
@@ -265,12 +208,6 @@ end subroutine
       b(N/2)=b(N/2)+h*param_diff%qinj/str(N/2)*1e-9/ds0 !injection rate
     end if
     !write(*,*) h,str(N/2),ds0
-
-    b(1)=b(1)/2
-    b(n)=b(n)/2
-
-    Am(1,:)=Am(1,:)/2
-    Am(n,:)=Am(n,:)/2
 
     m=0d0
     m(1)=x(1)*Am(1,1)+x(2)*Am(1,2)
@@ -322,6 +259,274 @@ end subroutine
     end do
 
     if(niter==itermax) write(*,*) "Warning: Maximum iteration"
+    100 pfnew=x!+pfhyd
+    return
+  end subroutine
+
+  subroutine Beuler1db(ncell,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter)
+    integer,parameter::itermax=2000
+    integer,intent(in)::ncell
+    real(8),intent(in)::pf(:),h,cdiff(:),str(:),time,ds0
+    real(8),intent(out)::pfnew(:)
+    integer,intent(out)::niter
+    real(8)::eta, tmp1,tmp2,rsnew,rsold
+    real(8),dimension(ncell)::pf0,m,dpf,p,r,b,x,alpha,sat
+    real(8)::Dxx(ncell,3),Am(ncell,3)
+    integer::n,iter,n1,i1,i2
+    real(8)::p0=0.0,td=1d6,tol=1e-4
+    type(t_params):: param_diff
+    !real(8),parameter::str=1e-11 !beta(1e-9)*phi(1e-2)
+    n=ncell
+    n1=param_diff%n1;i1=param_diff%i1;i2=param_diff%i2
+    niter=0
+    Dxx=0d0
+
+    !fault 1
+    !compute Dxx for Dirichlet BC
+    select case(param_diff%bcl)
+    case('Dirichlet')
+      Dxx(1,1)=-cdiff(1)-cdiff(2)
+      Dxx(1,2)=cdiff(2)-cdiff(1)
+      Dxx(2,1:3)=(/cdiff(2)/2-cdiff(1)/2, -cdiff(1)/2-cdiff(2)-cdiff(3)/2, cdiff(2)/2+cdiff(3)/2/)
+    case('Neumann')
+      Dxx(1,1)=-cdiff(1)/2-cdiff(2)/2
+      Dxx(1,2)=-Dxx(1,1)
+      Dxx(2,1:3)=(/cdiff(1)/2+cdiff(2)/2, -cdiff(1)/2-cdiff(2)-cdiff(3)/2, cdiff(2)/2+cdiff(3)/2/)
+    end select
+
+    do i=3,n1-2
+      Dxx(i,1:3)=(/cdiff(i-1)/2+cdiff(i)/2, -cdiff(i-1)/2-cdiff(i)-cdiff(i+1)/2, cdiff(i)/2+cdiff(i+1)/2/)
+    end do
+
+    Dxx(i1,2)=Dxx(i1,2)-(cdiff(i1)+cdiff(i2)/2+cdiff(i2+1)/2)
+    Dxx(i1+1,2)=Dxx(i1+1,2)-(cdiff(i1+1)+cdiff(i2)/2+cdiff(i2+1)/2)
+
+
+    select case(param_diff%bcr)
+    case('Dirichlet')
+      Dxx(n1-1,1:3)=(/cdiff(n1-2)/2+cdiff(n1-1)/2, -cdiff(n1-2)/2-cdiff(n1-1)-cdiff(n1)/2, -cdiff(n1)/2+cdiff(n1-1)/2/)
+      Dxx(n1,3)=-cdiff(n1)-cdiff(n1-1)
+      Dxx(n1,2)=cdiff(n1-1)-cdiff(n1)
+
+    case('Neumann')
+      Dxx(n1-1,1:3)=(/cdiff(n1-2)/2+cdiff(n1-1)/2, -cdiff(n1-2)/2-cdiff(n1-1)-cdiff(n1)/2, cdiff(n1-1)/2+cdiff(n1)/2/)
+      Dxx(n1,3)=-cdiff(n1)/2-cdiff(n1-1)/2
+      Dxx(n1,2)=-Dxx(n1,3)
+    end select
+
+    Dxx=Dxx/ds0/ds0
+
+    !write(*,*)
+
+    Am=0d0
+    Am(1,1)=1.0-h*Dxx(1,1)
+    Am(1,2)=-h*Dxx(1,2)
+    Am(n1,3)=1.0-h*Dxx(n1,3)
+    Am(n1,2)=-h*Dxx(n1,2)
+
+     !$omp parallel do
+    do i=2,n1-1
+      Am(i,1)=-h*Dxx(i,1)
+      Am(i,2)=1.0-h*Dxx(i,2)
+      Am(i,3)=-h*Dxx(i,3)
+    end do
+     !$omp end parallel do
+
+    SAT=0d0
+
+    !penalty vector
+    select case(param_diff%bcl)
+    case('Dirichlet')
+      !SAT(1)=-1.0*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
+      !SAT(2)=-0.5*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
+      SAT(1)=-1.0*cdiff(1)/ds0/ds0*param_diff%pbcl*h*2
+      SAT(2)=-0.5*cdiff(1)/ds0/ds0*param_diff%pbcl*h*2
+    case('Neumann')
+      SAT(1)=-param_diff%qbcl/str(1)*1e-9*h/ds0*1
+    end select
+
+    select case(param_diff%bcr)
+    case('Dirichlet')
+      !SAT(n)=-1*cdiff(n)/ds0/ds0*(pbcr-pfhyd(n))*h*2
+      SAT(n1)=-1*cdiff(n1)/ds0/ds0*param_diff%pbcr*h*2
+      SAT(n1-1)=SAT(n1)/2
+    case('Neumann')
+      SAT(n1)=param_diff%qbcr/str(n1)*1e-9*h/ds0*1
+      !if(setting=='thrust') SAT(n)=qin(2000)/str(n)*1e-9*h/ds0*2
+    end select
+
+
+    !fault 2
+    select case(param_diff%bcl)
+    case('Dirichlet')
+      Dxx(n1+1,1)=-cdiff(n1+1)-cdiff(n1+2)
+      Dxx(n1+1,2)=cdiff(n1+2)-cdiff(n1+1)
+      Dxx(n1+2,1:3)=(/cdiff(n1+2)/2-cdiff(n1+1)/2, -cdiff(n1+1)/2-cdiff(n1+2)-cdiff(n1+3)/2, cdiff(n1+2)/2+cdiff(n1+3)/2/)
+    case('Neumann')
+      Dxx(n1+1,1)=-cdiff(n1+1)/2-cdiff(n1+2)/2
+      Dxx(n1+1,2)=-Dxx(n1+1,1)
+      Dxx(n1+2,1:3)=(/cdiff(n1+1)/2+cdiff(n1+2)/2, -cdiff(n1+1)/2-cdiff(n1+2)-cdiff(n1+3)/2, cdiff(n1+2)/2+cdiff(n1+3)/2/)
+    end select
+
+    do i=n1+3,n-2
+      Dxx(i,1:3)=(/cdiff(i-1)/2+cdiff(i)/2, -cdiff(i-1)/2-cdiff(i)-cdiff(i+1)/2, cdiff(i)/2+cdiff(i+1)/2/)
+    end do
+
+    Dxx(i2,2)=Dxx(i2,2)-(cdiff(i2)+cdiff(i1)/2+cdiff(i1+1)/2)
+    Dxx(i2+1,2)=Dxx(i2+1,2)-(cdiff(i2+1)+cdiff(i1)/2+cdiff(i1+1)/2)
+
+    select case(param_diff%bcr)
+    case('Dirichlet')
+      Dxx(n-1,1:3)=(/cdiff(n-2)/2+cdiff(n-1)/2, -cdiff(n-2)/2-cdiff(n-1)-cdiff(n)/2, -cdiff(n)/2+cdiff(n-1)/2/)
+      Dxx(n,3)=-cdiff(n)-cdiff(n-1)
+      Dxx(n,2)=cdiff(n-1)-cdiff(n)
+
+    case('Neumann')
+      Dxx(n-1,1:3)=(/cdiff(n-2)/2+cdiff(n-1)/2, -cdiff(n-2)/2-cdiff(n-1)-cdiff(n)/2, cdiff(n-1)/2+cdiff(n)/2/)
+      Dxx(n,3)=-cdiff(n)/2-cdiff(n-1)/2
+      Dxx(n,2)=-Dxx(n,3)
+    end select
+
+    Dxx=Dxx/ds0/ds0
+
+    !write(*,*)
+    Am(n1+1,1)=1.0-h*Dxx(n1+1,1)
+    Am(n1+1,2)=-h*Dxx(n1+1,2)
+    Am(n,3)=1.0-h*Dxx(n,3)
+    Am(n,2)=-h*Dxx(n,2)
+
+     !$omp parallel do
+    do i=n1+2,n-1
+      Am(i,1)=-h*Dxx(i,1)
+      Am(i,2)=1.0-h*Dxx(i,2)
+      Am(i,3)=-h*Dxx(i,3)
+    end do
+     !$omp end parallel do
+
+    !penalty vector
+    select case(param_diff%bcl)
+    case('Dirichlet')
+      !SAT(1)=-1.0*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
+      !SAT(2)=-0.5*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
+      SAT(n1+1)=-1.0*cdiff(n1+1)/ds0/ds0*param_diff%pbcl*h*2
+      SAT(n1+2)=-0.5*cdiff(n1+1)/ds0/ds0*param_diff%pbcl*h*2
+    case('Neumann')
+      SAT(n1+1)=-param_diff%qbcl/str(n1+1)*1e-9*h/ds0*1
+    end select
+
+    select case(param_diff%bcr)
+    case('Dirichlet')
+      !SAT(n)=-1*cdiff(n)/ds0/ds0*(pbcr-pfhyd(n))*h*2
+      SAT(n)=-1*cdiff(n)/ds0/ds0*param_diff%pbcr*h*2
+      SAT(n-1)=SAT(n)/2
+    case('Neumann')
+      SAT(n)=param_diff%qbcr/str(n)*1e-9*h/ds0*1
+      !if(setting=='thrust') SAT(n)=qin(2000)/str(n)*1e-9*h/ds0*2
+    end select
+    
+
+    
+    x=pf!-pfhyd !initial guess
+    b=pf-SAT!-pfhyd   
+
+    if(param_diff%injection=='pressure' .and. time<param_diff%tinj*365*24*3600) then
+      b(N/2)=b(N/2)+h*param_diff%pinj/1e1 !injection pressure
+      Am(N/2,2)=Am(N/2,2)+h/1e1
+    else if(param_diff%injection=='flowrate' .and. time<param_diff%tinj*365*24*3600) then
+      b(N/2)=b(N/2)+h*param_diff%qinj/str(N/2)*1e-9/ds0 !injection rate
+    end if
+
+    ! b(1)=b(1)/2
+    ! b(n)=b(n)/2
+
+    ! Am(1,:)=Am(1,:)/2
+    ! Am(n,:)=Am(n,:)/2
+
+    m=0d0
+    m(1)=x(1)*Am(1,1)+x(2)*Am(1,2)
+
+    !$omp parallel do
+    do i=2,n1-1
+      m(i)=x(i-1)*Am(i,1)+x(i)*Am(i,2)+x(i+1)*Am(i,3)
+    end do
+    !$omp end parallel do
+
+    m(n1)=x(n1)*Am(n1,3)+x(n1-1)*Am(n1,2)
+
+    m(n1+1)=x(n1+1)*Am(n1+1,1)+x(n1+2)*Am(n1+1,2)
+
+    !$omp parallel do
+    do i=n1+2,n-1
+      m(i)=x(i-1)*Am(i,1)+x(i)*Am(i,2)+x(i+1)*Am(i,3)
+    end do
+    !$omp end parallel do
+
+    m(n)=x(n)*Am(n,3)+x(n-1)*Am(n,2)
+
+    
+    m(i1)=m(i1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1))*x(i2)+(cdiff(i2+1)+cdiff(i1))*x(i2+1))
+    m(i1+1)=m(i1+1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1+1))*x(i2)+(cdiff(i2+1)+cdiff(i1+1))*x(i2+1))
+
+    m(i2)=m(i2)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2))*x(i1)+(cdiff(i1+1)+cdiff(i2))*x(i1+1))
+    m(i2+1)=m(i2+1)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2+1))*x(i1)+(cdiff(i1+1)+cdiff(i2+1))*x(i1+1))
+
+    !write(*,'(9e15.6)')m
+
+    r=b-m
+    p=r
+    rsold=sum(r*r)
+    !write(*,*) rsold
+    if(rsold<tol**2*n)  then
+      go to 100
+    end if
+    niter=itermax
+    do iter=1,itermax
+      tmp1=sum(r*r)
+      m=0d0
+      m(1)=p(1)*Am(1,1)+p(2)*Am(1,2)
+      !$omp parallel do
+      do i=2,n1-1
+        m(i)=p(i-1)*Am(i,1)+p(i)*Am(i,2)+p(i+1)*Am(i,3)
+      end do
+      !$omp end parallel do
+      m(n1)=p(n1)*Am(n1,3)+p(n1-1)*Am(n1,2)
+
+      m(n1+1)=p(n1+1)*Am(n1+1,1)+p(n1+2)*Am(n1+1,2)
+
+      !$omp parallel do
+      do i=n1+2,n-1
+        m(i)=p(i-1)*Am(i,1)+p(i)*Am(i,2)+p(i+1)*Am(i,3)
+      end do
+      !$omp end parallel do
+
+      m(n)=p(n)*Am(n,3)+p(n-1)*Am(n,2)
+    
+    m(i1)=m(i1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1))*p(i2)+(cdiff(i2+1)+cdiff(i1))*p(i2+1))
+    m(i1+1)=m(i1+1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1+1))*p(i2)+(cdiff(i2+1)+cdiff(i1+1))*p(i2+1))
+
+    m(i2)=m(i2)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2))*p(i1)+(cdiff(i1+1)+cdiff(i2))*p(i1+1))
+    m(i2+1)=m(i2+1)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2+1))*p(i1)+(cdiff(i1+1)+cdiff(i2+1))*p(i1+1))
+
+      !write(*,'(9e15.6)')m
+
+      tmp2=sum(m*p)
+      alpha=tmp1/tmp2
+      x=x+alpha*p
+      r=r-alpha*m
+      !write(*,'(9e15.6)')r
+      rsnew = sum(r*r)
+      !write(*,*)iter,rsnew
+      if(rsnew<tol**2*n) then
+          niter=iter
+        exit
+      end if
+      p = r + (rsnew / rsold) * p
+      rsold = rsnew
+      !write(*,'(9e15.6)')x
+
+    end do
+
+    if(niter==itermax) write(*,*) "Maximum iteration"
     100 pfnew=x!+pfhyd
     return
   end subroutine
@@ -414,7 +619,7 @@ end subroutine
         Dxx(i,1,2)=cdiff(i,2)-cdiff(i,1)
         Dxx(i,2,1:3)=(/cdiff(i,2)/2-cdiff(i,1)/2, -cdiff(i,1)/2-cdiff(i,2)-cdiff(i,3)/2, cdiff(i,2)/2+cdiff(i,3)/2/)
         case('Neumann')
-        Dxx(i,1,1)=-cdiff(i,1)-cdiff(i,2)
+        Dxx(i,1,1)=-cdiff(i,1)/2-cdiff(i,2)/2
         Dxx(i,1,2)=-Dxx(i,1,1)
         Dxx(i,2,1:3)=(/cdiff(i,1)/2+cdiff(i,2)/2, -cdiff(i,1)/2-cdiff(i,2)-cdiff(i,3)/2, cdiff(i,2)/2+cdiff(i,3)/2/)
         end select
@@ -430,7 +635,7 @@ end subroutine
         Dxx(i,jmax,2)=cdiff(i,jmax-1)-cdiff(i,jmax)
         case('Neumann')
         Dxx(i,jmax-1,1:3)=(/cdiff(i,jmax-2)/2+cdiff(i,jmax-1)/2, -cdiff(i,jmax-2)/2-cdiff(i,jmax-1)-cdiff(i,jmax)/2, cdiff(i,jmax-1)/2+cdiff(i,jmax)/2/)
-        Dxx(i,jmax,3)=-cdiff(i,jmax)-cdiff(i,jmax-1)
+        Dxx(i,jmax,3)=-cdiff(i,jmax)/2-cdiff(i,jmax-1)/2
         Dxx(i,jmax,2)=-Dxx(i,jmax,3)
         end select
     end do
@@ -446,7 +651,7 @@ end subroutine
         Dyy(1,j,2)=cdiff(2,j)-cdiff(1,j)
         Dyy(2,j,1:3)=(/cdiff(2,j)/2-cdiff(1,j)/2, -cdiff(1,j)/2-cdiff(2,j)-cdiff(3,j)/2, cdiff(2,j)/2+cdiff(3,j)/2/)
         case('Neumann')
-        Dyy(1,j,1)=-cdiff(1,j)-cdiff(2,j)
+        Dyy(1,j,1)=-cdiff(1,j)/2-cdiff(2,j)/2
         Dyy(1,j,2)=-Dyy(1,j,1)
         Dyy(2,j,1:3)=(/cdiff(1,j)/2+cdiff(2,j)/2, -cdiff(1,j)/2-cdiff(2,j)-cdiff(3,j)/2, cdiff(2,j)/2+cdiff(3,j)/2/)
         end select
@@ -462,7 +667,7 @@ end subroutine
         Dyy(imax,j,2)=cdiff(imax-1,j)-cdiff(imax,j)
         case('Neumann')
         Dyy(imax-1,j,1:3)=(/cdiff(imax-2,j)/2+cdiff(imax-1,j)/2, -cdiff(imax-2,j)/2-cdiff(imax-1,j)-cdiff(imax,j)/2, cdiff(imax-1,j)/2+cdiff(imax,j)/2/)
-        Dyy(imax,j,3)=-cdiff(imax,j)-cdiff(imax-1,j)
+        Dyy(imax,j,3)=-cdiff(imax,j)/2-cdiff(imax-1,j)/2
         Dyy(imax,j,2)=-Dyy(imax,j,3)
         end select
     end do
@@ -497,7 +702,7 @@ end subroutine
 
     select case(param_diff%bct)
       case('Neumann')
-        SAT(:,1)=-param_diff%qbct/str(:,jmax)*1e-9*h/ds0*2
+        SAT(:,1)=-param_diff%qbct/str(:,jmax)*1e-9*h/ds0*1
       case('Dirichlet')
         SAT(:,1)=-1.0*cdiff(:,jmax)/ds0/ds0*param_diff%pbct*h*2
         SAT(:,2)=-0.5*cdiff(:,jmax)/ds0/ds0*param_diff%pbct*h*2
@@ -505,7 +710,7 @@ end subroutine
 
     select case(param_diff%bcb)
       case('Neumann')
-        SAT(:,jmax)=-param_diff%qbcb/str(:,jmax)*1e-9*h/ds0*2
+        SAT(:,jmax)=-param_diff%qbcb/str(:,jmax)*1e-9*h/ds0*1
       case('Dirichlet')
         SAT(:,jmax)=-1.0*cdiff(:,jmax)/ds0/ds0*param_diff%pbcb*h*2
         SAT(:,jmax-1)=-0.5*cdiff(:,jmax)/ds0/ds0*param_diff%pbcb*h*2
@@ -513,7 +718,7 @@ end subroutine
 
     select case(param_diff%bcl)
       case('Neumann')
-        SAT(1,:)=-param_diff%qbcl/str(1,:)*1e-9*h/ds0*2
+        SAT(1,:)=-param_diff%qbcl/str(1,:)*1e-9*h/ds0*1
       case('Dirichlet')
         SAT(1,:)=-1.0*cdiff(1,:)/ds0/ds0*param_diff%pbcl*h*2
         SAT(2,:)=-0.5*cdiff(1,:)/ds0/ds0*param_diff%pbcl*h*2
@@ -521,7 +726,7 @@ end subroutine
 
     select case(param_diff%bcr)
       case('Neumann')
-        SAT(imax,:)=-param_diff%qbcr/str(imax,:)*1e-9*h/ds0*2
+        SAT(imax,:)=-param_diff%qbcr/str(imax,:)*1e-9*h/ds0*1
       case('Dirichlet')
         SAT(imax,:)=-1.0*cdiff(imax,:)/ds0/ds0*param_diff%pbcr*h*2
         SAT(imax-1,:)=-0.5*cdiff(imax,:)/ds0/ds0*param_diff%pbcr*h*2

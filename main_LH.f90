@@ -100,7 +100,7 @@ program main
   allocate(rcounts(npd),displs(npd+1))
 
   if(my_rank==0) then
-    write(*,*) 'HBI ver. 2025.10.0'
+    write(*,*) 'HBI ver. 2026.1.0'
     write(*,*) '# of MPI', np
   end if
   !input file must be specified when running
@@ -157,7 +157,7 @@ program main
   dtout=365*24*3600; dtout_co=1000.0; dtinit=1d0;  dtmax=1e10
   tp=86400d0
   ncol=0; noutloc=0; locid=0; cdiff=0.0; pf0=0.0
-  pfinit=0d0; nflow=1.0
+  pfinit=0d0; nflow=1.0; crake=1.0
   geofile="default"; parameter_file="default"
   errold=1.0; ztop=0.0
   !st_bemv%fwid=1e8
@@ -165,7 +165,7 @@ program main
   param_diff%bc='none'
   param_diff%bcl='Neumann';param_diff%bcr='Neumann';param_diff%bct='Neumann';param_diff%bcb='Neumann'
   param_diff%injection='none'
-  param_diff%tinj=1e8;param_diff%permev=.false.
+  param_diff%tinj=1e8;param_diff%permev=.false.;param_diff%permsigma=.false.;param_diff%injectionfromfile=.false.
 
   !read input file
   call read_inputfile()
@@ -1070,37 +1070,7 @@ program main
     !timer=timer+time4-time3
 
     if(analyticalinjection) then
-      select case(problem)
-      case('2dp','2dn')
-        do i=1,NCELL
-          i_=st_sum%lodc(i)
-          !along-fault pressurediffusion
-          sigma0(i)=sigma0(i)+y(3*i)-sigma(i)
-          !y(3*i)=sigma0(i)-pf0*erfc(xcol(i_)/(2*sqrt(cdiff*x)))
-          if(param_diff%injection=='pressure') then
-            y(3*i)=sigma0(i)-param_diff%pinj*erfc(abs(st_bemv%xcol(i_)-st_bemv%xcol(ncellg/2))/(2*sqrt(cdiff*x)))
-          else if(param_diff%injection=='flowrate') then
-            y(3*i)=sigma0(i)-pf1d(param_diff%pinj,cdiff,x,st_bemv%xcol(i_)-st_bemv%xcol(ncellg/2))
-          end if
-          !y(3*i)=max(minsig,sigma0(i)-pf0*erfc(xcol(i_)/(2*sqrt(cdiff*x))))
-          !homogenous pressurediffusion
-          !y(3*i)=sigma0(i)-pf2d(pf0,cdiff,x,st_bemvs%xcol(i_),st_bemv%ycol(i_)-0.2)
-        end do
-
-      case('3dp')
-        do i=1,NCELL
-          i_=st_sum%lodc(i)
-           !along-fault pressurediffusion
-          sigma0(i)=sigma0(i)+y(3*i)-sigma(i)
-          if(param_diff%injection=='flowrate') then
-            y(3*i)=sigma0(i)-pf2d(pf0,cdiff,x,st_bemv%xcol(i_),st_bemv%zcol(i_))
-          end if
-          !y(3*i)=max(minsig,sigma0(i)-pf2d(pf0,cdiff,x,xcol(i_),zcol(i_)))
-          !homogenous pressurediffusion
-          !r=sqrt(st_bemv%xcol(i_)**2+st_bemv%zcol(i_)**2)
-          !y(3*i)=max(minsig,sigma0(i)-pf0*erfc(r/(2*sqrt(cdiff*x))/r))
-        end do
-      end select 
+      call analytical_pressure_diffusion()
     end if
 
     !compute physical values for control and output
@@ -1131,47 +1101,7 @@ program main
     !$omp end parallel do
 
     if(pressurediffusion) then
-      if(param_diff%permev) then
-        do i=1,ncell
-          tmp=-vel(i)/param_diff%kL*(param_diff%kp(i)-param_diff%kpmax)-(param_diff%kp(i)-param_diff%kpmin)/param_diff%kT
-          param_diff%kp(i)=param_diff%kp(i)+dtdid*tmp
-        end do
-        call MPI_GATHERv(param_diff%kp,NCELL,MPI_REAL8,tmparray,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)   
-        do i=1, NCELLg
-          i_=listG(i)
-          param_diff%kpG(i_)=tmparray(i)
-        end do
-      end if
-      call MPI_GATHERv(pf,NCELL,MPI_REAL8,tmparray,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
-      if(my_rank==0) then
-        do i=1, NCELLg
-          i_=listG(i)
-          pfG(i_)=tmparray(i)
-        end do
-       !write(*,*) minval(param_diff%kpG),maxval(param_diff%kpG), maxval(param_diff%phiG),maxval(pfG),minval(pfG)
-        select case(problem)
-        case('2dp','2dn')
-          call diffusion2dwop(pfG,dtdid,ds0,x,dtnxt,param_diff)
-        case('3dp','3dph')
-          call diffusion3dwop(imax,jmax,pfG,dtdid,ds0,x,dtnxt,param_diff)
-        end select
-      !end if
-      end if
-
-      call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-      call MPI_BCAST(pfG,NCELLg,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-      call MPI_BCAST(dtnxt,1,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
-
-      do i=1,ncell
-        i_=st_sum%lodc(i)
-        pf(i)=pfG(i_)
-        sigma(i)=sigmat(i)-pf(i)
-        if(limitsigma) then
-          if(sigma(i)<minsig) sigma(i)=minsig
-          if(sigma(i)>maxsig) sigma(i)=maxsig
-        end if
-        y(3*i)=sigma(i)
-      end do
+      call pressure_diffusion()
     end if
 
     call MPI_BARRIER(MPI_COMM_WORLD,ierr); time3=MPI_Wtime()
@@ -1384,55 +1314,6 @@ contains
     return
   end subroutine
 
-  ! subroutine output_field()
-  !   implicit none
-  !   integer::nn,rcounts(npd),displs(npd+1)
-  !   integer::mvel_loc(1)
-  !   real(8)::velG(NCELLg),tauG(NCELLg),sigmaG(Ncellg),slipG(ncellg),vflowg(ncellg),vslipG(ncellg),velnG(ncellg),slipnG(Ncellg),pfG(Ncellg)
-  !   call MPI_GATHER(ncell,1,MPI_INT,rcounts,1,MPI_INT,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
-
-  !   displs(1)=0
-  !   do nn=2,npd+1
-  !    displs(nn)=displs(nn-1)+rcounts(nn-1)
-  !   end do
-
-  !   call MPI_GATHERv(vel,NCELL,MPI_REAL8,velG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
-  !   call MPI_GATHERv(tau,NCELL,MPI_REAL8,tauG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
-  !   call MPI_GATHERv(sigma,NCELL,MPI_REAL8,sigmaG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
-  !   call MPI_GATHERv(slip,NCELL,MPI_REAL8,slipG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
-  !   if(viscous) then
-  !     call MPI_GATHERv(vflow,NCELL,MPI_REAL8,vflowG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
-  !     call MPI_GATHERv(vslip,NCELL,MPI_REAL8,vslipG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
-  !   end if
-  !   if(opening) then
-  !     call MPI_GATHERv(veln,NCELL,MPI_REAL8,velnG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
-  !     call MPI_GATHERv(slipn,NCELL,MPI_REAL8,slipnG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
-  !   end if
-  !   if(pressurediffusion) then
-  !     call MPI_GATHERv(pf,NCELL,MPI_REAL8,pfG,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
-  !   end if
-  !   !write(*,*) velG
-
-  !   if(my_rank==0) then
-  !     mvel_loc=maxloc(abs(velG))
-  !     write(nout(1)) velG
-  !     write(nout(2)) slipG
-  !     write(nout(3)) sigmaG
-  !     write(nout(4)) tauG
-  !     if(viscous) then
-  !       write(nout(6)) vflowG
-  !       write(nout(7)) vslipG
-  !     end if
-  !     if(opening) then
-  !       write(nout(8)) velnG
-  !       write(nout(9)) slipnG
-  !     end if
-  !     if(pressurediffusion) then
-  !       write(nout(10)) pfG     
-  !     end if
-  !   end if
-  ! end subroutine
-
   subroutine output_field_sorted()
     implicit none
     !integer::nn,rcounts(npd),displs(npd+1)
@@ -1525,47 +1406,7 @@ contains
 
     return
   end subroutine
-!   subroutine output_coord()
-!     implicit none
-!     integer::nn
-!     nout(1)=100
-!     nout(2)=101
 
-!     if(my_rank==0) then
-!       write(fname,'("output/xyz",i0,".dat")') number
-!       open(nout(1),file=fname,status='replace')
-!       write(fname,'("output/ind",i0,".dat")') number
-!       open(nout(2),file=fname,status='replace')
-!       do i=1,ncell
-!         i_=st_sum%lodc(i)
-!         write(nout(2),*) i_
-!         write(nout(1),'(3e15.6)') st_bemv%xcol(i_),st_bemv%ycol(i_),st_bemv%zcol(i_)
-!       end do
-!       close(nout(1))
-!       close(nout(2))
-!     end if
- 
-!     Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-
-!     do nn=1,npd-1
-!       if(my_rank==nn) then
-!       write(fname,'("output/xyz",i0,".dat")') number
-!       open(nout(1),file=fname,position='append')
-!       write(fname,'("output/ind",i0,".dat")') number
-!       open(nout(2),file=fname,position='append')
-!       do i=1,ncell
-!         i_=st_sum%lodc(i)
-!         write(nout(2),*) i_
-!         write(nout(1),'(3e15.6)') st_bemv%xcol(i_),st_bemv%ycol(i_),st_bemv%zcol(i_)
-!       end do
-!       close(nout(1))
-!       close(nout(2))
-!       end if
-!       Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-!     end do
-!     !Call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-!     return
-! end subroutine
 subroutine output_coord_sorted()
     implicit none
     nout(1)=100
@@ -2508,6 +2349,104 @@ end subroutine
     stop
   end subroutine
 
+  subroutine pressure_diffusion()
+    implicit none
+    if(param_diff%permev) then
+      do i=1,ncell
+        tmp=-vel(i)/param_diff%kL*(param_diff%kp(i)-param_diff%kpmax)-(param_diff%kp(i)-param_diff%kpmin)/param_diff%kT
+        param_diff%kp(i)=param_diff%kp(i)+dtdid*tmp
+      end do
+      call MPI_GATHERv(param_diff%kp,NCELL,MPI_REAL8,tmparray,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)   
+      do i=1, NCELLg
+        i_=listG(i)
+        param_diff%kpG(i_)=tmparray(i)
+      end do
+    end if
+
+    call MPI_GATHERv(pf,NCELL,MPI_REAL8,tmparray,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    if(my_rank==0) then
+    do i=1, NCELLg
+        i_=listG(i)
+        pfG(i_)=tmparray(i)
+    end do
+    end if
+
+    call MPI_GATHERv(sigma,NCELL,MPI_REAL8,tmparray,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+    if(my_rank==0) then
+    do i=1, NCELLg
+        i_=listG(i)
+        sigmaG(i_)=tmparray(i)
+    end do
+    end if
+
+    if(my_rank==0) then
+      !write(*,*) minval(param_diff%kpG),maxval(param_diff%kpG), maxval(param_diff%phiG),maxval(pfG),minval(pfG)
+      select case(problem)
+      case('2dp','2dn','2dvs')
+        if(param_diff%permsigma) then
+          call diffusion2dwp(pfG,sigmaG,dtdid,ds0,x,dtnxt,param_diff)
+        else
+          call diffusion2dwop(pfG,dtdid,ds0,x,dtnxt,param_diff)
+        end if
+      case('3dp','3dph')
+        call diffusion3dwop(imax,jmax,pfG,dtdid,ds0,x,dtnxt,param_diff)
+      end select
+    !end if
+    end if
+
+    call MPI_BARRIER(MPI_COMM_WORLD,ierr)
+    call MPI_BCAST(pfG,NCELLg,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+    call MPI_BCAST(dtnxt,1,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+
+    do i=1,ncell
+      i_=st_sum%lodc(i)
+      pf(i)=pfG(i_)
+      sigma(i)=sigmat(i)-pf(i)
+      if(limitsigma) then
+        if(sigma(i)<minsig) sigma(i)=minsig
+        if(sigma(i)>maxsig) sigma(i)=maxsig
+      end if
+      y(3*i)=sigma(i)
+    end do
+    return
+  end subroutine
+
+  subroutine analytical_pressure_diffusion()
+    implicit none
+    select case(problem)
+      case('2dp','2dn')
+        do i=1,NCELL
+          i_=st_sum%lodc(i)
+          !along-fault pressurediffusion
+          sigma0(i)=sigma0(i)+y(3*i)-sigma(i)
+          !y(3*i)=sigma0(i)-pf0*erfc(xcol(i_)/(2*sqrt(cdiff*x)))
+          if(param_diff%injection=='pressure') then
+            y(3*i)=sigma0(i)-param_diff%pinj*erfc(abs(st_bemv%xcol(i_)-st_bemv%xcol(ncellg/2))/(2*sqrt(cdiff*x)))
+          else if(param_diff%injection=='flowrate') then
+            y(3*i)=sigma0(i)-pf1d(param_diff%pinj,cdiff,x,st_bemv%xcol(i_)-st_bemv%xcol(ncellg/2))
+          end if
+          !y(3*i)=max(minsig,sigma0(i)-pf0*erfc(xcol(i_)/(2*sqrt(cdiff*x))))
+          !homogenous pressurediffusion
+          !y(3*i)=sigma0(i)-pf2d(pf0,cdiff,x,st_bemvs%xcol(i_),st_bemv%ycol(i_)-0.2)
+        end do
+
+      case('3dp')
+        do i=1,NCELL
+          i_=st_sum%lodc(i)
+           !along-fault pressurediffusion
+          sigma0(i)=sigma0(i)+y(3*i)-sigma(i)
+          if(param_diff%injection=='flowrate') then
+            y(3*i)=sigma0(i)-pf2d(pf0,cdiff,x,st_bemv%xcol(i_),st_bemv%zcol(i_))
+          end if
+          !y(3*i)=max(minsig,sigma0(i)-pf2d(pf0,cdiff,x,xcol(i_),zcol(i_)))
+          !homogenous pressurediffusion
+          !r=sqrt(st_bemv%xcol(i_)**2+st_bemv%zcol(i_)**2)
+          !y(3*i)=max(minsig,sigma0(i)-pf0*erfc(r/(2*sqrt(cdiff*x))/r))
+        end do
+      end select 
+    return
+  end subroutine
+
   FUNCTION pf2d(pf0,alpha,time,x,z)
     implicit none
     real(8)::pf2d,time,x,z,alpha,pf0
@@ -2841,6 +2780,8 @@ end subroutine
       read(pvalue,*) param_diff%qbcb
     case('tinj')
       read(pvalue,*) param_diff%tinj
+    case('sigmastar')
+      read(pvalue,*) param_diff%sigmastar
     case('injectionfromfile')
       read(pvalue,*) param_diff%injectionfromfile
     case('injection_file')
@@ -2871,6 +2812,16 @@ end subroutine
       read(pvalue,*) analyticalinjection
     case('pressurediffusion')
       read(pvalue,*) pressurediffusion
+    case('network')
+      read(pvalue,*) param_diff%network
+    case('permsigma')
+      read(pvalue,*) param_diff%permsigma
+    case('n1')
+      read(pvalue,*) param_diff%n1
+    case('i1')
+      read(pvalue,*) param_diff%i1
+    case('i2')
+      read(pvalue,*) param_diff%i2
     case('bingham')
       read(pvalue,*) bingham
     case('meshisinmeter')
