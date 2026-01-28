@@ -1,21 +1,57 @@
 module mod_diffusion
 use mod_constant
   type :: t_params
-  integer::nwell,nn,npoint,n1,i1,i2
-  integer,pointer::kleng(:),iwell(:),jwell(:)
+  integer::nwell,nn,npoint,n1,i1,i2,nfault,nconnect
+  integer,pointer::kleng(:),iwell(:),jwell(:),connect(:,:),ns(:)
   real(8)::phi0,beta,eta,sigmastar,kp0,kpmin,kpmax,kL,kT,pinj,pbcl,pbcr,pbct,pbcb,qinj,q0
   real(8)::qbcl,qbcr,qbct,qbcb
   real(8)::tinj=1d5
   real(8),pointer::kp(:),kpG(:),qtimes(:),qvals(:,:),pfhyd(:,:),phi(:),phiG(:)
-  character(128)::bc,bcl,bcr,bct,bcb,setting,injection,injection_file
+  character(128)::bc,bcl,bcr,bct,bcb,setting,injection,injection_file,network_file
   logical::injectionfromfile,switch,permev,permsigma,network
   end type t_params
 contains
-subroutine input_well(param_diff)
+subroutine setup_network(param_diff,my_rank)
   implicit none
   type(t_params):: param_diff
-  integer::k,kwell
-  open(77,file=param_diff%injection_file)
+  integer,intent(in)::my_rank
+  integer::k,ios
+  integer,allocatable::ncell1(:)
+  write(*,*) param_diff%network_file
+  open(77,file=param_diff%network_file,iostat=ios)
+  if(ios /= 0) then
+    if(my_rank==0)write(*,*) 'ERROR: Failed to open network file'
+    stop
+  end if
+  read(77,*) param_diff%nfault
+  allocate(ncell1(param_diff%nfault),param_diff%ns(param_diff%nfault+1))
+  read(77,*) ncell1
+  param_diff%ns(1)=0
+  do k=1,param_diff%nfault
+    param_diff%ns(k+1)=param_diff%ns(k)+ncell1(k)
+  end do
+  read(77,*) param_diff%nconnect
+  write(*,*) param_diff%ns
+
+  allocate(param_diff%connect(param_diff%nconnect,2))
+  do k=1,param_diff%nconnect
+    read(77,*) param_diff%connect(k,:)
+  end do
+  write(*,*) param_diff%connect
+
+  close(77)
+  return
+end subroutine
+subroutine input_well(param_diff,my_rank)
+  implicit none
+  type(t_params):: param_diff
+  integer,intent(in)::my_rank
+  integer::k,kwell,ios
+  open(77,file=param_diff%injection_file,iostat=ios)
+  if(ios /= 0) then
+    if(my_rank==0)write(*,*) 'ERROR: Failed to open well file'
+    stop
+  end if
   read(77,*) param_diff%nwell
   read(77,*) param_diff%npoint
   allocate(param_diff%iwell(param_diff%nwell),param_diff%jwell(param_diff%nwell),param_diff%qvals(param_diff%nwell,param_diff%npoint))
@@ -101,7 +137,6 @@ end subroutine
     do i=1,size(pf)
       dpf(i)=pfnew(i)-pf(i)
       pf(i)=pfnew(i)
-      !y(4*i-1)=y(4*i-1)-dpf(i) !update effective normal stress
     end do
     !$omp end parallel do
 
@@ -121,7 +156,7 @@ end subroutine
     real(8),dimension(ncell)::pf0,m,dpf,p,r,b,x,alpha,sat
     real(8)::Dxx(ncell,3),Am(ncell,3)
     integer::n,iter
-    real(8)::p0=0.0,td=1d6,tol=1e-4
+    real(8)::p0=0.0,td=1d6,tol=1e-6
     type(t_params):: param_diff
     !real(8),parameter::str=1e-11 !beta(1e-9)*phi(1e-2)
     n=ncell
@@ -131,12 +166,12 @@ end subroutine
     !compute Dxx for Dirichlet BC
     select case(param_diff%bcl)
     case('Dirichlet')
-      Dxx(1,1)=-cdiff(1)-cdiff(2)
-      Dxx(1,2)=cdiff(2)-cdiff(1)
+      Dxx(1,2)=-cdiff(1)-cdiff(2)
+      Dxx(1,3)=cdiff(2)-cdiff(1)
       Dxx(2,1:3)=(/cdiff(2)/2-cdiff(1)/2, -cdiff(1)/2-cdiff(2)-cdiff(3)/2, cdiff(2)/2+cdiff(3)/2/)
     case('Neumann')
-      Dxx(1,1)=-cdiff(1)/2-cdiff(2)/2
-      Dxx(1,2)=-Dxx(1,1)
+      Dxx(1,2)=-cdiff(1)/2-cdiff(2)/2
+      Dxx(1,3)=-Dxx(1,2)
       Dxx(2,1:3)=(/cdiff(1)/2+cdiff(2)/2, -cdiff(1)/2-cdiff(2)-cdiff(3)/2, cdiff(2)/2+cdiff(3)/2/)
     end select
 
@@ -147,13 +182,13 @@ end subroutine
     select case(param_diff%bcr)
     case('Dirichlet')
       Dxx(n-1,1:3)=(/cdiff(n-2)/2+cdiff(n-1)/2, -cdiff(n-2)/2-cdiff(n-1)-cdiff(n)/2, -cdiff(n)/2+cdiff(n-1)/2/)
-      Dxx(n,3)=-cdiff(n)-cdiff(n-1)
-      Dxx(n,2)=cdiff(n-1)-cdiff(n)
+      Dxx(n,2)=-cdiff(n)-cdiff(n-1)
+      Dxx(n,1)=cdiff(n-1)-cdiff(n)
 
     case('Neumann')
       Dxx(n-1,1:3)=(/cdiff(n-2)/2+cdiff(n-1)/2, -cdiff(n-2)/2-cdiff(n-1)-cdiff(n)/2, cdiff(n-1)/2+cdiff(n)/2/)
-      Dxx(n,3)=-cdiff(n)/2-cdiff(n-1)/2
-      Dxx(n,2)=-Dxx(n,3)
+      Dxx(n,2)=-cdiff(n)/2-cdiff(n-1)/2
+      Dxx(n,1)=-Dxx(n,2)
     end select
 
     Dxx=Dxx/ds0/ds0
@@ -161,26 +196,15 @@ end subroutine
     !write(*,*)
 
     Am=0d0
-    Am(1,1)=1.0-h*Dxx(1,1)
-    Am(1,2)=-h*Dxx(1,2)
-    Am(n,3)=1.0-h*Dxx(n,3)
-    Am(n,2)=-h*Dxx(n,2)
-
-     !$omp parallel do
-    do i=2,n-1
-      Am(i,1)=-h*Dxx(i,1)
-      Am(i,2)=1.0-h*Dxx(i,2)
-      Am(i,3)=-h*Dxx(i,3)
-    end do
-     !$omp end parallel do
+    Am(:,1)=-h*Dxx(:,1)
+    Am(:,2)=1.0-h*Dxx(:,2)
+    Am(:,3)=-h*Dxx(:,3)
 
     SAT=0d0
 
     !penalty vector
     select case(param_diff%bcl)
     case('Dirichlet')
-      !SAT(1)=-1.0*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
-      !SAT(2)=-0.5*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
       SAT(1)=-1.0*cdiff(1)/ds0/ds0*param_diff%pbcl*h*2
       SAT(2)=-0.5*cdiff(1)/ds0/ds0*param_diff%pbcl*h*2
     case('Neumann')
@@ -189,12 +213,10 @@ end subroutine
 
     select case(param_diff%bcr)
     case('Dirichlet')
-      !SAT(n)=-1*cdiff(n)/ds0/ds0*(pbcr-pfhyd(n))*h*2
       SAT(n)=-1*cdiff(n)/ds0/ds0*param_diff%pbcr*h*2
       SAT(n-1)=SAT(n)/2
     case('Neumann')
       SAT(n)=param_diff%qbcr/str(n)*1e-9*h/ds0*1
-      !if(setting=='thrust') SAT(n)=qin(2000)/str(n)*1e-9*h/ds0*2
     end select
 
     x=pf!-pfhyd !initial guess
@@ -210,16 +232,11 @@ end subroutine
     !write(*,*) h,str(N/2),ds0
 
     m=0d0
-    m(1)=x(1)*Am(1,1)+x(2)*Am(1,2)
-
     !$omp parallel do
-    do i=2,n-1
+    do i=1,n
       m(i)=x(i-1)*Am(i,1)+x(i)*Am(i,2)+x(i+1)*Am(i,3)
     end do
     !$omp end parallel do
-
-    m(n)=x(n)*Am(n,3)+x(n-1)*Am(n,2)
-    !write(*,'(9e15.6)')m
 
     r=b-m
     p=r
@@ -232,14 +249,12 @@ end subroutine
     do iter=1,itermax
       tmp1=sum(r*r)
       m=0d0
-      m(1)=p(1)*Am(1,1)+p(2)*Am(1,2)
+
       !$omp parallel do
-      do i=2,n-1
+      do i=1,n
         m(i)=p(i-1)*Am(i,1)+p(i)*Am(i,2)+p(i+1)*Am(i,3)
       end do
       !$omp end parallel do
-      m(n)=p(n)*Am(n,3)+p(n-1)*Am(n,2)
-      !write(*,'(9e15.6)')m
 
       tmp2=sum(m*p)
       alpha=tmp1/tmp2
@@ -272,161 +287,53 @@ end subroutine
     real(8)::eta, tmp1,tmp2,rsnew,rsold
     real(8),dimension(ncell)::pf0,m,dpf,p,r,b,x,alpha,sat
     real(8)::Dxx(ncell,3),Am(ncell,3)
-    integer::n,iter,n1,i1,i2
+    integer::n,iter,n1,n2,i1,i2,k
     real(8)::p0=0.0,td=1d6,tol=1e-4
     type(t_params):: param_diff
     !real(8),parameter::str=1e-11 !beta(1e-9)*phi(1e-2)
     n=ncell
-    n1=param_diff%n1;i1=param_diff%i1;i2=param_diff%i2
     niter=0
     Dxx=0d0
 
-    !fault 1
-    !compute Dxx for Dirichlet BC
-    select case(param_diff%bcl)
-    case('Dirichlet')
-      Dxx(1,1)=-cdiff(1)-cdiff(2)
-      Dxx(1,2)=cdiff(2)-cdiff(1)
-      Dxx(2,1:3)=(/cdiff(2)/2-cdiff(1)/2, -cdiff(1)/2-cdiff(2)-cdiff(3)/2, cdiff(2)/2+cdiff(3)/2/)
-    case('Neumann')
-      Dxx(1,1)=-cdiff(1)/2-cdiff(2)/2
-      Dxx(1,2)=-Dxx(1,1)
-      Dxx(2,1:3)=(/cdiff(1)/2+cdiff(2)/2, -cdiff(1)/2-cdiff(2)-cdiff(3)/2, cdiff(2)/2+cdiff(3)/2/)
-    end select
+    do k=1,param_diff%nfault
+      n1=param_diff%ns(k)
+      n2=param_diff%ns(k+1)
+      Dxx(n1+1,2)=-cdiff(n1+1)/2-cdiff(n1+2)/2
+      Dxx(n1+1,3)=-Dxx(n1+1,2)
+      Dxx(n1+2,1:3)=(/cdiff(n1+1)/2+cdiff(n1+2)/2, -cdiff(n1+1)/2-cdiff(n1+2)-cdiff(n1+3)/2, cdiff(n1+2)/2+cdiff(n1+3)/2/)
 
-    do i=3,n1-2
-      Dxx(i,1:3)=(/cdiff(i-1)/2+cdiff(i)/2, -cdiff(i-1)/2-cdiff(i)-cdiff(i+1)/2, cdiff(i)/2+cdiff(i+1)/2/)
+      do i=n1+3,n2-2
+        Dxx(i,1:3)=(/cdiff(i-1)/2+cdiff(i)/2, -cdiff(i-1)/2-cdiff(i)-cdiff(i+1)/2, cdiff(i)/2+cdiff(i+1)/2/)
+      end do
+
+      Dxx(n2-1,1:3)=(/cdiff(n2-2)/2+cdiff(n2-1)/2, -cdiff(n2-2)/2-cdiff(n2-1)-cdiff(n2)/2, cdiff(n2-1)/2+cdiff(n2)/2/)
+      Dxx(n2,2)=-cdiff(n2)/2-cdiff(n2-1)/2
+      Dxx(n2,1)=-Dxx(n2,2)
+
     end do
 
-    Dxx(i1,2)=Dxx(i1,2)-(cdiff(i1)+cdiff(i2)/2+cdiff(i2+1)/2)
-    Dxx(i1+1,2)=Dxx(i1+1,2)-(cdiff(i1+1)+cdiff(i2)/2+cdiff(i2+1)/2)
-
-
-    select case(param_diff%bcr)
-    case('Dirichlet')
-      Dxx(n1-1,1:3)=(/cdiff(n1-2)/2+cdiff(n1-1)/2, -cdiff(n1-2)/2-cdiff(n1-1)-cdiff(n1)/2, -cdiff(n1)/2+cdiff(n1-1)/2/)
-      Dxx(n1,3)=-cdiff(n1)-cdiff(n1-1)
-      Dxx(n1,2)=cdiff(n1-1)-cdiff(n1)
-
-    case('Neumann')
-      Dxx(n1-1,1:3)=(/cdiff(n1-2)/2+cdiff(n1-1)/2, -cdiff(n1-2)/2-cdiff(n1-1)-cdiff(n1)/2, cdiff(n1-1)/2+cdiff(n1)/2/)
-      Dxx(n1,3)=-cdiff(n1)/2-cdiff(n1-1)/2
-      Dxx(n1,2)=-Dxx(n1,3)
-    end select
+    !connection
+    do kc=1,param_diff%nconnect
+      i1=param_diff%connect(kc,1)
+      i2=param_diff%connect(kc,2)
+      Dxx(i1,2)=Dxx(i1,2)-(cdiff(i1)+cdiff(i2)/2+cdiff(i2+1)/2)
+      Dxx(i1+1,2)=Dxx(i1+1,2)-(cdiff(i1+1)+cdiff(i2)/2+cdiff(i2+1)/2)
+      Dxx(i2,2)=Dxx(i2,2)-(cdiff(i2)+cdiff(i1)/2+cdiff(i1+1)/2)
+      Dxx(i2+1,2)=Dxx(i2+1,2)-(cdiff(i2+1)+cdiff(i1)/2+cdiff(i1+1)/2)
+    end do
 
     Dxx=Dxx/ds0/ds0
 
     !write(*,*)
-
     Am=0d0
-    Am(1,1)=1.0-h*Dxx(1,1)
-    Am(1,2)=-h*Dxx(1,2)
-    Am(n1,3)=1.0-h*Dxx(n1,3)
-    Am(n1,2)=-h*Dxx(n1,2)
-
-     !$omp parallel do
-    do i=2,n1-1
-      Am(i,1)=-h*Dxx(i,1)
-      Am(i,2)=1.0-h*Dxx(i,2)
-      Am(i,3)=-h*Dxx(i,3)
-    end do
-     !$omp end parallel do
+    Am(:,1)=-h*Dxx(:,1)
+    Am(:,2)=1.0-h*Dxx(:,2)
+    Am(:,3)=-h*Dxx(:,3)
 
     SAT=0d0
-
-    !penalty vector
-    select case(param_diff%bcl)
-    case('Dirichlet')
-      !SAT(1)=-1.0*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
-      !SAT(2)=-0.5*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
-      SAT(1)=-1.0*cdiff(1)/ds0/ds0*param_diff%pbcl*h*2
-      SAT(2)=-0.5*cdiff(1)/ds0/ds0*param_diff%pbcl*h*2
-    case('Neumann')
-      SAT(1)=-param_diff%qbcl/str(1)*1e-9*h/ds0*1
-    end select
-
-    select case(param_diff%bcr)
-    case('Dirichlet')
-      !SAT(n)=-1*cdiff(n)/ds0/ds0*(pbcr-pfhyd(n))*h*2
-      SAT(n1)=-1*cdiff(n1)/ds0/ds0*param_diff%pbcr*h*2
-      SAT(n1-1)=SAT(n1)/2
-    case('Neumann')
-      SAT(n1)=param_diff%qbcr/str(n1)*1e-9*h/ds0*1
-      !if(setting=='thrust') SAT(n)=qin(2000)/str(n)*1e-9*h/ds0*2
-    end select
-
-
-    !fault 2
-    select case(param_diff%bcl)
-    case('Dirichlet')
-      Dxx(n1+1,1)=-cdiff(n1+1)-cdiff(n1+2)
-      Dxx(n1+1,2)=cdiff(n1+2)-cdiff(n1+1)
-      Dxx(n1+2,1:3)=(/cdiff(n1+2)/2-cdiff(n1+1)/2, -cdiff(n1+1)/2-cdiff(n1+2)-cdiff(n1+3)/2, cdiff(n1+2)/2+cdiff(n1+3)/2/)
-    case('Neumann')
-      Dxx(n1+1,1)=-cdiff(n1+1)/2-cdiff(n1+2)/2
-      Dxx(n1+1,2)=-Dxx(n1+1,1)
-      Dxx(n1+2,1:3)=(/cdiff(n1+1)/2+cdiff(n1+2)/2, -cdiff(n1+1)/2-cdiff(n1+2)-cdiff(n1+3)/2, cdiff(n1+2)/2+cdiff(n1+3)/2/)
-    end select
-
-    do i=n1+3,n-2
-      Dxx(i,1:3)=(/cdiff(i-1)/2+cdiff(i)/2, -cdiff(i-1)/2-cdiff(i)-cdiff(i+1)/2, cdiff(i)/2+cdiff(i+1)/2/)
-    end do
-
-    Dxx(i2,2)=Dxx(i2,2)-(cdiff(i2)+cdiff(i1)/2+cdiff(i1+1)/2)
-    Dxx(i2+1,2)=Dxx(i2+1,2)-(cdiff(i2+1)+cdiff(i1)/2+cdiff(i1+1)/2)
-
-    select case(param_diff%bcr)
-    case('Dirichlet')
-      Dxx(n-1,1:3)=(/cdiff(n-2)/2+cdiff(n-1)/2, -cdiff(n-2)/2-cdiff(n-1)-cdiff(n)/2, -cdiff(n)/2+cdiff(n-1)/2/)
-      Dxx(n,3)=-cdiff(n)-cdiff(n-1)
-      Dxx(n,2)=cdiff(n-1)-cdiff(n)
-
-    case('Neumann')
-      Dxx(n-1,1:3)=(/cdiff(n-2)/2+cdiff(n-1)/2, -cdiff(n-2)/2-cdiff(n-1)-cdiff(n)/2, cdiff(n-1)/2+cdiff(n)/2/)
-      Dxx(n,3)=-cdiff(n)/2-cdiff(n-1)/2
-      Dxx(n,2)=-Dxx(n,3)
-    end select
-
-    Dxx=Dxx/ds0/ds0
-
-    !write(*,*)
-    Am(n1+1,1)=1.0-h*Dxx(n1+1,1)
-    Am(n1+1,2)=-h*Dxx(n1+1,2)
-    Am(n,3)=1.0-h*Dxx(n,3)
-    Am(n,2)=-h*Dxx(n,2)
-
-     !$omp parallel do
-    do i=n1+2,n-1
-      Am(i,1)=-h*Dxx(i,1)
-      Am(i,2)=1.0-h*Dxx(i,2)
-      Am(i,3)=-h*Dxx(i,3)
-    end do
-     !$omp end parallel do
-
-    !penalty vector
-    select case(param_diff%bcl)
-    case('Dirichlet')
-      !SAT(1)=-1.0*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
-      !SAT(2)=-0.5*cdiff(1)/ds0/ds0*(pbcl-pfhyd(1))*h*2
-      SAT(n1+1)=-1.0*cdiff(n1+1)/ds0/ds0*param_diff%pbcl*h*2
-      SAT(n1+2)=-0.5*cdiff(n1+1)/ds0/ds0*param_diff%pbcl*h*2
-    case('Neumann')
-      SAT(n1+1)=-param_diff%qbcl/str(n1+1)*1e-9*h/ds0*1
-    end select
-
-    select case(param_diff%bcr)
-    case('Dirichlet')
-      !SAT(n)=-1*cdiff(n)/ds0/ds0*(pbcr-pfhyd(n))*h*2
-      SAT(n)=-1*cdiff(n)/ds0/ds0*param_diff%pbcr*h*2
-      SAT(n-1)=SAT(n)/2
-    case('Neumann')
-      SAT(n)=param_diff%qbcr/str(n)*1e-9*h/ds0*1
-      !if(setting=='thrust') SAT(n)=qin(2000)/str(n)*1e-9*h/ds0*2
-    end select
-    
-
     
     x=pf!-pfhyd !initial guess
+
     b=pf-SAT!-pfhyd   
 
     if(param_diff%injection=='pressure' .and. time<param_diff%tinj*365*24*3600) then
@@ -436,46 +343,28 @@ end subroutine
       b(N/2)=b(N/2)+h*param_diff%qinj/str(N/2)*1e-9/ds0 !injection rate
     end if
 
-    ! b(1)=b(1)/2
-    ! b(n)=b(n)/2
-
-    ! Am(1,:)=Am(1,:)/2
-    ! Am(n,:)=Am(n,:)/2
-
     m=0d0
-    m(1)=x(1)*Am(1,1)+x(2)*Am(1,2)
-
     !$omp parallel do
-    do i=2,n1-1
+    do i=1,n
       m(i)=x(i-1)*Am(i,1)+x(i)*Am(i,2)+x(i+1)*Am(i,3)
     end do
     !$omp end parallel do
 
-    m(n1)=x(n1)*Am(n1,3)+x(n1-1)*Am(n1,2)
-
-    m(n1+1)=x(n1+1)*Am(n1+1,1)+x(n1+2)*Am(n1+1,2)
-
-    !$omp parallel do
-    do i=n1+2,n-1
-      m(i)=x(i-1)*Am(i,1)+x(i)*Am(i,2)+x(i+1)*Am(i,3)
+    do kc=1,param_diff%nconnect
+      i1=param_diff%connect(kc,1)
+      i2=param_diff%connect(kc,2)
+      m(i1)=m(i1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1))*x(i2)+(cdiff(i2+1)+cdiff(i1))*x(i2+1))
+      m(i1+1)=m(i1+1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1+1))*x(i2)+(cdiff(i2+1)+cdiff(i1+1))*x(i2+1))
+      m(i2)=m(i2)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2))*x(i1)+(cdiff(i1+1)+cdiff(i2))*x(i1+1))
+      m(i2+1)=m(i2+1)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2+1))*x(i1)+(cdiff(i1+1)+cdiff(i2+1))*x(i1+1))
     end do
-    !$omp end parallel do
-
-    m(n)=x(n)*Am(n,3)+x(n-1)*Am(n,2)
-
-    
-    m(i1)=m(i1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1))*x(i2)+(cdiff(i2+1)+cdiff(i1))*x(i2+1))
-    m(i1+1)=m(i1+1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1+1))*x(i2)+(cdiff(i2+1)+cdiff(i1+1))*x(i2+1))
-
-    m(i2)=m(i2)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2))*x(i1)+(cdiff(i1+1)+cdiff(i2))*x(i1+1))
-    m(i2+1)=m(i2+1)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2+1))*x(i1)+(cdiff(i1+1)+cdiff(i2+1))*x(i1+1))
 
     !write(*,'(9e15.6)')m
 
     r=b-m
     p=r
     rsold=sum(r*r)
-    !write(*,*) rsold
+    ! write(*,*) rsold
     if(rsold<tol**2*n)  then
       go to 100
     end if
@@ -483,29 +372,20 @@ end subroutine
     do iter=1,itermax
       tmp1=sum(r*r)
       m=0d0
-      m(1)=p(1)*Am(1,1)+p(2)*Am(1,2)
-      !$omp parallel do
-      do i=2,n1-1
-        m(i)=p(i-1)*Am(i,1)+p(i)*Am(i,2)+p(i+1)*Am(i,3)
-      end do
-      !$omp end parallel do
-      m(n1)=p(n1)*Am(n1,3)+p(n1-1)*Am(n1,2)
+   !$omp parallel do
+    do i=1,n
+      m(i)=p(i-1)*Am(i,1)+p(i)*Am(i,2)+p(i+1)*Am(i,3)
+    end do
+    !$omp end parallel do
 
-      m(n1+1)=p(n1+1)*Am(n1+1,1)+p(n1+2)*Am(n1+1,2)
-
-      !$omp parallel do
-      do i=n1+2,n-1
-        m(i)=p(i-1)*Am(i,1)+p(i)*Am(i,2)+p(i+1)*Am(i,3)
-      end do
-      !$omp end parallel do
-
-      m(n)=p(n)*Am(n,3)+p(n-1)*Am(n,2)
-    
-    m(i1)=m(i1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1))*p(i2)+(cdiff(i2+1)+cdiff(i1))*p(i2+1))
-    m(i1+1)=m(i1+1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1+1))*p(i2)+(cdiff(i2+1)+cdiff(i1+1))*p(i2+1))
-
-    m(i2)=m(i2)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2))*p(i1)+(cdiff(i1+1)+cdiff(i2))*p(i1+1))
-    m(i2+1)=m(i2+1)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2+1))*p(i1)+(cdiff(i1+1)+cdiff(i2+1))*p(i1+1))
+    do kc=1,param_diff%nconnect
+      i1=param_diff%connect(kc,1)
+      i2=param_diff%connect(kc,2)
+      m(i1)=m(i1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1))*p(i2)+(cdiff(i2+1)+cdiff(i1))*p(i2+1))
+      m(i1+1)=m(i1+1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1+1))*p(i2)+(cdiff(i2+1)+cdiff(i1+1))*p(i2+1))
+      m(i2)=m(i2)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2))*p(i1)+(cdiff(i1+1)+cdiff(i2))*p(i1+1))
+      m(i2+1)=m(i2+1)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2+1))*p(i1)+(cdiff(i1+1)+cdiff(i2+1))*p(i1+1))
+    end do
 
       !write(*,'(9e15.6)')m
 

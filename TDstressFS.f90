@@ -64,8 +64,8 @@ contains
     real(8)::Exx3Tn,Eyy3Tn,Ezz3Tn,Exy3Tn,Exz3Tn,Eyz3Tn! TDstressFS
 
 
-    nu = 1/(1+lambda/mu)/2 ! Poisson's ratio
-    !!!write(*,*) 'calc'
+    nu = lambda/(lambda+mu)/2 ! Poisson's ratio
+    !write(*,*) nu
 
     bx = Ts ! Tensile-slip
     by = Ss ! Strike-slip

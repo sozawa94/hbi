@@ -61,7 +61,7 @@ program main
 
   !variables
   real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),slip(:),mu(:),rupt(:),islip(:),velp(:),cslip(:),sigma0(:),tau0(:),vslip(:)
-  real(8),allocatable::taus(:),taud(:),vels(:),veld(:),slips(:),slipd(:),rake(:),lbds(:),pf(:),sigmat(:)
+  real(8),allocatable::taus(:),taud(:),vels(:),veld(:),slips(:),slipd(:),rake(:),lbds(:),pf(:),sigmat(:),dpdt(:)
 
   real(8),allocatable::rdata(:)
   integer::lp,i,i_,j,k,kstart,kend,m,counts,interval,lrtrn,nl,ios,nmain,rk,nout(20),file_size,nrjct,ncol
@@ -100,7 +100,7 @@ program main
   allocate(rcounts(npd),displs(npd+1))
 
   if(my_rank==0) then
-    write(*,*) 'HBI ver. 2026.1.0'
+    write(*,*) 'HBI ver. 2026.2.0'
     write(*,*) '# of MPI', np
   end if
   !input file must be specified when running
@@ -173,7 +173,10 @@ program main
   !check inconsistency in input parameters
   if(pressurediffusion) then
     if(param_diff%injectionfromfile) then
-      call input_well(param_diff)
+      call input_well(param_diff,my_rank)
+    end if
+    if(param_diff%network) then
+      call setup_network(param_diff, my_rank)
     end if
     select case(problem)
     case('2dnh','3dht','3dnt')
@@ -480,7 +483,9 @@ program main
   case('2dp','2dn3','3dp','2dvs')
     sigmaconst=.true.
   end select
-  
+  ! st_bemv%md='s'
+  ! write(*,*) matel3dn_ij(100,300,st_bemv)
+  ! stop
   if(opening) sigmaconst=.false.
 
   st_bemv%md='s'
@@ -524,7 +529,7 @@ program main
   !allocate local variables
   allocate(y(3*NCELL),yscal(3*NCELL),dydx(3*NCELL))
   allocate(psi(NCELL),vel(NCELL),tau(NCELL),sigma(NCELL),slip(NCELL),mu(NCELL),veln(NCELL),slipn(ncell),pf(Ncell),sigmat(Ncell))
-  allocate(islip(NCELL),cslip(NCELL),sigma0(NCELL),tau0(NCELL),etav(NCELL),etab(NCELL),pre(NCELL),vflow(NCELL),vslip(NCELL))
+  allocate(islip(NCELL),cslip(NCELL),sigma0(NCELL),tau0(NCELL),etav(NCELL),etab(NCELL),pre(NCELL),vflow(NCELL),vslip(NCELL),dpdt(NCELL))
   psi=0d0;vel=0d0;tau=0d0;sigma=0d0;slip=0d0;etav=0d0;etab=0d0;pre=0d0;vflow=0d0;vslip=0d0;pf=0d0
   allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),vc(NCELL),vw(NCELL),fw(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL),vpl(NCELL))
   taudot=0d0;sigdot=0d0
@@ -824,6 +829,10 @@ program main
     vel=velinit
     veln=0
     pf=pfinit
+    ! do i=1,ncell
+    !   i_=st_sum%lodc(i)
+    !   vel(i)=vpl0*(1+0.1*st_bemv%xcol(i_))
+    ! end do
   
     !if(my_rank==0) write(*,*) tau
     if(muinit.ne.0d0) tau=sigma*muinit
@@ -1058,20 +1067,18 @@ program main
   !$omp end parallel do
   !stop
 
+  dpdt=0d0
+
   do k=kstart,NSTEP
-    !parallel computing for Runge-Kutta
-    !write(*,*) dc(1)/mvelG
-    !dttry = min(dtnxt,0.05*dc(1)/mvelG)
     dttry = dtnxt
-    !time3=MPI_Wtime()
-    call rkqs(y,dydx,x,dttry,eps_r,dtdid,dtnxt,errmax_gb,nrjct)
+
+    call rkqs(y,dydx,x,dttry,eps_r,dtdid,dtnxt,errmax_gb,nrjct,dpdt)
     !call rkqs2(y,dydx,x,dttry,eps_r,errold,dtdid,dtnxt,errmax_gb,nrjct)
-    !time4=MPI_Wtime()
-    !timer=timer+time4-time3
 
     if(analyticalinjection) then
       call analytical_pressure_diffusion()
     end if
+    
 
     !compute physical values for control and output
     !$omp parallel do
@@ -1081,8 +1088,8 @@ program main
       sigma(i)=y(3*i)
 
       slip(i)=slip(i)+(vel(i)+vflow(i))*dtdid*0.5d0 !2nd order
-      vel(i)= 2*vref*exp(-psi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
-      if(evlaw=='mCNS') vel(i) = vref*dexp((tau(i)/sigma(i)-psi(i))/a(i))
+      vel(i)=2*vref*exp(-psi(i)/a(i))*sinh(tau(i)/sigma(i)/a(i))
+      if(evlaw=='mCNS') vel(i)=vref*dexp((tau(i)/sigma(i)-psi(i))/a(i))
       if(viscous) then
         vslip(i)=vslip(i)+vflow(i)*dtdid*0.5d0
         vflow(i)=pre(i)*tau(i)**nflow
@@ -1101,7 +1108,7 @@ program main
     !$omp end parallel do
 
     if(pressurediffusion) then
-      call pressure_diffusion()
+      call pressure_diffusion(dpdt)
     end if
 
     call MPI_BARRIER(MPI_COMM_WORLD,ierr); time3=MPI_Wtime()
@@ -1758,13 +1765,13 @@ end subroutine
   end subroutine
 
   !computing dydx for time integration
-  subroutine derivs(x, y, dydx)
+  subroutine derivs(x, y, dydx, dpdt)
     use m_HACApK_solve
     use m_HACApK_base
     use m_HACApK_use
     implicit none
     real(8),intent(in) :: x
-    real(8),intent(in) ::y(:)
+    real(8),intent(in) ::y(:), dpdt(:)
     real(8),intent(out) :: dydx(:)
     real(8) :: veltmp(NCELL),tautmp(NCELL),sigmatmp(NCELL),psitmp(NCELL),vflowtmp(NCELL),velntmp(NCELL)
     real(8) :: sum_gs(NCELL),sum_gn(NCELL)
@@ -1781,7 +1788,11 @@ end subroutine
       sigmatmp(i) = y(3*i)
       veltmp(i) = 2*vref*dexp(-psitmp(i)/a(i))*dsinh(tautmp(i)/sigmatmp(i)/a(i))
       if(evlaw=='mCNS') veltmp(i) = vref*dexp((tautmp(i)/sigmatmp(i)-psitmp(i))/a(i))
-      !if(my_rank==0)write(*,*) veltmp(i)
+      !i_=st_sum%lodc(i)
+      !if(st_bemv%xcol(i_)**2+st_bemv%zcol(i_)**2<16.0) then
+      !else
+      !  veltmp(i)=vpl0
+      !end if
     enddo
     !$omp end parallel do
 
@@ -1844,7 +1855,6 @@ end subroutine
     end if
     !time4=MPI_Wtime()
     !timeH=timeH+time4-time3
-
     !$omp parallel do
     do i=1,NCELL
       sum_gn(i)=sum_gn(i)+sigdot(i)
@@ -1854,19 +1864,19 @@ end subroutine
         sum_gs(i)=sum_gs(i)-(tautmp(i)-tau0(i))/trelax
       end if
   
-      call deriv(sum_gs(i),sum_gn(i),psitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),vc(i),vw(i),fw(i),etab(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
+      call deriv(sum_gs(i),sum_gn(i),psitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),vc(i),vw(i),fw(i),etab(i),dpdt(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
     enddo
     !$omp end parallel do
     !write(*,*) dydx
     return
   end subroutine
 
-  subroutine deriv(sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc,vw,fw,etab,dpsidt,dtaudt,dsigdt)
+  subroutine deriv(sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc,vw,fw,etab,dpdt,dpsidt,dtaudt,dsigdt)
     implicit none
     real(8)::fss,dvdtau,dvdsig,dvdpsi,mu,psiss,dcv,f
     real(8),parameter::V0=0.5,n=4,Cr=1.0
     !type(t_deriv),intent(in) ::
-    real(8),intent(in)::sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc,vw,fw,etab
+    real(8),intent(in)::sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc,vw,fw,etab,dpdt
     real(8),intent(out)::dpsidt,dtaudt,dsigdt
     dsigdt=sum_gn
     if(limitsigma)then
@@ -1919,7 +1929,9 @@ end subroutine
     dvdtau=2*vref*dexp(-psitmp/a)*dcosh(tautmp/sigmatmp/a)/(a*sigmatmp)
     dvdsig=-2*vref*dexp(-psitmp/a)*dcosh(tautmp/sigmatmp/a)*tautmp/(a*sigmatmp**2)
     dvdpsi=-veltmp/a
-    dtaudt=(sum_gs-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*dsigdt))/(1d0+0.5d0*rigid/vs*dvdtau)
+    dtaudt=(sum_gs-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*(dsigdt-dpdt)))/(1d0+0.5d0*rigid/vs*dvdtau)
+    !dtaudt=(sum_gs-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*dsigdt))/(1d0+0.5d0*rigid/vs*dvdtau)
+
     if(bingham) dtaudt=(sum_gs-(etab+0.5d0*rigid/vs)*(dvdpsi*dpsidt+dvdsig*dsigdt))/(1d0+(etab+0.5d0*rigid/vs)*dvdtau)
     !write(*,*) rigid/vs*dvdtau
     ! if(veltmp<=0d0) then
@@ -1933,7 +1945,7 @@ end subroutine
     ! end if
   end subroutine
   !---------------------------------------------------------------------
-  subroutine rkqs(y,dydx,x,htry,eps,hdid,hnext,errmax_gb,nrjct)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+  subroutine rkqs(y,dydx,x,htry,eps,hdid,hnext,errmax_gb,nrjct,dpdt)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
     !---------------------------------------------------------------------
     use m_HACApK_solve
     use m_HACApK_base
@@ -1941,7 +1953,7 @@ end subroutine
     implicit none
     !include 'mpif.h'
     !integer::NCELL,NCELLg,rcounts(:),displs(:)
-    real(8),intent(in)::htry,eps
+    real(8),intent(in)::htry,eps,dpdt(:)
     real(8),intent(inout)::y(:),x,dydx(:)
     real(8),intent(out)::hdid,hnext,errmax_gb !hdid: resulatant dt hnext: htry for the next
     integer,intent(out)::nrjct
@@ -1960,7 +1972,7 @@ end subroutine
     do while(.true.)
 
       call MPI_BARRIER(MPI_COMM_WORLD,ierr);time3=MPI_Wtime()
-      call rkck(y,x,h,ytemp,yerr)
+      call rkck(y,x,h,ytemp,yerr,dpdt)
       !call rk2(y,x,h,ytemp,yerr)
       time4=MPI_Wtime()
       timeH=timeH+time4-time3
@@ -2049,7 +2061,7 @@ end subroutine
     do while(.true.)
 
       call MPI_BARRIER(MPI_COMM_WORLD,ierr);time3=MPI_Wtime()
-      call rkck(y,x,h,ytemp,yerr)
+      call rkck(y,x,h,ytemp,yerr, dpdt)
       !call rk2(y,x,h,ytemp,yerr)
       time4=MPI_Wtime()
       timeH=timeH+time4-time3
@@ -2122,13 +2134,13 @@ end subroutine
   end subroutine
 
   !---------------------------------------------------------------------
-  subroutine rkck(y,x,h,yout,yerr)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
+  subroutine rkck(y,x,h,yout,yerr,dpdt)!,,st_leafmtxp,st_bemv,st_ctl)!,derivs)
     !---------------------------------------------------------------------
     use m_HACApK_solve
     use m_HACApK_base
     use m_HACApK_use
     implicit none
-    real(8),intent(in)::y(:),x,h
+    real(8),intent(in)::y(:),x,h,dpdt(:)
     real(8),intent(out)::yout(:),yerr(:)
     integer ::i
     real(8) :: ak1(3*NCELL),ak2(3*NCELL),ak3(3*NCELL),ak4(3*NCELL),ak5(3*NCELL),ak6(3*NCELL),ytemp(3*NCELL)
@@ -2143,7 +2155,7 @@ end subroutine
     parameter (DC4=C4-13525./55296.,DC5=-277./14336.,DC6=C6-.25)
     !ierr=0
     !     -- 1st step --
-    call derivs(x, y, ak1)!,,st_leafmtxp,st_bemv,st_ctl)
+    call derivs(x, y, ak1, dpdt)!,,st_leafmtxp,st_bemv,st_ctl)
     !$omp parallel do
     do i=1,size(y)
       ytemp(i)=y(i)+B21*h*ak1(i)
@@ -2151,7 +2163,7 @@ end subroutine
     !$omp end parallel do
 
     !    -- 2nd step --
-    call derivs(x+a2*h, ytemp, ak2)!,,st_leafmtxp,st_bemv,st_ctl)
+    call derivs(x+a2*h, ytemp, ak2, dpdt)!,,st_leafmtxp,st_bemv,st_ctl)
     !$omp parallel do
     do i=1,size(y)
       ytemp(i)=y(i)+h*(B31*ak1(i)+B32*ak2(i))
@@ -2159,7 +2171,7 @@ end subroutine
     !$omp end parallel do
 
     !     -- 3rd step --
-    call derivs(x+a3*h, ytemp, ak3)!,,st_leafmtxp,st_bemv,st_ctl)
+    call derivs(x+a3*h, ytemp, ak3, dpdt)!,,st_leafmtxp,st_bemv,st_ctl)
     !$omp parallel do
     do i=1,size(y)
       ytemp(i)=y(i)+h*(B41*ak1(i)+B42*ak2(i)+B43*ak3(i))
@@ -2167,7 +2179,7 @@ end subroutine
     !$omp end parallel do
 
     !     -- 4th step --
-    call derivs(x+a4*h, ytemp, ak4)!,,st_leafmtxp,st_bemv,st_ctl)
+    call derivs(x+a4*h, ytemp, ak4, dpdt)!,,st_leafmtxp,st_bemv,st_ctl)
     !$omp parallel do
     do i=1,size(y)
       ytemp(i)=y(i)+h*(B51*ak1(i)+B52*ak2(i)+B53*ak3(i)+ B54*ak4(i))
@@ -2175,7 +2187,7 @@ end subroutine
     !$omp end parallel do
 
     !     -- 5th step --
-    call derivs(x+a5*h, ytemp, ak5)!,,st_leafmtxp,st_bemv,st_ctl)
+    call derivs(x+a5*h, ytemp, ak5, dpdt)!,,st_leafmtxp,st_bemv,st_ctl)
     !$omp parallel do
     do i=1,size(y)
       ytemp(i)=y(i)+h*(B61*ak1(i)+B62*ak2(i)+B63*ak3(i)+B64*ak4(i)+B65*ak5(i))
@@ -2183,7 +2195,7 @@ end subroutine
     !$omp end parallel do
 
     !     -- 6th step --
-    call derivs(x+a6*h, ytemp, ak6)!,,st_leafmtxp,st_bemv,st_ctl)
+    call derivs(x+a6*h, ytemp, ak6, dpdt)!,,st_leafmtxp,st_bemv,st_ctl)
     !$omp parallel do
     do i=1,size(y)
       yout(i)=y(i)+h*(C1*ak1(i)+C3*ak3(i)+C4*ak4(i)+ C6*ak6(i))
@@ -2200,35 +2212,35 @@ end subroutine
     return
   end subroutine
 
-  subroutine rk2(y,x,h,yout,yerr)
-    implicit none
-    real(8),intent(in)::y(:),x,h
-    real(8),intent(out)::yout(:),yerr(:)
-    real(8)::ytemp(3*NCELL),y1(3*NCELL),ak1(3*NCELL),ak2(3*NCELL)
-    integer::i
+  ! subroutine rk2(y,x,h,yout,yerr)
+  !   implicit none
+  !   real(8),intent(in)::y(:),x,h
+  !   real(8),intent(out)::yout(:),yerr(:)
+  !   real(8)::ytemp(3*NCELL),y1(3*NCELL),ak1(3*NCELL),ak2(3*NCELL)
+  !   integer::i
 
-    !1st-order solution
-    call derivs(x, y, ak1)
-    !$omp parallel do
-    do i=1,size(y)
-      y1(i)=y(i)+h*ak1(i)
-    end do
+  !   !1st-order solution
+  !   call derivs(x, y, ak1)
+  !   !$omp parallel do
+  !   do i=1,size(y)
+  !     y1(i)=y(i)+h*ak1(i)
+  !   end do
 
-    !2nd-order solution
-    !$omp parallel do
-    do i=1,size(y)
-      ytemp(i)=y(i)+0.5d0*h*ak1(i)
-    end do
-    call derivs(x+0.5*h, ytemp, ak2)
+  !   !2nd-order solution
+  !   !$omp parallel do
+  !   do i=1,size(y)
+  !     ytemp(i)=y(i)+0.5d0*h*ak1(i)
+  !   end do
+  !   call derivs(x+0.5*h, ytemp, ak2)
 
-    !$omp parallel do
-    do i=1,size(y)
-      yout(i)=y(i)+h*ak2(i)
-      yerr(i)=yout(i)-y1(i)
-    end do
+  !   !$omp parallel do
+  !   do i=1,size(y)
+  !     yout(i)=y(i)+h*ak2(i)
+  !     yerr(i)=yout(i)-y1(i)
+  !   end do
 
-    return
-  end subroutine
+  !   return
+  ! end subroutine
 
   subroutine forward_check()
     implicit none
@@ -2349,8 +2361,12 @@ end subroutine
     stop
   end subroutine
 
-  subroutine pressure_diffusion()
+  subroutine pressure_diffusion(dpdt)
     implicit none
+    real(8)::pfo(ncell)
+    real(8),intent(out)::dpdt(:)
+
+    pfo=pf
     if(param_diff%permev) then
       do i=1,ncell
         tmp=-vel(i)/param_diff%kL*(param_diff%kp(i)-param_diff%kpmax)-(param_diff%kp(i)-param_diff%kpmin)/param_diff%kT
@@ -2401,6 +2417,7 @@ end subroutine
     do i=1,ncell
       i_=st_sum%lodc(i)
       pf(i)=pfG(i_)
+      dpdt(i)=(pf(i)-pfo(i))/dtdid
       sigma(i)=sigmat(i)-pf(i)
       if(limitsigma) then
         if(sigma(i)<minsig) sigma(i)=minsig
@@ -2408,6 +2425,7 @@ end subroutine
       end if
       y(3*i)=sigma(i)
     end do
+    !write(*,*) maxval(dpdt)
     return
   end subroutine
 
@@ -2814,14 +2832,10 @@ end subroutine
       read(pvalue,*) pressurediffusion
     case('network')
       read(pvalue,*) param_diff%network
+    case('network_file')
+      read(pvalue,'(a)') param_diff%network_file
     case('permsigma')
       read(pvalue,*) param_diff%permsigma
-    case('n1')
-      read(pvalue,*) param_diff%n1
-    case('i1')
-      read(pvalue,*) param_diff%i1
-    case('i2')
-      read(pvalue,*) param_diff%i2
     case('bingham')
       read(pvalue,*) bingham
     case('meshisinmeter')
