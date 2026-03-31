@@ -55,7 +55,8 @@ program main
 
   !variables
   real(8),allocatable::psi(:),vel(:),tau(:),sigma(:),disp(:),mu(:),rupt(:),idisp(:),velp(:),pfhyd(:),cslip(:)
-  real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:),pf(:),sigmae(:),ks(:),qflow(:),kp(:),phi(:)
+  !BERG2: Added dpdt var to store dpdt at all locations
+  real(8),allocatable::taus(:),taud(:),vels(:),veld(:),disps(:),dispd(:),rake(:),pf(:),sigmae(:),ks(:),qflow(:),kp(:),phi(:),dpdt(:)
 
   real(8),allocatable::rdata(:),qvals(:,:),qtimes(:,:)
   integer,allocatable::iwell(:),jwell(:),kleng(:)
@@ -72,6 +73,10 @@ program main
   real(8)::r,vpl,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dummy(10)
   real(8)::ds0,amp,mui,velinit,phinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,q0,tinj,ztop
   real(8)::kpmax,kpmin,kp0,kT,kL,s0,ksinit,dtout,pfinit,pbc,pbcl,pbcr,lf,eta,beta,phi0,str,cc,td,cd
+  
+  !BERG2: Allocate my own dilatancy vars
+  real(8)::Ld,eps_d,beta_d
+  integer, parameter :: NV = 5
 
   !random_number
   integer,allocatable::seed(:)
@@ -247,6 +252,14 @@ program main
       read (pvalue,*) kL
     case('kT')
       read (pvalue,*) kT
+    !BERG2: set my own vars
+    case('Ld')
+      read (pvalue,*) Ld
+    case('eps_d')
+      read (pvalue,*) eps_d
+    case('beta_d')
+      read (pvalue,*) beta_d
+    !End allocation of my own vars
     case('cd')
       read (pvalue,*) cd
     case('td')
@@ -402,6 +415,9 @@ program main
   allocate(psi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg),cslip(NCELLg),pf(NCELLg),sigmae(NCELLg),pfhyd(NCELLg))
   psi=0d0;vel=0d0;tau=0d0;sigma=0d0;disp=0d0
   allocate(a(NCELLg),b(NCELLg),dc(NCELLg),f0(NCELLg),taudot(NCELLg),sigdot(NCELLg),ks(NCELLg),kp(NCELLg),qflow(NCELLg),kLv(NCELLg),kTv(NCELLg),phi(NCELLg))
+  !BERG2: Allocate arrays
+  allocate(dpdt(NCELLg))
+  dpdt = 0d0
   taudot=0d0;sigdot=0d0;ks=0d0
 
   ! case('3dn','3dh','3dnf','3dhf')
@@ -427,7 +443,7 @@ program main
   !   allocate(phi(NCELLg),vel(NCELLg),tau(NCELLg),sigma(NCELLg),disp(NCELLg),mu(NCELLg),idisp(NCELLg),velp(NCELLg))
   end select
 
-  allocate(y(4*NCELL),yscal(4*NCELL),dydx(4*NCELL),yg(4*NCELLg))
+  allocate(y(NV*NCELL),yscal(NV*NCELL),dydx(NV*NCELL),yg(NV*NCELLg))
 
   !mesh generation
   if(my_rank==0) write(*,*) 'Generating mesh'
@@ -719,10 +735,12 @@ tout=dtout*365*24*60*60
     !$omp parallel do
     do i=1,NCELL
       i_=vars(i)
-      y(4*i-3) = psi(i_)
-      y(4*i-2) = tau(i_)
-      y(4*i-1)=sigmae(i_)
-      y(4*i) = ks(i_)
+      y(NV*i-3) = psi(i_)
+      y(NV*i-2) = tau(i_)
+      y(NV*i-1)=sigmae(i_)
+      y(NV*i) = ks(i_)
+      !BERG2: Adding in phi var and changed indexing of y vars
+      y(NV*i) = phi(i_)
     end do
       !$omp end parallel do
     !call MPI_SCATTERv(yG,3*rcounts,3*displs,MPI_REAL8,y,3*NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
@@ -740,20 +758,22 @@ tout=dtout*365*24*60*60
     !update state and stress with explicit solver
     !write(*,*) vel(1489),y(1489),sigmae(1489)
     call rkqs(y,dydx,x,dttry,eps_r,dtdid,dtnxt,errmax_gb,errmaxloc)
-    call MPI_ALLGATHERv(y,4*NCELL,MPI_REAL8,yG,4*rcounts,4*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
+    call MPI_ALLGATHERv(y,NV*NCELL,MPI_REAL8,yG,NV*rcounts,NV*displs,MPI_REAL8,MPI_COMM_WORLD,ierr)
 
     do i=1,NCELLg
-      psi(i) = yg(4*i-3)
-      tau(i) = yg(4*i-2)
-      sigmae(i)=max(yg(4*i-1), minsig)
+    ! BERG2: Changed indices to match
+      psi(i) = yg(NV*i-3)
+      tau(i) = yg(NV*i-2)
+      sigmae(i)=max(yg(NV*i-1), minsig)
       !sigma(i)=sigmainit
       !sigmae(i)=sigma(i)-pf(i)
 
       mu(i)=tau(i)/sigmae(i)
       vel(i)=2*vref*exp(-psi(i)/a(i))*sinh(tau(i)/sigmae(i)/a(i))
       !disp(i)=disp(i)+vel(i)*dtdid*0.5d0
-      sigma(i)=yg(4*i-1)+pf(i)
-      ks(i)=yg(4*i)
+      sigma(i)=yg(NV*i-1)+pf(i)
+      ks(i)=yg(NV*i)
+      phi(i) = yg(NV*i)
     end do
     !write(*,*) maxval(ks)
 
@@ -781,20 +801,21 @@ tout=dtout*365*24*60*60
     !write(*,*) vel(1489),pf(1489),sigmae(1489)
     !$omp parallel do
     do i = 1, NCELLg
-      ! psi(i) = yg(4*i-3)
-      ! tau(i) = yg(4*i-2)
-      yg(4*i-1)=sigma(i)-pf(i)
-      sigmae(i)=max(yg(4*i-1), minsig)
+      ! psi(i) = yg(NV*i-3)
+      ! tau(i) = yg(NV*i-2)
+      yg(NV*i-1)=sigma(i)-pf(i)
+      sigmae(i)=max(yg(NV*i-1), minsig)
       ! ks(i)=yg(4*i)
       disp(i)=disp(i)+vel(i)*dtdid*0.5d0 !2nd order
       vel(i)= 2*vref*exp(-psi(i)/a(i))*sinh(tau(i)/sigmae(i)/a(i))
       disp(i)=disp(i)+vel(i)*dtdid*0.5d0
       mu(i)=tau(i)/sigmae(i)
       kp(i)=ks(i)*exp(-sigmae(i)/s0)    
+      !BERG2: No need to update phi instantaneously? becaues it only updates in the beuler step
     end do
     !$omp end parallel do
     !write(*,*) vel(1489),pf(1489),sigmae(1489)
-    call MPI_SCATTERv(yG,4*rcounts,4*displs,MPI_REAL8,y,4*NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
+    call MPI_SCATTERv(yG,NV*rcounts,NV*displs,MPI_REAL8,y,NV*NCELL,MPI_REAL8,0,MPI_COMM_WORLD,ierr)
 
 
     mvelG=maxval(vel)
@@ -1681,10 +1702,11 @@ end subroutine coordinate3ddip
       !$omp parallel do
       do i = 1, NCELL
         i_=vars(i)
-        psitmp(i) = y(4*i-3)
-        tautmp(i) = y(4*i-2)
-        sigmaetmp(i) = max(y(4*i-1),minsig)
-        kstmp(i)=y(4*i)
+        psitmp(i) = y(NV*i-4)
+        tautmp(i) = y(NV*i-3)
+        sigmaetmp(i) = max(y(NV*i-2),minsig)
+        kstmp(i)=y(NV*i-1)
+        phitmp(i)=y(NV*i)
         veltmp(i) = 2*vref*dexp(-psitmp(i)/a(i_))*dsinh(tautmp(i)/sigmaetmp(i)/a(i_))
         !if(abs(i-ncellg/2)<5) write(*,*) psitmp(i)
       enddo
@@ -1739,10 +1761,11 @@ end subroutine coordinate3ddip
         !if(i==NCELL/2) dtaudt=dtaudt-tautmp(i)/sigmatmp(i)*q0
         dtaudt=dtaudt/(1d0+0.5d0*rigid/vs*dvdtau)
   
-        dydx(4*i-3)=dpsidt
-        dydx(4*i-2)=dtaudt
-        dydx(4*i-1)=dsigdt
-        dydx(4*i)=dksdt
+        dydx(NV*i-4)=dpsidt
+        dydx(NV*i-3)=dtaudt
+        dydx(NV*i-2)=dsigdt
+        dydx(NV*i-1)=dksdt
+        dydx(NV*i)=dphidt !BERG2: Setting equation
         !dydx(4*i)=0d0
        ! if(i==1489) write(*,*) dtaudt,dsigdt
         !call deriv_d(sum_gs(i),sum_gn(i),phitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
@@ -1796,7 +1819,7 @@ end subroutine coordinate3ddip
         !   end if!errmax=errmax+yerr(3*i-2)**2
         ! end do
   
-        do i=1,4*ncell
+        do i=1,NV*ncell
           if(abs(yerr(i)/ytemp(i))/eps>errmax) then
             errmax=abs(yerr(i)/ytemp(i))/eps
             errmaxloc=i
@@ -1857,7 +1880,7 @@ end subroutine coordinate3ddip
     !type(st_HACApK_leafmtxp),intent(in) :: st_leafmtxp
     !type(st_HACApK_calc_entry) :: st_bemv
     integer ::i
-    real(8) :: ak1(4*NCELL),ak2(4*NCELL),ak3(4*NCELL),ak4(4*NCELL),ak5(4*NCELL),ak6(4*NCELL),ytemp(4*NCELL)
+    real(8) :: ak1(NV*NCELL),ak2(NV*NCELL),ak3(NV*NCELL),ak4(NV*NCELL),ak5(NV*NCELL),ak6(NV*NCELL),ytemp(NV*NCELL)
     real(8) :: A2,A3,A4,A5,A6,B21,B31,B32,B41,B42,B43,B51
     real(8) :: B52,B53,B54,B61,B62,B63,B64,B65,C1,C3,C4,C6,DC1,DC3,DC4,DC5,DC6
     PARAMETER (A2=.2d0,A3=.3d0,A4=.6d0,A5=1.d0,A6=.875d0,B21=.2d0,B31=3./40.)

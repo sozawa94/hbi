@@ -4,4 +4,6 @@ module mod_constant
  real(8)::pois=0.25d0
  real(8)::rigid=32.04d0
  real(8)::vs=3.464d0
+ real(8),parameter::vp=3.97d0
+ real(8),parameter::shm_g=1.0d0
 end module

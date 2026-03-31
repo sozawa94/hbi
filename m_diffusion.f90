@@ -3,12 +3,13 @@ use mod_constant
   type :: t_params
   integer::nwell,nn,npoint,n1,i1,i2,nfault,nconnect
   integer,pointer::kleng(:),iwell(:),jwell(:),connect(:,:),ns(:)
-  real(8)::phi0,beta,eta,sigmastar,kp0,kpmin,kpmax,kL,kT,pinj,pbcl,pbcr,pbct,pbcb,qinj,q0
+  real(8)::phi0,beta,eta,sigmastar,kp0,kpmin,kpmax,kL,kT,pinj,pbcl,pbcr,pbct,pbcb,qinj,q0, Ld, eps_d, beta_phi
   real(8)::qbcl,qbcr,qbct,qbcb
   real(8)::tinj=1d5
-  real(8),pointer::kp(:),kpG(:),qtimes(:),qvals(:,:),pfhyd(:,:),phi(:),phiG(:)
+  real(8),pointer::kp(:),kpG(:),qtimes(:),qvals(:,:),pfhyd(:,:),phi(:),phiG(:), phidot(:),phiDotG(:) !BERG: Allocated phidot
   character(128)::bc,bcl,bcr,bct,bcb,setting,injection,injection_file,network_file
-  logical::injectionfromfile,switch,permev,permsigma,network
+  !BERG: Added dilatancy flag here
+  logical::injectionfromfile,switch,permev,permsigma,network,dilatancy
   end type t_params
 contains
 subroutine setup_network(param_diff,my_rank)
@@ -417,7 +418,8 @@ end subroutine
     integer,intent(in)::imax,jmax
     real(8),intent(inout)::pf(:),dtnxt
     real(8),intent(in)::h,time,ds0
-    real(8)::dpf(imax*jmax),pfd(imax,jmax),pfnew(imax,jmax),sigmae(imax*jmax),cdiff(imax,jmax),err,err0,adpf(imax*jmax),pfhydd(imax,jmax)
+    ! BERG: Allocated new phidot_2d variables
+    real(8)::dpf(imax*jmax),pfd(imax,jmax),pfnew(imax,jmax),sigmae(imax*jmax),cdiff(imax,jmax),err,err0,adpf(imax*jmax),pfhydd(imax,jmax), phiDot_2d(imax,jmax),phitot(imax,jmax)
     real(8)::cc,str(imax,jmax),x
     real(8),parameter::dpth=0.1,tny=1d0
     type(t_params):: param_diff
@@ -431,8 +433,11 @@ end subroutine
       j=l-(i-1)*jmax
       pfd(i,j)=pf(l)
       !pfhydd(i,j)=pfhyd(l)
-      cc=param_diff%eta*param_diff%beta*param_diff%phiG(l)
+      cc=param_diff%eta*param_diff%beta !*param_diff%phiG(l) BERG: took out phiG bc not const.
       str(i,j)=param_diff%beta*param_diff%phiG(l)
+      phiDot_2d(i,j) = param_diff%phiDotG(l)
+      phitot(i,j) = param_diff%phiG(l)
+      
       cdiff(i,j)=param_diff%kpG(l)/cc*1d-6 !Pa-->MPa
       !cdiff(i,j)=kpmax/cc*1d-6 !Pa-->MPa
       !write(*,*) l_,i,j
@@ -440,7 +445,7 @@ end subroutine
 
     err=0d0
 
-    call Beuler2d(imax,jmax,ds0,pfd,cdiff,str,param_diff,h,pfnew,time,niter)!,pfhydd)
+    call Beuler2d(imax,jmax,ds0,pfd,cdiff,phitot,phiDot_2d,str,param_diff,h,pfnew,time,niter)!,pfhydd)
 
     do l=1,imax*jmax
       i=(l-1)/jmax+1
@@ -473,11 +478,11 @@ end subroutine
     return
   end subroutine
 
-  subroutine Beuler2d(imax,jmax,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter)
+  subroutine Beuler2d(imax,jmax,ds0,pf,cdiff,phitot, phiDot_2d,str,param_diff,h,pfnew,time,niter)
     implicit none
     integer,parameter::itermax=1000
     integer,intent(in)::imax,jmax
-    real(8),intent(in)::pf(:,:),h,cdiff(:,:),str(:,:),time,ds0!,pfhyd(:,:)
+    real(8),intent(in)::pf(:,:),h,cdiff(:,:),phitot(:,:),phiDot_2d(:,:),str(:,:),time,ds0!,pfhyd(:,:)
     real(8),intent(out)::pfnew(:,:)
     integer,intent(out)::niter
     real(8)::Dxx(imax,jmax,3),Dyy(imax,jmax,3),Amx(imax,jmax,3),Amy(imax,jmax,3),mx(imax,jmax),my(imax,jmax)
@@ -519,7 +524,14 @@ end subroutine
         Dxx(i,jmax,2)=-Dxx(i,jmax,3)
         end select
     end do
-
+    
+    ! BERG: Incorporate phi scaling multiplying the D matrix
+    do i = 1, imax
+        do j = 1, jmax
+            Dyy(i,j,1:3) = Dyy(i,j,1:3)/phitot(i,j)
+        end do
+    end do
+    
     Dxx=Dxx/ds0/ds0
 
     Dyy=0d0
@@ -550,6 +562,13 @@ end subroutine
         Dyy(imax,j,3)=-cdiff(imax,j)/2-cdiff(imax-1,j)/2
         Dyy(imax,j,2)=-Dyy(imax,j,3)
         end select
+    end do
+
+    ! BERG: Incorporate phi scaling multiplying the D matrix
+    do i = 1, imax
+        do j = 1, jmax
+            Dyy(i,j,1:3) = Dyy(i,j,1:3)/phitot(i,j)
+        end do
     end do
 
     Dyy=Dyy/ds0/ds0
@@ -612,7 +631,9 @@ end subroutine
         SAT(imax-1,:)=-0.5*cdiff(imax,:)/ds0/ds0*param_diff%pbcr*h*2
     end select
 
-    b=pf-SAT!-pfhyd
+    !BERG: Added in inelastic phi contribution via phidot
+    b=pf-SAT-h*(phiDot_2d/str) !-pfhyd
+    
     !write(*,*) param_diff%setting
     if(param_diff%injectionfromfile) then
       qtmp=0d0

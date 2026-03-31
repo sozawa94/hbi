@@ -76,6 +76,8 @@ program main
   real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit,pfinit,tmp
   real(8)::r,vpl0,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dtout_co,dtout_inter,dummy(10),tdil,cdil,nflow,MCNS,vref
   real(8)::cdiff,pf0,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo,convangle,velth,ztop
+  !BERG: Allocate my own dilatancy vars
+  real(8)::Ld, eps_d, beta_phi
 
   !temporal variable
 
@@ -166,6 +168,10 @@ program main
   param_diff%bcl='Neumann';param_diff%bcr='Neumann';param_diff%bct='Neumann';param_diff%bcb='Neumann'
   param_diff%injection='none'
   param_diff%tinj=1e8;param_diff%permev=.false.;param_diff%permsigma=.false.;param_diff%injectionfromfile=.false.
+  param_diff%dilatancy=.false.
+  param_diff%Ld=1
+  param_diff%eps_d=2e-4
+  param_diff%beta_phi=1e-8
 
   !read input file
   call read_inputfile()
@@ -269,8 +275,8 @@ program main
   !allocate(xcol(NCELLg),ycol(NCELLg),zcol(NCELLg),ds(NCELLg),dsl(NCELLg),dsd(NCELLg))
   allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),f0g(NCELLg),etavg(NCELLg),etabg(NCELLg),vcg(NCELLg),vwg(NCELLg),fwg(NCELLg))
   allocate(taug(NCELLg),sigmag(NCELLg),pfG(Ncellg),velG(NCELLg),rake(NCELLg),cslipG(NCELLg),velnG(NCELLg),tmparray(NCELLg))
-  allocate(taudotg(NCELLg),sigdotg(NCELLg),vplg(NCELLg),param_diff%kpG(NCELLg),param_diff%phiG(NCELLg))
-  param_diff%kpG=param_diff%kp0;param_diff%phiG=param_diff%phi0;pfG=pfinit
+  allocate(taudotg(NCELLg),sigdotg(NCELLg),vplg(NCELLg),param_diff%kpG(NCELLg),param_diff%phiG(NCELLg),param_diff%phiDotG(NCELLg))
+  param_diff%kpG=param_diff%kp0;param_diff%phiG=param_diff%phi0;pfG=pfinit;param_diff%phiDotG=0d0
 
   st_bemv%xcol=0d0;st_bemv%ycol=0d0;st_bemv%zcol=0d0;st_bemv%ds=0d0
   st_bemv%w=ds0
@@ -440,6 +446,13 @@ program main
         vplg(:)=values(:,k)
       case('pf')
         pfg(:)=values(:,k)
+      !BERG: set my own vars
+      case('Ld')
+        read (pvalue,*) Ld
+      case('eps_d')
+        read (pvalue,*) eps_d
+      case('beta_phi')
+        read (pvalue,*) beta_phi
       end select
     end do
 
@@ -534,6 +547,10 @@ program main
   allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),vc(NCELL),vw(NCELL),fw(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL),vpl(NCELL))
   taudot=0d0;sigdot=0d0
   allocate(param_diff%kp(ncell))
+  !BERG: Allocate phi and dpdt arrays
+  allocate(param_diff%phidot(NCELL), param_diff%phi(NCELL))
+  param_diff%phidot = 0d0
+  param_diff%phi = param_diff%phi0 ! Initialize local phi array
 
    
 
@@ -733,6 +750,19 @@ program main
         param_diff%kp(i)=rdata(m-NCELLg+i_)
       end do
     end if
+    
+    if(param_diff%dilatancy) then
+      write(fname,'("output/phi",i0,".dat")') number
+      open(nout(1),file=fname,form='unformatted',access='stream')
+      read(nout(1)) rdata
+      close(nout(1))
+      
+      do i=1,NCELL
+        i_=st_sum%lodc(i)
+        param_diff%kp(i)=rdata(m-NCELLg+i_)
+      end do
+    end if
+    
     !write(*,*) my_rank,m
 
     psi=a*dlog(2*vref/vel*sinh(tau/sigma/a))
@@ -780,6 +810,16 @@ program main
       nout(11)=nout(10)+1
       write(fname,'("output/kp",i0,".dat")') number
       open(nout(10),file=fname,form='unformatted',access='stream',status='replace',position='append')
+    end if
+    
+    if(param_diff%permev) then
+        if(param_diff%permev) then
+            nout(12)=nout(11)+1
+        else
+            nout(12)=nout(10)+1
+        end if
+      write(fname,'("output/phi",i0,".dat")') number
+      open(nout(12),file=fname,form='unformatted',access='stream',status='replace',position='append')
     end if
 
     rankloc=-1
@@ -940,7 +980,18 @@ program main
           write(fname,'("output/kp",i0,".dat")') number
           open(nout(11),file=fname,form='unformatted',access='stream',status='replace')
         end if
-      end if      
+      end if  
+      
+      if(param_diff%dilatancy) then
+         ! Assumes nout(11) was set, or nout(10) if permev=F
+         if(param_diff%permev) then
+            nout(12)=nout(11)+1
+         else
+            nout(12)=nout(10)+1
+         end if
+         write(fname,'("output/phi",i0,".dat")') number
+         open(nout(12),file=fname,form='unformatted',access='stream',status='replace')
+      end if
 
       write(fname,'("output/time",i0,".dat")') number
       open(50,file=fname)
@@ -1378,6 +1429,9 @@ contains
         if(param_diff%permev) then
           write(nout(11)) param_diff%kpG
         end if
+      end if
+      if(param_diff%dilatancy) then
+          write(nout(12)) param_diff%phiG
       end if
     end if
 
@@ -2368,17 +2422,29 @@ end subroutine
 
     pfo=pf
     if(param_diff%permev) then
-      do i=1,ncell
-        tmp=-vel(i)/param_diff%kL*(param_diff%kp(i)-param_diff%kpmax)-(param_diff%kp(i)-param_diff%kpmin)/param_diff%kT
-        param_diff%kp(i)=param_diff%kp(i)+dtdid*tmp
-      end do
+        ! BERG: Dilatancy power law
+        if(param_diff%dilatancy) then
+          do i=1,ncell
+            param_diff%kp(i)=0
+            !param_diff%kp0 * (param_diff%phi(i) / param_diff%phi0)**3
+          end do
+        else
+        !Rate-based law
+          do i=1,ncell
+            tmp=-vel(i)/param_diff%kL*(param_diff%kp(i)-param_diff%kpmax)-(param_diff%kp(i)-param_diff%kpmin)/param_diff%kT
+            param_diff%kp(i)=param_diff%kp(i)+dtdid*tmp
+          end do
+        end if
+      
+      ! Gather kp to global
       call MPI_GATHERv(param_diff%kp,NCELL,MPI_REAL8,tmparray,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)   
       do i=1, NCELLg
         i_=listG(i)
         param_diff%kpG(i_)=tmparray(i)
       end do
+    
     end if
-
+    ! Diffusion solver
     call MPI_GATHERv(pf,NCELL,MPI_REAL8,tmparray,rcounts,displs,MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
     if(my_rank==0) then
     do i=1, NCELLg
@@ -2804,6 +2870,17 @@ end subroutine
       read(pvalue,*) param_diff%injectionfromfile
     case('injection_file')
       read(pvalue,'(a)') param_diff%injection_file
+    !BERG: Adding my dilatancy parameters reading in
+    case('dilatancy')
+      read(pvalue,*) param_diff%dilatancy
+      read(pvalue,*) dilatancy
+    case('Ld')
+      read(pvalue,*) param_diff%Ld
+    case('eps_d')
+      read(pvalue,*) param_diff%eps_d
+    case('beta_phi')
+      read(pvalue,*) param_diff%beta_phi
+    !End berg  
     case('restart')
       read(pvalue,*) restart
     case('parameterfromfile')
