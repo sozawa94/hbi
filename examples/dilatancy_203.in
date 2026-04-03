@@ -1,0 +1,64 @@
+! Dilatancy test case for verification with dilatancy_tests.ipynb
+! Problem: 3D planar fault with fluid injection and dilatancy
+!
+! Run twice:
+!   1) With dilatancy T  (this file, filenumber 203)
+!   2) With dilatancy F  (change filenumber to 204 and set dilatancy F)
+!
+! The notebook compares the two runs and verifies the ODE integration.
+
+filenumber 203
+problem 3dp
+
+! Grid — 40x40 keeps runtime short while giving enough resolution
+imax 40
+jmax 40
+ds 0.05
+
+! Time stepping
+nstep 50
+interval 1
+tmax 3.0
+dtout 0.05
+
+! Rate-and-state friction
+! a < b → velocity-weakening (earthquake-prone)
+a 0.015
+b 0.020
+dc 0.0005
+f0 0.6
+vref 1e-6
+muinit 0.55
+sigmainit 50.0
+velinit 1e-9
+backslip T
+vpl 0d0
+
+! Pressure diffusion with central injection
+pressurediffusion T
+injection flowrate
+qinj 5e-4
+tinj 3.0
+
+! Fluid / pore properties
+phi 0.1
+beta 5e-8
+eta 0.89e-3
+kp 1e-15
+
+! Permeability evolution
+permev T
+kpmin 1e-16
+kpmax 1e-13
+kT 1e15
+kL 1e-3
+
+! Dilatancy — the key parameters under test
+dilatancy T
+dilatancy_plastic  T
+dilatancy_elastic  T
+dilatancy_viscous  T
+Ld 1.0
+eps_d 2e-4
+beta_phi 1e-8
+eta_s 1e12

@@ -1,0 +1,8 @@
+# Export the module function if it exists
+[[ $(type -t module) == "function" ]] && export -f module
+
+# Find available port to run server on
+export port=$(find_port "$host")
+
+# Create password for authentication
+export password=$(create_passwd 16)

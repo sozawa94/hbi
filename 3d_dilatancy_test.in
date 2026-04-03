@@ -1,0 +1,55 @@
+! Minimal dilatancy test case
+! Based on 3dinjection_permev.in but with dilatancy enabled
+! Uses the simplest possible setup: small grid, flowrate injection, backslip
+
+filenumber 2000
+problem 3dp
+
+! Grid: small to keep runtime fast
+imax 20
+jmax 20
+ds 0.05
+
+! Time stepping
+nstep 50
+interval 1
+tmax 2.0
+dtout 0.1
+
+! Rate-and-state friction
+a 0.02
+b 0.015
+dc 0.0005
+f0 0.6
+muinit 0.57
+sigmainit 30.0
+velinit 1e-12
+backslip T
+vpl 0d0
+
+! Pressure diffusion
+pressurediffusion T
+injection flowrate
+qinj 3e-4
+tinj 3.0
+
+! Fluid properties
+phi 0.1
+beta 5e-8
+eta 0.89e-3
+kp 1e-15
+
+! Boundary conditions (Neumann = no-flow, the default)
+
+! Permeability evolution via dilatancy (not rate-based)
+permev T
+kpmin 1e-16
+kpmax 1e-13
+kT 1e15
+kL 1e-3
+
+! DILATANCY
+dilatancy T
+Ld 1.0
+eps_d 2e-4
+beta_phi 1e-8

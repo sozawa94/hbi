@@ -1,0 +1,44 @@
+! Dilatancy test: BASELINE (no dilatancy)
+! Identical to dilatancy_203.in except dilatancy is OFF
+
+filenumber 204
+problem 3dp
+
+imax 40
+jmax 40
+ds 0.05
+
+nstep 50
+interval 1
+tmax 3.0
+dtout 0.05
+
+a 0.015
+b 0.020
+dc 0.0005
+f0 0.6
+vref 1e-6
+muinit 0.55
+sigmainit 50.0
+velinit 1e-9
+backslip T
+vpl 0d0
+
+pressurediffusion T
+injection flowrate
+qinj 5e-4
+tinj 3.0
+
+phi 0.1
+beta 5e-8
+eta 0.89e-3
+kp 1e-15
+
+permev T
+kpmin 1e-16
+kpmax 1e-13
+kT 1e15
+kL 1e-3
+
+! Dilatancy OFF
+dilatancy F

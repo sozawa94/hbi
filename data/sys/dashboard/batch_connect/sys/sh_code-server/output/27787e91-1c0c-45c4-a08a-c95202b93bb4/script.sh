@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+# load modules
+module reset
+module load system git # avoid warnings about git version <= 2
+module load code-server
+
+# execute custom pre-exec commands
+
+# create server configuration
+CODE_SERVER_DATAROOT="$HOME/.local/share/code-server"
+CODE_SERVER_USER_DIR="$CODE_SERVER_DATAROOT/User"
+mkdir -p "$CODE_SERVER_DATAROOT/extensions"
+
+# expose the password to the server (required)
+export PASSWORD="$password"
+
+# change workspace
+cd $HOME
+
+# set workspace directory
+WORKSPACE_DIR=$HOME
+
+# start server
+code-server \
+    --auth="password" \
+    --bind-addr="0.0.0.0:${port}" \
+    --disable-telemetry \
+    --disable-update-check \
+    --ignore-last-opened \
+    --extensions-dir="$CODE_SERVER_DATAROOT/extensions" \
+    --user-data-dir="$CODE_SERVER_DATAROOT" \
+    "$WORKSPACE_DIR"

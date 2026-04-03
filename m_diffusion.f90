@@ -6,10 +6,14 @@ use mod_constant
   real(8)::phi0,beta,eta,sigmastar,kp0,kpmin,kpmax,kL,kT,pinj,pbcl,pbcr,pbct,pbcb,qinj,q0, Ld, eps_d, beta_phi
   real(8)::qbcl,qbcr,qbct,qbcb
   real(8)::tinj=1d5
-  real(8),pointer::kp(:),kpG(:),qtimes(:),qvals(:,:),pfhyd(:,:),phi(:),phiG(:), phidot(:),phiDotG(:) !BERG: Allocated phidot
+  real(8)::eta_s=1d18            ! bulk viscosity for viscous compaction
+  real(8),pointer::kp(:),kpG(:),qtimes(:),qvals(:,:),pfhyd(:,:),phi(:),phiG(:), phidot(:),phiDotG(:)
   character(128)::bc,bcl,bcr,bct,bcb,setting,injection,injection_file,network_file
-  !BERG: Added dilatancy flag here
-  logical::injectionfromfile,switch,permev,permsigma,network,dilatancy
+  logical::injectionfromfile,switch,permev,permsigma,network
+  logical::dilatancy=.false.           ! master switch (backward compat)
+  logical::dilatancy_plastic=.false. 
+  logical::dilatancy_elastic=.false. 
+  logical::dilatancy_viscous=.false. 
   end type t_params
 contains
 subroutine setup_network(param_diff,my_rank)
@@ -433,8 +437,19 @@ end subroutine
       j=l-(i-1)*jmax
       pfd(i,j)=pf(l)
       !pfhydd(i,j)=pfhyd(l)
+      !BERG: Come back to this
+      if(param_diff%dilatancy_elastic) then
+        str(i,j)=param_diff%beta*param_diff%phiG(l) + param_diff%beta_phi
+        cc=param_diff%eta  ! NOTE: cc no longer includes beta; see cdiff below
+      else
+        str(i,j)=param_diff%beta*param_diff%phiG(l)
+        cc=param_diff%eta*param_diff%beta
+      end if
+      
       cc=param_diff%eta*param_diff%beta !*param_diff%phiG(l) BERG: took out phiG bc not const.
       str(i,j)=param_diff%beta*param_diff%phiG(l)
+      
+      
       phiDot_2d(i,j) = param_diff%phiDotG(l)
       phitot(i,j) = param_diff%phiG(l)
       
@@ -524,11 +539,10 @@ end subroutine
         Dxx(i,jmax,2)=-Dxx(i,jmax,3)
         end select
     end do
-    
-    ! BERG: Incorporate phi scaling multiplying the D matrix
+    !BERG: DOUBLE CHECK MATRIX SCALING
     do i = 1, imax
         do j = 1, jmax
-            Dyy(i,j,1:3) = Dyy(i,j,1:3)/phitot(i,j)
+            Dxx(i,j,1:3) = Dxx(i,j,1:3)/phitot(i,j)
         end do
     end do
     

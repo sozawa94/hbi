@@ -73,7 +73,7 @@ program main
   logical::opening,sorted,bingham,meshisinmeter,pressurediffusion
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw,param2(20)
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meanslip,meanslipG,moment0,mvel,mvelG,etav0,etab0
-  real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit,pfinit,tmp
+  real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit,pfinit,tmp, phimax
   real(8)::r,vpl0,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dtout_co,dtout_inter,dummy(10),tdil,cdil,nflow,MCNS,vref
   real(8)::cdiff,pf0,ds0,amp,mui,velinit,psinit,velmax,maxsig,minsig,v1,dipangle,crake,s,sg,errold,xhypo,yhypo,zhypo,convangle,velth,ztop
   !BERG: Allocate my own dilatancy vars
@@ -168,13 +168,33 @@ program main
   param_diff%bcl='Neumann';param_diff%bcr='Neumann';param_diff%bct='Neumann';param_diff%bcb='Neumann'
   param_diff%injection='none'
   param_diff%tinj=1e8;param_diff%permev=.false.;param_diff%permsigma=.false.;param_diff%injectionfromfile=.false.
+  !BERG: Dilatancy variables
   param_diff%dilatancy=.false.
+  param_diff%dilatancy_plastic=.false.
+  param_diff%dilatancy_elastic=.false.
+  param_diff%dilatancy_viscous=.false.
   param_diff%Ld=1
   param_diff%eps_d=2e-4
   param_diff%beta_phi=1e-8
+  param_diff%eta_s=1d18
 
   !read input file
   call read_inputfile()
+  
+  ! Backward compatibility: if master flag on but no sub-flags, default to plastic only
+  if(param_diff%dilatancy) then
+    if(.not.param_diff%dilatancy_plastic .and. &
+       .not.param_diff%dilatancy_elastic .and. &
+       .not.param_diff%dilatancy_viscous) then
+      param_diff%dilatancy_plastic=.true.
+      if(my_rank==0) write(*,*) 'dilatancy=T with no sub-flags: defaulting to plastic only'
+    end if
+  end if
+  ! If any sub-flag is on, ensure master flag is on
+  if(param_diff%dilatancy_plastic .or. param_diff%dilatancy_elastic .or. param_diff%dilatancy_viscous) then
+    param_diff%dilatancy=.true.
+    dilatancy=.true.
+  end if
 
   !check inconsistency in input parameters
   if(pressurediffusion) then
@@ -193,7 +213,12 @@ program main
 
   tmax=tmax*365*24*3600
   dtout_inter=dtout*365*24*3600
-  cdiff=1e-6*param_diff%kp0/param_diff%eta/param_diff%beta/param_diff%phi0
+  !cdiff=1e-6*param_diff%kp0/param_diff%eta/param_diff%beta/param_diff%phi0
+  if(param_diff%dilatancy_elastic) then
+    cdiff=1e-6*param_diff%kp0/param_diff%eta/(param_diff%beta*param_diff%phi0 + param_diff%beta_phi)
+  else
+    cdiff=1e-6*param_diff%kp0/param_diff%eta/param_diff%beta/param_diff%phi0
+  end if
   if(interval==0) interval=Nstep
 
   if(geofile=='default') then
@@ -759,7 +784,7 @@ program main
       
       do i=1,NCELL
         i_=st_sum%lodc(i)
-        param_diff%kp(i)=rdata(m-NCELLg+i_)
+        param_diff%phi(i)=rdata(m-NCELLg+i_)
       end do
     end if
     
@@ -812,7 +837,7 @@ program main
       open(nout(10),file=fname,form='unformatted',access='stream',status='replace',position='append')
     end if
     
-    if(param_diff%permev) then
+    if(param_diff%dilatancy) then
         if(param_diff%permev) then
             nout(12)=nout(11)+1
         else
@@ -1157,7 +1182,68 @@ program main
       sigmat(i)=sigma(i)+pf(i)
     end do
     !$omp end parallel do
+    
+    if(param_diff%dilatancy) then
+      do i=1,ncell
+        param_diff%phidot(i) = 0d0
 
+        ! --- Plastic porosity change ---
+        if(param_diff%dilatancy_plastic) then
+          phimax = (param_diff%phi0 + param_diff%eps_d * log(vel(i)/vref)) &
+                 * exp(-param_diff%beta_phi * sigma(i))
+          param_diff%phidot(i) = param_diff%phidot(i) &
+                 + vel(i)/param_diff%Ld * (phimax - param_diff%phi(i))
+        end if
+
+        ! --- Viscous compaction ---
+        if(param_diff%dilatancy_viscous) then
+          param_diff%phidot(i) = param_diff%phidot(i) &
+                 - sigma(i) * param_diff%phi(i) / param_diff%eta_s
+        end if
+
+        ! NOTE: Elastic dφ/dt = β_φ · dp/dt is NOT included here.
+        ! It is absorbed into the storage coefficient S in the diffusion solver.
+        ! The phidot array only carries INELASTIC porosity rates (plastic + viscous)
+        ! which appear as source terms on the RHS of the pressure equation.
+
+        ! --- Integrate inelastic dφ/dt to update total porosity ---
+        param_diff%phi(i) = param_diff%phi(i) + dtdid * param_diff%phidot(i)
+
+        ! Safety: keep porosity physical
+        !if(param_diff%phi(i) < 1d-6) param_diff%phi(i) = 1d-6
+        !if(param_diff%phi(i) > 0.5d0) param_diff%phi(i) = 0.5d0
+      end do
+
+      ! Gather phi and phidot to global arrays
+      call MPI_GATHERv(param_diff%phi,NCELL,MPI_REAL8,tmparray,rcounts,displs, &
+           MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+      if(my_rank == 0) then
+        do i=1, NCELLg
+          i_=listG(i)
+          param_diff%phiG(i_)=tmparray(i)
+        end do
+      end if
+
+      call MPI_GATHERv(param_diff%phidot,NCELL,MPI_REAL8,tmparray,rcounts,displs, &
+           MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+      if(my_rank == 0) then
+        do i=1, NCELLg
+          i_=listG(i)
+          param_diff%phiDotG(i_)=tmparray(i)
+        end do
+      end if
+    else
+      param_diff%phidot = 0d0
+      call MPI_GATHERv(param_diff%phidot,NCELL,MPI_REAL8,tmparray,rcounts,displs, &
+           MPI_REAL8,st_ctl%lpmd(37),st_ctl%lpmd(31),ierr)
+      if(my_rank == 0) then
+        do i=1, NCELLg
+          i_=listG(i)
+          param_diff%phiDotG(i_)=tmparray(i)
+        end do
+      end if
+    end if
+    
     if(pressurediffusion) then
       call pressure_diffusion(dpdt)
     end if
@@ -2870,17 +2956,24 @@ end subroutine
       read(pvalue,*) param_diff%injectionfromfile
     case('injection_file')
       read(pvalue,'(a)') param_diff%injection_file
-    !BERG: Adding my dilatancy parameters reading in
+    !BERG: Dilatancy parameters
     case('dilatancy')
       read(pvalue,*) param_diff%dilatancy
       read(pvalue,*) dilatancy
+    case('dilatancy_plastic')
+      read(pvalue,*) param_diff%dilatancy_plastic
+    case('dilatancy_elastic')
+      read(pvalue,*) param_diff%dilatancy_elastic
+    case('dilatancy_viscous')
+      read(pvalue,*) param_diff%dilatancy_viscous
     case('Ld')
       read(pvalue,*) param_diff%Ld
     case('eps_d')
       read(pvalue,*) param_diff%eps_d
     case('beta_phi')
       read(pvalue,*) param_diff%beta_phi
-    !End berg  
+    case('eta_s')
+      read(pvalue,*) param_diff%eta_s
     case('restart')
       read(pvalue,*) restart
     case('parameterfromfile')

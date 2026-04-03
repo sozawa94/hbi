@@ -1,0 +1,15 @@
+{
+  "job_name": "sys/dashboard/sys/sh_code-server",
+  "workdir": "/home/users/erberg/ondemand/data/sys/dashboard/batch_connect/sys/sh_code-server/output/f8760395-c392-4989-8452-7a0fc35c15f3",
+  "output_path": "/home/users/erberg/ondemand/data/sys/dashboard/batch_connect/sys/sh_code-server/output/f8760395-c392-4989-8452-7a0fc35c15f3/output.log",
+  "shell_path": "/bin/bash",
+  "queue_name": "dev",
+  "wall_time": 7200,
+  "email_on_started": false,
+  "native": [
+    "-N",
+    "1",
+    "-c",
+    "4"
+  ]
+}

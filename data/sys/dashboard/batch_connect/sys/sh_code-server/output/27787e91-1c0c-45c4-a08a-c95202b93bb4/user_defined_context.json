@@ -1,0 +1,12 @@
+{
+  "sh_modules": "",
+  "sh_preexec": "",
+  "sh_workspace": "$HOME",
+  "auto_queues": "dev",
+  "sh_cpus": "4",
+  "sh_gpus": "",
+  "sh_mem": "",
+  "sh_features": "",
+  "bc_num_hours": "2",
+  "bc_email_on_started": "0"
+}
