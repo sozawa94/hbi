@@ -437,10 +437,10 @@ end subroutine
       j=l-(i-1)*jmax
       pfd(i,j)=pf(l)
       !pfhydd(i,j)=pfhyd(l)
-      !BERG: Come back to this
+      !BERG: Changing cc term
       if(param_diff%dilatancy_elastic) then
         str(i,j)=param_diff%beta*param_diff%phiG(l) + param_diff%beta_phi
-        cc=param_diff%eta  ! NOTE: cc no longer includes beta; see cdiff below
+        cc=param_diff%eta 
       else
         str(i,j)=param_diff%beta*param_diff%phiG(l)
         cc=param_diff%eta*param_diff%beta
@@ -539,7 +539,7 @@ end subroutine
         Dxx(i,jmax,2)=-Dxx(i,jmax,3)
         end select
     end do
-    !BERG: DOUBLE CHECK MATRIX SCALING
+    !BERG: Matrix rescaling
     do i = 1, imax
         do j = 1, jmax
             Dxx(i,j,1:3) = Dxx(i,j,1:3)/phitot(i,j)

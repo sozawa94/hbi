@@ -210,7 +210,7 @@ program main
     stop
     end select
   end if
-
+ 
   tmax=tmax*365*24*3600
   dtout_inter=dtout*365*24*3600
   !cdiff=1e-6*param_diff%kp0/param_diff%eta/param_diff%beta/param_diff%phi0
@@ -1201,12 +1201,11 @@ program main
                  - sigma(i) * param_diff%phi(i) / param_diff%eta_s
         end if
 
-        ! NOTE: Elastic dφ/dt = β_φ · dp/dt is NOT included here.
+        ! NOTE: Elastic is not included here.
         ! It is absorbed into the storage coefficient S in the diffusion solver.
-        ! The phidot array only carries INELASTIC porosity rates (plastic + viscous)
-        ! which appear as source terms on the RHS of the pressure equation.
+        ! The phidot array only carries inelastic porosity rates (plastic + viscous)
 
-        ! --- Integrate inelastic dφ/dt to update total porosity ---
+        ! --- Integrate inelastic phidot to update total porosity ---
         param_diff%phi(i) = param_diff%phi(i) + dtdid * param_diff%phidot(i)
 
         ! Safety: keep porosity physical
@@ -2511,8 +2510,8 @@ end subroutine
         ! BERG: Dilatancy power law
         if(param_diff%dilatancy) then
           do i=1,ncell
-            param_diff%kp(i)=0
-            !param_diff%kp0 * (param_diff%phi(i) / param_diff%phi0)**3
+            !param_diff%kp(i)=0
+            param_diff%kp(i) = param_diff%kp0 * (param_diff%phi(i) / param_diff%phi0)**3
           end do
         else
         !Rate-based law
