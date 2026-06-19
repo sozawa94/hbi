@@ -191,7 +191,7 @@ contains
  elseif(st_ctl%param(61)==3)then
    ndnr_s=st_ctl%lpmd(6); ndnr_e=st_ctl%lpmd(7); ndnr=st_ctl%lpmd(5)
    allocate(st_bemv%ao(nd)); st_bemv%ao(:)=0.0d0; zsqnd=sqrt(real(nd))
-   do il=ndnr_s,ndnr_e
+   do il=max(ndnr_s,1),ndnr_e
      zad=HACApK_entry_ij(il,il,st_bemv)
      st_bemv%ao(il)=1.0d0/dsqrt(zad/zsqnd)
    enddo

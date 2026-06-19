@@ -818,6 +818,7 @@ end function matels2dpa_ij
     real(8)::p(6),Arot(3,3),rr,theta,lambda
 
     lambda=2*pois/(1-2*pois)*rigid
+    !write(*,*) pois
     P1=(/st_bemv%xs1(j),st_bemv%ys1(j),st_bemv%zs1(j)/)
     P2=(/st_bemv%xs2(j),st_bemv%ys2(j),st_bemv%zs2(j)/)
     P3=(/st_bemv%xs3(j),st_bemv%ys3(j),st_bemv%zs3(j)/)
@@ -1210,4 +1211,50 @@ end function matels2dpa_ij
    return
 
  end function okada_load
+ subroutine okada_surface(xst,yst,x,y,z,ang,angd,rake,dsl,dsd,ux,uy,uz)
+    implicit none
+    real(8),intent(in)::x,y,z,xst,yst,ang,angd,rake,dsl,dsd
+    real(8),intent(out)::ux,uy,uz
+    logical::fullspace=.false.
+    integer::iret
+    real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha,ux1,uy1
+    real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,dip,fwid=100d0
+    
+    alpha=(1d0+(0.5d0/pois-1d0))/(1d0+2d0*(0.5d0/pois-1d0))
+
+    !rotation so that strike is parallel to y axis
+    dx=cos(ang)*(xst-x)+sin(ang)*(yst-y)
+    dy=-sin(ang)*(xst-x)+cos(ang)*(yst-y)
+    dip=angd*180/pi
+
+    call okada(alpha,dx,dy,0.d0,-z,dip,-0.5d0*dsl,0.5d0*dsl,-0.5d0*dsd,0.5d0*dsd,cos(rake),sin(rake),0d0,&
+   &ux1,uy1,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,fullspace)
+
+    !rotation so that strike is parallel to y axis
+    ux=ux1*cos(ang)+uy1*sin(ang)
+    uy=-ux1*sin(ang)+uy1*cos(ang)
+    
+    ! Arot(:,1)=(/cos(rotang),-sin(rotang),0d0/)
+    ! Arot(:,2)=(/sin(rotang)*cos(dpang),cos(rotang)*cos(dpang),sin(dpang)/)
+    ! Arot(:,3)=(/sin(rotang)*sin(dpang),cos(rotang)*sin(dpang),-cos(dpang)/)
+ 
+   return
+ end subroutine okada_surface
+ subroutine surface_disp_matrix(matsurf,st_bemv,xst,yst)
+    implicit none
+    real(8),intent(in)::xst(:),yst(:)
+    real(8),intent(out)::matsurf(:,:,:) 
+    integer::nstation,ncellg,i,j
+    type(st_HACApK_calc_entry) :: st_bemv
+    nstation=size(xst)
+    ncellg=size(st_bemv%xs1)
+ 
+    do i=1,ncellg
+      do j=1,nstation
+        call okada_surface(xst(j),yst(j),st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),st_bemv%ang(i),st_bemv%angd(i),&
+        & st_bemv%rake(i),st_bemv%dsl(i),st_bemv%dsd(i),matsurf(j,1,i),matsurf(j,2,i),matsurf(j,3,i))
+      end do
+    end do
+
+ end subroutine surface_disp_matrix
   end module
