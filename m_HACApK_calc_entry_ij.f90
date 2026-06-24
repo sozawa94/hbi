@@ -1217,7 +1217,7 @@ end function matels2dpa_ij
     real(8),intent(out)::ux,uy,uz
     logical::fullspace=.false.
     integer::iret
-    real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha,ux1,uy1
+    real(8)::dx,dy,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha,ux1,uy1
     real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,dip,fwid=100d0
     
     alpha=(1d0+(0.5d0/pois-1d0))/(1d0+2d0*(0.5d0/pois-1d0))
