@@ -31,8 +31,15 @@ contains
     Q1(3)=-Q1(3)
     Q2(3)=-Q2(3)
     Q3(3)=-Q3(3)
-    call TDstressFS(xx,yy,zz,Q1,Q2,Q3,Ss,Ds,Ts,mu,lambda,&
-    &Sxx_i,Syy_i,Szz_i,Sxy_i,Sxz_i,Syz_i)
+    if(P1(3)==P2(3).and.P2(3)==P3(3)) then
+      ! At horizontal dip the native strike fallback does not reverse under
+      ! reflection, unlike the nonhorizontal limit. Reverse image shear slip.
+      call TDstressFS(xx,yy,zz,Q1,Q2,Q3,-Ss,-Ds,Ts,mu,lambda, &
+        Sxx_i,Syy_i,Szz_i,Sxy_i,Sxz_i,Syz_i)
+    else
+      call TDstressFS(xx,yy,zz,Q1,Q2,Q3,Ss,Ds,Ts,mu,lambda, &
+        Sxx_i,Syy_i,Szz_i,Sxy_i,Sxz_i,Syz_i)
+    end if
 
     Sxx=Sxx_m+Sxx_i+Sxx_h
     Syy=Syy_m+Syy_i+Syy_h
@@ -79,8 +86,7 @@ contains
     eY = (/ 0.0D0, 1.0D0, 0.0D0 /)
     eZ = (/ 0.0D0, 0.0D0, 1.0D0 /)
     CALL DCross(eZ, Vnorm, Vstrike)
-    Vstrike=Vstrike/sqrt(dot_product(Vstrike,Vstrike))
-
+    ! Test before normalization: horizontal triangles have a zero cross product.
     IF (dot_product(Vstrike,Vstrike) == 0.0D0) THEN
       Vstrike = eY * Vnorm(3)
     END IF
@@ -255,8 +261,7 @@ contains
   eY = (/ 0.0D0, 1.0D0, 0.0D0 /)
   eZ = (/ 0.0D0, 0.0D0, 1.0D0 /)
   CALL DCross(eZ, Vnorm, Vstrike)
-  Vstrike=Vstrike/sqrt(dot_product(Vstrike,Vstrike))
-
+  ! Test before normalization, also for the half-space harmonic correction.
   IF (dot_product(Vstrike,Vstrike) == 0.0D0) THEN
     Vstrike = eY * Vnorm(3)
   END IF

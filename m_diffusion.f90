@@ -1,22 +1,278 @@
 module mod_diffusion
 use mod_constant
+use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
   type :: t_params
-  integer::nwell,nn,npoint,n1,i1,i2,nfault,nconnect,ninj,ncell
+  integer::nwell,nn,npoint,n1,i1,i2,nfault,ninj,ncell
+  integer::nconnect=0
   integer,pointer::kleng(:),iwell(:),jwell(:),connect(:,:),ns(:)
   real(8)::phi0,beta,eta,sigmastar,kp0,kpmin,kpmax,kL,kT,pinj,pbcl,pbcr,pbct,pbcb,qinj,q0
   real(8)::qbcl,qbcr,qbct,qbcb
-  real(8)::tinj=1d5,xinj=0d0,yinj=0d0,zinj=0d0
-  real(8),pointer::kp(:),kpG(:),qtimes(:),qvals(:,:),pfhyd(:,:),phi(:),phiG(:),dep(:)
+  real(8)::w0=1d0 ! Hydraulic fault-zone thickness [m].
+  real(8),allocatable::wG(:) ! Original geometry order; fixed in time.
+  real(8)::tinj=1d5,xinj=0d0,yinj=0d0,zinj=0d0,sigmaHF=0.0
+  real(8),pointer::kp(:),kpG(:),qtimes(:),qvals(:,:),pfhyd(:,:),phi(:),phiG(:),dep(:),qs(:)
   character(128)::bc,bcl,bcr,bct,bcb,setting,injection,injection_file,network_file
   logical::injectionfromfile,switch,permev,permsigma,network,initialize_steadystate
   end type t_params
 contains
-subroutine setup_network(param_diff,my_rank)
+  subroutine diffusion_width(param_diff,n,width)
+    implicit none
+    type(t_params),intent(in)::param_diff
+    integer,intent(in)::n
+    real(8),intent(out)::width(n)
+    width=param_diff%w0
+    if(allocated(param_diff%wG)) then
+      if(size(param_diff%wG)/=n) error stop 'Hydraulic w array has wrong size'
+      width=param_diff%wG
+    end if
+    if(any(.not.ieee_is_finite(width)).or.any(width<=0d0)) &
+      error stop 'Hydraulic w must be finite and positive [m]'
+  end subroutine
+
+  real(8) function well_rate(param_diff,kwell,time) result(q)
+    implicit none
+    type(t_params),intent(in)::param_diff
+    integer,intent(in)::kwell
+    real(8),intent(in)::time
+    integer::j,n
+    n=param_diff%npoint
+    if(n<2) error stop 'Well history needs at least two time points'
+    q=0d0
+    if(time<param_diff%qtimes(1)) return
+    q=param_diff%qvals(kwell,n)
+    do j=1,n-1
+      if(param_diff%qtimes(j+1)<param_diff%qtimes(j)) error stop 'Well times must not decrease'
+      if(time<param_diff%qtimes(j+1)) then
+        q=param_diff%qvals(kwell,j)+(param_diff%qvals(kwell,j+1)-param_diff%qvals(kwell,j))* &
+          (time-param_diff%qtimes(j))/(param_diff%qtimes(j+1)-param_diff%qtimes(j))
+        exit
+      end if
+    end do
+    q=max(0d0,q) ! Injection-only convention retained; raw volume rate, not Q/w.
+  end function
+
+  subroutine diffusion_next_knot(param_diff,time,dtnxt)
+    implicit none
+    type(t_params),intent(in)::param_diff
+    real(8),intent(in)::time
+    real(8),intent(inout)::dtnxt
+    integer::j
+    if(.not.param_diff%injectionfromfile) return
+    do j=1,param_diff%npoint
+      if(param_diff%qtimes(j)>time) then
+        dtnxt=min(dtnxt,param_diff%qtimes(j)-time)
+        exit
+      end if
+    end do
+  end subroutine
+
+  subroutine conservative_diffusion(nx,ny,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter,dep,surface)
+    ! Backward Euler finite volumes: (M+h*L) p_new=M*p_old+source.
+    ! M=beta*phi*w, T=k*w/eta_f. Pressure MPa, ds0 km, w m.
+    ! Harmonic face mobility and storage-weighted SPD matrix; Jacobi PCG.
+    implicit none
+    integer,intent(in)::nx,ny
+    real(8),intent(in)::ds0,pf(:),cdiff(:),str(:),h,time
+    real(8),intent(out)::pfnew(:)
+    integer,intent(out)::niter
+    type(t_params),intent(in)::param_diff
+    real(8),optional,intent(in)::dep(:)
+    logical,optional,intent(in)::surface
+    logical::two_dimensional
+    real(8)::width(size(pf)),mass(size(pf)),mobility(size(pf)),diag(size(pf)),rhs(size(pf))
+    real(8)::r(size(pf)),z(size(pf)),p(size(pf)),ap(size(pf)),edge(2*size(pf)+4*param_diff%nconnect)
+    integer::left(2*size(pf)+4*param_diff%nconnect),right(2*size(pf)+4*param_diff%nconnect)
+    real(8)::dx,area,scale,rz,rznew,alpha,denom,tol,q,g
+    integer::n,i,j,k,u,v,ne,first,last,kw,iteration,itermax
+    n=size(pf); ne=0; niter=0
+    two_dimensional=ny>1
+    if(present(surface)) two_dimensional=surface
+    if(nx*ny/=n.or.size(cdiff)/=n.or.size(str)/=n) error stop 'Invalid diffusion dimensions'
+    if(.not.ieee_is_finite(ds0).or.ds0<=0d0.or..not.ieee_is_finite(h).or.h<0d0) &
+      error stop 'Invalid diffusion spacing or step'
+    if(any(.not.ieee_is_finite(cdiff)).or.any(cdiff<0d0).or. &
+      any(.not.ieee_is_finite(str)).or.any(str<=0d0)) error stop 'Invalid diffusion transport/storage'
+    call diffusion_width(param_diff,n,width)
+    dx=ds0*1000d0; area=dx
+    if(two_dimensional) area=dx*dx
+    mass=str*width
+    mobility=cdiff*1d6*mass ! cdiff supplied in km^2/s; mobility in m^3/(Pa s).
+    scale=maxval(mass)
+    diag=mass/scale; rhs=diag*pf
+    if(present(dep)) then
+      if(ny/=1.or.size(dep)/=n) error stop 'Invalid network dimensions'
+      if(param_diff%ns(1)/=0.or.param_diff%ns(param_diff%nfault+1)/=n) &
+        error stop 'Network element counts do not match geometry'
+      do k=1,param_diff%nfault
+        first=param_diff%ns(k)+1; last=param_diff%ns(k+1)
+        do i=first,last-1
+          call add_edge(i,i+1)
+        end do
+        if(dep(first)<0.1d0) call boundary(first,'Dirichlet',0d0,0d0)
+        if(dep(last)<0.1d0) call boundary(last,'Dirichlet',0d0,0d0)
+      end do
+      do k=1,param_diff%nconnect
+        u=param_diff%connect(k,1); v=param_diff%connect(k,2)
+        if(u<1.or.u>=n.or.v<1.or.v>=n) error stop 'Invalid network connection'
+        call add_edge(u,v); call add_edge(u+1,v)
+        call add_edge(u,v+1); call add_edge(u+1,v+1)
+      end do
+    else
+      do i=1,nx
+        do j=1,ny
+          u=(i-1)*ny+j
+          if(i<nx) call add_edge(u,u+ny)
+          if(j<ny) call add_edge(u,u+1)
+        end do
+      end do
+      do j=1,ny
+        call boundary(j,param_diff%bcl,param_diff%pbcl,param_diff%qbcl)
+        q=param_diff%qbcr
+        if(.not.two_dimensional) q=-q ! 1-D qbc is positive in the +coordinate direction.
+        call boundary((nx-1)*ny+j,param_diff%bcr,param_diff%pbcr,q)
+      end do
+      if(two_dimensional) then
+        do i=1,nx
+          call boundary((i-1)*ny+1,param_diff%bct,param_diff%pbct,param_diff%qbct)
+          call boundary(i*ny,param_diff%bcb,param_diff%pbcb,param_diff%qbcb)
+        end do
+      end if
+    end if
+    if(param_diff%injectionfromfile) then
+      do kw=1,param_diff%nwell
+        i=param_diff%iwell(kw); j=1
+        if(two_dimensional) j=param_diff%jwell(kw)
+        if(i<1.or.i>nx.or.j<1.or.j>ny) error stop 'Well index outside diffusion grid'
+        u=(i-1)*ny+j
+        rhs(u)=rhs(u)+h*well_rate(param_diff,kw,time)/(area*1d6*scale)
+      end do
+    else if(time<param_diff%tinj*31536000d0) then
+      u=param_diff%ninj
+      if(two_dimensional) u=(max(1,nx/2)-1)*ny+max(1,ny/2)
+      select case(trim(param_diff%injection))
+      case('flowrate','pressure')
+        if(u<1.or.u>n) error stop 'Injection element outside diffusion grid'
+        if(param_diff%injection=='flowrate') then
+          rhs(u)=rhs(u)+h*param_diff%qinj/(area*1d6*scale)
+        else
+          if(two_dimensional) error stop 'Pressure injection is supported only in 1-D diffusion'
+          g=h*mass(u)/(10d0*scale)
+          diag(u)=diag(u)+g; rhs(u)=rhs(u)+g*param_diff%pinj
+        end if
+      case('distributed')
+        if(.not.present(dep)) error stop 'Distributed injection requires a fault network'
+        rhs=rhs+h*param_diff%qs/(dx*1d6*scale) ! Per-element raw rate per unit strike.
+      end select
+    end if
+    pfnew=pf
+    call multiply(pfnew,ap)
+    r=rhs-ap
+    tol=1d-12*max(sqrt(sum(rhs*rhs)),sqrt(sum(ap*ap)),1d-12)
+    if(sqrt(sum(r*r))<=tol) return
+    z=r/diag; p=z; rz=sum(r*z)
+    itermax=max(200,10*n)
+    do iteration=1,itermax
+      call multiply(p,ap)
+      denom=sum(p*ap)
+      if(denom<=0d0.or..not.ieee_is_finite(denom)) error stop 'Invalid diffusion PCG matrix'
+      alpha=rz/denom; pfnew=pfnew+alpha*p; r=r-alpha*ap
+      niter=iteration
+      if(sqrt(sum(r*r))<=tol) exit
+      z=r/diag; rznew=sum(r*z); p=z+(rznew/rz)*p; rz=rznew
+    end do
+    if(iteration>itermax) error stop 'Conservative diffusion PCG failed to converge'
+    if(any(.not.ieee_is_finite(pfnew))) error stop 'Nonfinite diffusion pressure'
+  contains
+    subroutine add_edge(a,b)
+      integer,intent(in)::a,b
+      real(8)::t,small,large
+      if(a==b) return
+      small=min(mobility(a),mobility(b)); large=max(mobility(a),mobility(b))
+      t=0d0
+      if(large>0d0) t=2d0*small/(1d0+small/large)
+      ne=ne+1; left(ne)=a; right(ne)=b; edge(ne)=h*t/(dx*dx*scale)
+      diag(a)=diag(a)+edge(ne); diag(b)=diag(b)+edge(ne)
+    end subroutine
+    subroutine boundary(a,kind,pressure,flux)
+      integer,intent(in)::a
+      character(*),intent(in)::kind
+      real(8),intent(in)::pressure,flux
+      real(8)::c
+      select case(trim(kind))
+      case('Dirichlet')
+        c=h*2d0*mobility(a)/(dx*dx*scale)
+        diag(a)=diag(a)+c; rhs(a)=rhs(a)+c*pressure
+      case('Neumann')
+        ! Boundary values remain Darcy flux [m/s]; multiply by hydraulic width.
+        rhs(a)=rhs(a)+h*flux*width(a)/(dx*1d6*scale)
+      case default
+        error stop 'Unknown diffusion boundary type'
+      end select
+    end subroutine
+    subroutine multiply(x,y)
+      real(8),intent(in)::x(:)
+      real(8),intent(out)::y(:)
+      integer::e,a,b
+      y=diag*x
+      do e=1,ne
+        a=left(e); b=right(e)
+        y(a)=y(a)-edge(e)*x(b); y(b)=y(b)-edge(e)*x(a)
+      end do
+    end subroutine
+  end subroutine
+
+  subroutine Beuler1d(ncell,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter)
+    implicit none
+    integer,intent(in)::ncell
+    real(8),intent(in)::ds0,pf(:),cdiff(:),str(:),h,time
+    real(8),intent(out)::pfnew(:)
+    integer,intent(out)::niter
+    type(t_params),intent(in)::param_diff
+    call conservative_diffusion(ncell,1,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter)
+  end subroutine
+
+  subroutine Beuler1dn(ncell,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter,dep)
+    implicit none
+    integer,intent(in)::ncell
+    real(8),intent(in)::ds0,pf(:),cdiff(:),str(:),h,time,dep(:)
+    real(8),intent(out)::pfnew(:)
+    integer,intent(out)::niter
+    type(t_params),intent(in)::param_diff
+    call conservative_diffusion(ncell,1,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter,dep)
+  end subroutine
+
+  subroutine Beuler2d(imax,jmax,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter)
+    implicit none
+    integer,intent(in)::imax,jmax
+    real(8),intent(in)::ds0,pf(:,:),cdiff(:,:),str(:,:),h,time
+    real(8),intent(out)::pfnew(:,:)
+    integer,intent(out)::niter
+    type(t_params),intent(in)::param_diff
+    real(8)::p(imax*jmax),d(imax*jmax),s(imax*jmax),out(imax*jmax)
+    integer::i,j,k
+    do i=1,imax
+      do j=1,jmax
+        k=(i-1)*jmax+j; p(k)=pf(i,j); d(k)=cdiff(i,j); s(k)=str(i,j)
+      end do
+    end do
+    call conservative_diffusion(imax,jmax,ds0,p,d,s,param_diff,h,out,time,niter,surface=.true.)
+    do i=1,imax
+      do j=1,jmax
+        pfnew(i,j)=out((i-1)*jmax+j)
+      end do
+    end do
+  end subroutine
+
+subroutine setup_network(number,param_diff,my_rank)
   implicit none
+  integer,intent(in)::number
   type(t_params):: param_diff
   integer,intent(in)::my_rank
   integer::k,ios
   integer,allocatable::ncell1(:)
+  if(param_diff%network_file=='default') then
+    write(param_diff%network_file,'("examples/connection",i0,".dat")') number
+  end if
   write(*,*) param_diff%network_file
   open(77,file=param_diff%network_file,iostat=ios)
   if(ios /= 0) then
@@ -45,7 +301,7 @@ subroutine setup_network(param_diff,my_rank)
 end subroutine
 subroutine input_well(problem,param_diff,my_rank)
   implicit none
-  character(128),intent(in)::problem
+  character(*),intent(in)::problem
   type(t_params):: param_diff
   integer,intent(in)::my_rank
   integer::k,kwell,ios
@@ -56,15 +312,19 @@ subroutine input_well(problem,param_diff,my_rank)
   end if
   read(77,*) param_diff%nwell
   read(77,*) param_diff%npoint
+  if(param_diff%nwell<1.or.param_diff%npoint<2) error stop 'Invalid well history dimensions'
   allocate(param_diff%iwell(param_diff%nwell),param_diff%jwell(param_diff%nwell),param_diff%qvals(param_diff%nwell,param_diff%npoint))
   allocate(param_diff%qtimes(param_diff%npoint))
   read(77,*) param_diff%qtimes(1:param_diff%npoint)
+  if(any(.not.ieee_is_finite(param_diff%qtimes))) error stop 'Nonfinite well times'
+  if(any(param_diff%qtimes(2:)<param_diff%qtimes(:param_diff%npoint-1))) &
+    error stop 'Well times must not decrease'
   select case(problem)
   case('3dp', '3dph')
     do kwell=1,param_diff%nwell
       read(77,*) param_diff%iwell(kwell),param_diff%jwell(kwell)
     end do
-  case('2dp','2dn')
+  case('2dp','2dn','2dvs','2dph','2dnh')
     do kwell=1,param_diff%nwell
       read(77,*) param_diff%iwell(kwell)
     end do
@@ -72,6 +332,7 @@ subroutine input_well(problem,param_diff,my_rank)
   do kwell=1,param_diff%nwell
     read(77,*) param_diff%qvals(kwell,1:param_diff%npoint)
   end do
+  if(any(.not.ieee_is_finite(param_diff%qvals))) error stop 'Nonfinite well rates'
   
   close(77)
   param_diff%switch=.false.
@@ -83,18 +344,18 @@ end subroutine
     integer::kit,errloc(1),i,n,niter
     real(8),intent(inout)::pf(:),sigma(:),dtnxt
     real(8),intent(in)::h,time,ds0
-    real(8),dimension(size(pf))::dpf,pftry,pfnew,sigmae,cdiff,str
+    real(8),dimension(size(pf))::dpf,pftry,pfnew,sigmae,cdiff,str,pfinit
     real(8)::err,err0,cc
     real(8),parameter::dpth=0.2
     type(t_params):: param_diff
-
+    pfinit=pf
     pftry=pf
     n=size(pf)
 
     err=0d0
-    do kit=1,20
+    do kit=1,50
       !calculate diffusion coefficient
-      cdiff=param_diff%kpG*exp(-(sigma-pftry)/param_diff%sigmastar)/(param_diff%eta*param_diff%beta*param_diff%phiG)*1d-6
+      cdiff=param_diff%kpG*exp(-sigma/param_diff%sigmastar)*(1+param_diff%sigmaHF/sigma)/(param_diff%eta*param_diff%beta*param_diff%phiG)*1d-6
       str=param_diff%beta*param_diff%phiG
       !write(*,*) cdiff(1),str(1)
       if(param_diff%network) then
@@ -108,6 +369,7 @@ end subroutine
       errloc=maxloc(abs(pftry-pfnew))
       !write(*,*) 'err',err
       if(err<1e-3) exit
+      sigma=sigma+pftry-pfnew
       pftry=pfnew
       err0=err
     end do
@@ -157,19 +419,7 @@ end subroutine
     if(dtnxt/h*maxval(dpf)>dpth)  dtnxt=dpth*h/maxval(dpf)
 
      !check if next time step is after the change in the injection rate
-    if(param_diff%switch) then
-        dtnxt=2e1
-        param_diff%switch=.false.
-    end if
-    if(param_diff%injectionfromfile) then
-      if(time+dtnxt>param_diff%qtimes(param_diff%nn)) then
-        dtnxt=param_diff%qtimes(param_diff%nn)-time-tny
-        param_diff%switch=.true.
-        param_diff%nn=param_diff%nn+1
-        if(param_diff%qtimes(param_diff%nn)-param_diff%qtimes(param_diff%nn-1)<1e0) param_diff%nn=param_diff%nn+1
-        !write(*,*) param_diff%nn,param_diff%qtimes(1,param_diff%nn),time+dtnxt
-      end if
-    end if
+    call diffusion_next_knot(param_diff,time,dtnxt)
 
     return
   end subroutine
@@ -208,337 +458,11 @@ end subroutine
     if(dtnxt/h*maxval(dpf)>dpth)  dtnxt=dpth*h/maxval(dpf)
 
      !check if next time step is after the change in the injection rate
-    if(param_diff%switch) then
-        dtnxt=2e1
-        param_diff%switch=.false.
-    end if
-    if(param_diff%injectionfromfile) then
-      if(time+dtnxt>param_diff%qtimes(param_diff%nn)) then
-        dtnxt=param_diff%qtimes(param_diff%nn)-time-tny
-        param_diff%switch=.true.
-        param_diff%nn=param_diff%nn+1
-        if(param_diff%qtimes(param_diff%nn)-param_diff%qtimes(param_diff%nn-1)<1e0) param_diff%nn=param_diff%nn+1
-        !write(*,*) param_diff%nn,param_diff%qtimes(1,param_diff%nn),time+dtnxt
-      end if
-    end if
+    call diffusion_next_knot(param_diff,time,dtnxt)
 
     return
   end subroutine
 
-  subroutine Beuler1d(ncell,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter)
-    integer,parameter::itermax=2000
-    integer,intent(in)::ncell
-    real(8),intent(in)::pf(:),h,cdiff(:),str(:),time,ds0
-    real(8),intent(out)::pfnew(:)
-    integer,intent(out)::niter
-    real(8)::eta, tmp1,tmp2,rsnew,rsold
-    real(8),dimension(ncell)::pf0,m,dpf,p,r,b,x,alpha,sat
-    real(8)::Dxx(ncell,3),Am(ncell,3)
-    integer::n,iter
-    real(8)::p0=0.0,td=1d6,tol=1e-8
-    type(t_params):: param_diff
-    !real(8),parameter::str=1e-11 !beta(1e-9)*phi(1e-2)
-    n=ncell
-    niter=0
-    Dxx=0d0
-
-    !compute Dxx for Dirichlet BC
-    select case(param_diff%bcl)
-    case('Dirichlet')
-      Dxx(1,2)=-cdiff(1)-cdiff(2)
-      Dxx(1,3)=cdiff(2)-cdiff(1)
-      Dxx(2,1:3)=(/cdiff(2)/2-cdiff(1)/2, -cdiff(1)/2-cdiff(2)-cdiff(3)/2, cdiff(2)/2+cdiff(3)/2/)
-    case('Neumann')
-      Dxx(1,2)=-cdiff(1)/2-cdiff(2)/2
-      Dxx(1,3)=-Dxx(1,2)
-      Dxx(2,1:3)=(/cdiff(1)/2+cdiff(2)/2, -cdiff(1)/2-cdiff(2)-cdiff(3)/2, cdiff(2)/2+cdiff(3)/2/)
-    end select
-
-    do i=3,n-2
-      Dxx(i,1:3)=(/cdiff(i-1)/2+cdiff(i)/2, -cdiff(i-1)/2-cdiff(i)-cdiff(i+1)/2, cdiff(i)/2+cdiff(i+1)/2/)
-    end do
-
-    select case(param_diff%bcr)
-    case('Dirichlet')
-      Dxx(n-1,1:3)=(/cdiff(n-2)/2+cdiff(n-1)/2, -cdiff(n-2)/2-cdiff(n-1)-cdiff(n)/2, -cdiff(n)/2+cdiff(n-1)/2/)
-      Dxx(n,2)=-cdiff(n)-cdiff(n-1)
-      Dxx(n,1)=cdiff(n-1)-cdiff(n)
-
-    case('Neumann')
-      Dxx(n-1,1:3)=(/cdiff(n-2)/2+cdiff(n-1)/2, -cdiff(n-2)/2-cdiff(n-1)-cdiff(n)/2, cdiff(n-1)/2+cdiff(n)/2/)
-      Dxx(n,2)=-cdiff(n)/2-cdiff(n-1)/2
-      Dxx(n,1)=-Dxx(n,2)
-    end select
-
-    Dxx=Dxx/ds0/ds0
-
-    !write(*,*)
-
-    Am=0d0
-    Am(:,1)=-h*Dxx(:,1)
-    Am(:,2)=1.0-h*Dxx(:,2)
-    Am(:,3)=-h*Dxx(:,3)
-
-    SAT=0d0
-
-    !penalty vector
-    select case(param_diff%bcl)
-    case('Dirichlet')
-      SAT(1)=-1.0*cdiff(1)/ds0/ds0*param_diff%pbcl*h*2
-      SAT(2)=-0.5*cdiff(1)/ds0/ds0*param_diff%pbcl*h*2
-    case('Neumann')
-      SAT(1)=-param_diff%qbcl/str(1)*1e-9*h/ds0*1
-    end select
-
-    select case(param_diff%bcr)
-    case('Dirichlet')
-      SAT(n)=-1*cdiff(n)/ds0/ds0*param_diff%pbcr*h*2
-      SAT(n-1)=SAT(n)/2
-    case('Neumann')
-      SAT(n)=param_diff%qbcr/str(n)*1e-9*h/ds0*1
-    end select
-
-    x=pf!-pfhyd !initial guess
-
-    b=pf-SAT!-pfhyd   
-
-    if(param_diff%injectionfromfile) then
-      qtmp=0d0
-      do kwell=1,param_diff%nwell
-        do k=1,param_diff%npoint-1
-          t0=param_diff%qtimes(k)
-          t1=param_diff%qtimes(k+1)
-          v0=param_diff%qvals(kwell,k)
-          v1=param_diff%qvals(kwell,k+1)
-          if (time >= t0 .and. time <= t1) then
-            qtmp=(v1-v0)/(t1-t0)*(time-t0)+v0
-          else if (time> t1.and. k == param_diff%npoint-1) then
-            qtmp=v1
-          end if
-        end do
-        if(qtmp<0) qtmp=0d0
-        i=param_diff%iwell(kwell)
-        !write(*,*)i,j,qtmp
-        b(i)=b(i)+h*qtmp/str(i)*1e-9/ds0
-      end do
-    !injection at the center of the fault
-    else if(param_diff%injection=='pressure' .and. time<param_diff%tinj*365*24*3600) then
-      b(param_diff%ninj)=b(param_diff%ninj)+h*param_diff%pinj/1e1 !injection pressure
-      Am(param_diff%ninj,2)=Am(param_diff%ninj,2)+h/1e1
-    else if(param_diff%injection=='flowrate' .and. time<param_diff%tinj*365*24*3600) then
-      b(param_diff%ninj)=b(param_diff%ninj)+h*param_diff%qinj/str(param_diff%ninj)*1e-9/ds0 !injection rate
-    end if
-    !write(*,*) h,str(N/2),ds0
-
-    m=0d0
-    !$omp parallel do
-    do i=1,n
-      m(i)=x(i-1)*Am(i,1)+x(i)*Am(i,2)+x(i+1)*Am(i,3)
-    end do
-    !$omp end parallel do
-
-    r=b-m
-    p=r
-    rsold=sum(r*r)
-    ! write(*,*) rsold
-    if(rsold<tol**2*n)  then
-      go to 100
-    end if
-    niter=itermax
-    do iter=1,itermax
-      tmp1=sum(r*r)
-      m=0d0
-
-      !$omp parallel do
-      do i=1,n
-        m(i)=p(i-1)*Am(i,1)+p(i)*Am(i,2)+p(i+1)*Am(i,3)
-      end do
-      !$omp end parallel do
-
-      tmp2=sum(m*p)
-      alpha=tmp1/tmp2
-      x=x+alpha*p
-      r=r-alpha*m
-      !write(*,'(9e15.6)')r
-      rsnew = sum(r*r)
-      !write(*,*)iter,rsnew
-      if(rsnew<tol**2*n) then
-          niter=iter
-        exit
-      end if
-      p = r + (rsnew / rsold) * p
-      rsold = rsnew
-      !write(*,'(9e15.6)')x
-
-    end do
-
-    if(niter==itermax) write(*,*) "Warning: Maximum iteration"
-    100 pfnew=x!+pfhyd
-    return
-  end subroutine
-
-  subroutine Beuler1dn(ncell,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter,dep)
-    integer,parameter::itermax=4000
-    integer,intent(in)::ncell
-    real(8),intent(in)::pf(:),h,cdiff(:),str(:),time,ds0,dep(:)
-    real(8),intent(out)::pfnew(:)
-    integer,intent(out)::niter
-    real(8)::eta, tmp1,tmp2,rsnew,rsold
-    real(8),dimension(ncell)::pf0,m,dpf,p,r,b,x,alpha,sat
-    real(8)::Dxx(ncell,3),Am(ncell,3)
-    integer::n,iter,n1,n2,i1,i2,k
-    real(8)::p0=0.0,td=1d6,tol=1e-8
-    type(t_params):: param_diff
-    !real(8),parameter::str=1e-11 !beta(1e-9)*phi(1e-2)
-    n=ncell
-    niter=0
-    Dxx=0d0
-
-    do k=1,param_diff%nfault
-      n1=param_diff%ns(k)
-      n2=param_diff%ns(k+1)
-      if(dep(n1+1)<0.1) then
-        Dxx(n1+1,2)=-cdiff(n1+1)-cdiff(n1+2) !Dirichlet BC
-        Dxx(n1+1,3)=cdiff(n1+2)-cdiff(n1+1)
-        Dxx(n1+2,1:3)=(/-cdiff(n1+1)/2+cdiff(n1+2)/2, -cdiff(n1+1)/2-cdiff(n1+2)-cdiff(n1+3)/2, cdiff(n1+2)/2+cdiff(n1+3)/2/)
-      else
-        Dxx(n1+1,2)=-cdiff(n1+1)/2-cdiff(n1+2)/2 !Neumann BC
-        Dxx(n1+1,3)=-Dxx(n1+1,2)
-        Dxx(n1+2,1:3)=(/cdiff(n1+1)/2+cdiff(n1+2)/2, -cdiff(n1+1)/2-cdiff(n1+2)-cdiff(n1+3)/2, cdiff(n1+2)/2+cdiff(n1+3)/2/)
-      end if
-
-      do i=n1+3,n2-2
-        Dxx(i,1:3)=(/cdiff(i-1)/2+cdiff(i)/2, -cdiff(i-1)/2-cdiff(i)-cdiff(i+1)/2, cdiff(i)/2+cdiff(i+1)/2/)
-      end do
-
-      if(dep(n2)<0.1) then
-        Dxx(n2-1,1:3)=(/cdiff(n2-2)/2+cdiff(n2-1)/2, -cdiff(n2-2)/2-cdiff(n2-1)-cdiff(n2)/2, -cdiff(n2)/2+cdiff(n2-1)/2/)
-        Dxx(n2,2)=-cdiff(n2)-cdiff(n2-1)
-        Dxx(n2,1)=cdiff(n2-1)-cdiff(n2) !dirichlet BC
-      else
-        Dxx(n2-1,1:3)=(/cdiff(n2-2)/2+cdiff(n2-1)/2, -cdiff(n2-2)/2-cdiff(n2-1)-cdiff(n2)/2, cdiff(n2-1)/2+cdiff(n2)/2/)
-        Dxx(n2,2)=-cdiff(n2)/2-cdiff(n2-1)/2
-        Dxx(n2,1)=-Dxx(n2,2) !neumann BC
-      end if
-
-    end do
-
-    !connection
-    do kc=1,param_diff%nconnect
-      i1=param_diff%connect(kc,1)
-      i2=param_diff%connect(kc,2)
-      Dxx(i1,2)=Dxx(i1,2)-(cdiff(i1)+cdiff(i2)/2+cdiff(i2+1)/2)
-      Dxx(i1+1,2)=Dxx(i1+1,2)-(cdiff(i1+1)+cdiff(i2)/2+cdiff(i2+1)/2)
-      Dxx(i2,2)=Dxx(i2,2)-(cdiff(i2)+cdiff(i1)/2+cdiff(i1+1)/2)
-      Dxx(i2+1,2)=Dxx(i2+1,2)-(cdiff(i2+1)+cdiff(i1)/2+cdiff(i1+1)/2)
-    end do
-
-    Dxx=Dxx/ds0/ds0
-
-    !write(*,*)
-    Am=0d0
-    Am(:,1)=-h*Dxx(:,1)
-    Am(:,2)=1.0-h*Dxx(:,2)
-    Am(:,3)=-h*Dxx(:,3)
-
-    SAT=0d0
-    
-    x=pf!-pfhyd !initial guess
-
-    b=pf-SAT!-pfhyd   
-
-     if(param_diff%injectionfromfile) then
-      qtmp=0d0
-      do kwell=1,param_diff%nwell
-        do k=1,param_diff%npoint-1
-          t0=param_diff%qtimes(k)
-          t1=param_diff%qtimes(k+1)
-          v0=param_diff%qvals(kwell,k)
-          v1=param_diff%qvals(kwell,k+1)
-          if (time >= t0 .and. time <= t1) then
-            qtmp=(v1-v0)/(t1-t0)*(time-t0)+v0
-          else if (time> t1.and. k == param_diff%npoint-1) then
-            qtmp=v1
-          end if
-        end do
-        if(qtmp<0) qtmp=0d0
-        i=param_diff%iwell(kwell)
-        !write(*,*)i,j,qtmp
-        b(i)=b(i)+h*qtmp/str(i)*1e-9/ds0
-      end do
-    else if(param_diff%injection=='pressure' .and. time<param_diff%tinj*365*24*3600) then
-      b(param_diff%ninj)=b(param_diff%ninj)+h*param_diff%pinj/1e1 !injection pressure
-      Am(param_diff%ninj,2)=Am(param_diff%ninj,2)+h/1e1
-    else if(param_diff%injection=='flowrate' .and. time<param_diff%tinj*365*24*3600) then
-      b(param_diff%ninj)=b(param_diff%ninj)+h*param_diff%qinj/str(param_diff%ninj)*1e-9/ds0 !injection rate
-    end if
-
-    m=0d0
-    !$omp parallel do
-    do i=1,n
-      m(i)=x(i-1)*Am(i,1)+x(i)*Am(i,2)+x(i+1)*Am(i,3)
-    end do
-    !$omp end parallel do
-
-    do kc=1,param_diff%nconnect
-      i1=param_diff%connect(kc,1)
-      i2=param_diff%connect(kc,2)
-      m(i1)=m(i1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1))*x(i2)+(cdiff(i2+1)+cdiff(i1))*x(i2+1))
-      m(i1+1)=m(i1+1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1+1))*x(i2)+(cdiff(i2+1)+cdiff(i1+1))*x(i2+1))
-      m(i2)=m(i2)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2))*x(i1)+(cdiff(i1+1)+cdiff(i2))*x(i1+1))
-      m(i2+1)=m(i2+1)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2+1))*x(i1)+(cdiff(i1+1)+cdiff(i2+1))*x(i1+1))
-    end do
-
-    !write(*,'(9e15.6)')m
-
-    r=b-m
-    p=r
-    rsold=sum(r*r)
-    if(rsold<tol**2*n)  then
-      go to 100
-    end if
-    niter=itermax
-
-    do iter=1,itermax
-      tmp1=sum(r*r)
-      m=0d0
-   !$omp parallel do
-    do i=1,n
-      m(i)=p(i-1)*Am(i,1)+p(i)*Am(i,2)+p(i+1)*Am(i,3)
-    end do
-    !$omp end parallel do
-
-    do kc=1,param_diff%nconnect
-      i1=param_diff%connect(kc,1)
-      i2=param_diff%connect(kc,2)
-      m(i1)=m(i1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1))*p(i2)+(cdiff(i2+1)+cdiff(i1))*p(i2+1))
-      m(i1+1)=m(i1+1)-h/ds0/ds0/2*((cdiff(i2)+cdiff(i1+1))*p(i2)+(cdiff(i2+1)+cdiff(i1+1))*p(i2+1))
-      m(i2)=m(i2)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2))*p(i1)+(cdiff(i1+1)+cdiff(i2))*p(i1+1))
-      m(i2+1)=m(i2+1)-h/ds0/ds0/2*((cdiff(i1)+cdiff(i2+1))*p(i1)+(cdiff(i1+1)+cdiff(i2+1))*p(i1+1))
-    end do
-
-      !write(*,'(9e15.6)')m
-
-      tmp2=sum(m*p)
-      alpha=tmp1/tmp2
-      x=x+alpha*p
-      r=r-alpha*m
-      !write(*,'(9e15.6)')r
-      rsnew = sum(r*r)
-      !write(*,*)iter,rsnew
-      if(rsnew<tol**2*n) then
-          niter=iter
-        exit
-      end if
-      p = r + (rsnew / rsold) * p
-      rsold = rsnew
-      !write(*,'(9e15.6)')x
-
-    end do
-    if(niter==itermax) write(*,*) "Maximum iteration"
-    100 pfnew=x!+pfhyd
-    return
-  end subroutine
 
   subroutine diffusion3dwop(imax,jmax,pf,h,ds0,time,dtnxt,param_diff)
     implicit none
@@ -585,265 +509,10 @@ end subroutine
     if(dtnxt/h*maxval(adpf)>dpth)  dtnxt=dpth*h/maxval(adpf)
 
     !check if next time step is after the change in the injection rate
-    if(param_diff%switch) then
-        dtnxt=2e1
-        param_diff%switch=.false.
-    end if
-    if(param_diff%injectionfromfile) then
-      if(time+dtnxt>param_diff%qtimes(param_diff%nn)) then
-        dtnxt=param_diff%qtimes(param_diff%nn)-time-tny
-        param_diff%switch=.true.
-        param_diff%nn=param_diff%nn+1
-        if(param_diff%qtimes(param_diff%nn)-param_diff%qtimes(param_diff%nn-1)<1e0) param_diff%nn=param_diff%nn+1
-        !write(*,*) param_diff%nn,param_diff%qtimes(1,param_diff%nn),time+dtnxt
-      end if
-    end if
-    
+    call diffusion_next_knot(param_diff,time,dtnxt)
     return
   end subroutine
 
-  subroutine Beuler2d(imax,jmax,ds0,pf,cdiff,str,param_diff,h,pfnew,time,niter)
-    implicit none
-    integer,parameter::itermax=1000
-    integer,intent(in)::imax,jmax
-    real(8),intent(in)::pf(:,:),h,cdiff(:,:),str(:,:),time,ds0!,pfhyd(:,:)
-    real(8),intent(out)::pfnew(:,:)
-    integer,intent(out)::niter
-    real(8)::Dxx(imax,jmax,3),Dyy(imax,jmax,3),Amx(imax,jmax,3),Amy(imax,jmax,3),mx(imax,jmax),my(imax,jmax)
-    real(8)::p(imax,jmax),m(imax,jmax),r(imax,jmax),x(imax,jmax),b(imax,jmax),SAT(imax,jmax)
-    integer::n,iter,i,j,k,kwell
-    real(8)::p0=0.0,rsold,rsnew,tmp1,tmp2,alpha,v1,v0,t1,t0,qtmp,qdt
-    real(8),parameter::tol=1e-8
-    type(t_params):: param_diff
-    !real(8),parameter::str=1e-11 !beta(1e-9)*phi(1e-2)
-    niter=0
-    p=0d0;m=0d0;r=0d0;x=0d0;b=0d0
-
-    Dxx=0d0 
-    do i=1,imax
-        !compute Dxx for Dirichlet BC
-        select case(param_diff%bct)
-        case('Dirichlet')
-        Dxx(i,1,1)=-cdiff(i,1)-cdiff(i,2)
-        Dxx(i,1,2)=cdiff(i,2)-cdiff(i,1)
-        Dxx(i,2,1:3)=(/cdiff(i,2)/2-cdiff(i,1)/2, -cdiff(i,1)/2-cdiff(i,2)-cdiff(i,3)/2, cdiff(i,2)/2+cdiff(i,3)/2/)
-        case('Neumann')
-        Dxx(i,1,1)=-cdiff(i,1)/2-cdiff(i,2)/2
-        Dxx(i,1,2)=-Dxx(i,1,1)
-        Dxx(i,2,1:3)=(/cdiff(i,1)/2+cdiff(i,2)/2, -cdiff(i,1)/2-cdiff(i,2)-cdiff(i,3)/2, cdiff(i,2)/2+cdiff(i,3)/2/)
-        end select
-
-        do j=3,jmax-2
-        Dxx(i,j,1:3)=(/cdiff(i,j-1)/2+cdiff(i,j)/2, -cdiff(i,j-1)/2-cdiff(i,j)-cdiff(i,j+1)/2, cdiff(i,j)/2+cdiff(i,j+1)/2/)
-        end do
-
-        select case(param_diff%bcb)
-        case('Dirichlet')
-        Dxx(i,jmax-1,1:3)=(/cdiff(i,jmax-2)/2+cdiff(i,jmax-1)/2, -cdiff(i,jmax-2)/2-cdiff(i,jmax-1)-cdiff(i,jmax)/2, -cdiff(i,jmax)/2+cdiff(i,jmax-1)/2/)
-        Dxx(i,jmax,3)=-cdiff(i,jmax)-cdiff(i,jmax-1)
-        Dxx(i,jmax,2)=cdiff(i,jmax-1)-cdiff(i,jmax)
-        case('Neumann')
-        Dxx(i,jmax-1,1:3)=(/cdiff(i,jmax-2)/2+cdiff(i,jmax-1)/2, -cdiff(i,jmax-2)/2-cdiff(i,jmax-1)-cdiff(i,jmax)/2, cdiff(i,jmax-1)/2+cdiff(i,jmax)/2/)
-        Dxx(i,jmax,3)=-cdiff(i,jmax)/2-cdiff(i,jmax-1)/2
-        Dxx(i,jmax,2)=-Dxx(i,jmax,3)
-        end select
-    end do
-
-    Dxx=Dxx/ds0/ds0
-
-    Dyy=0d0
-    do j=1,jmax
-        !compute Dxx for Dirichlet BC
-        select case(param_diff%bcl)
-        case('Dirichlet')
-        Dyy(1,j,1)=-cdiff(1,j)-cdiff(2,j)
-        Dyy(1,j,2)=cdiff(2,j)-cdiff(1,j)
-        Dyy(2,j,1:3)=(/cdiff(2,j)/2-cdiff(1,j)/2, -cdiff(1,j)/2-cdiff(2,j)-cdiff(3,j)/2, cdiff(2,j)/2+cdiff(3,j)/2/)
-        case('Neumann')
-        Dyy(1,j,1)=-cdiff(1,j)/2-cdiff(2,j)/2
-        Dyy(1,j,2)=-Dyy(1,j,1)
-        Dyy(2,j,1:3)=(/cdiff(1,j)/2+cdiff(2,j)/2, -cdiff(1,j)/2-cdiff(2,j)-cdiff(3,j)/2, cdiff(2,j)/2+cdiff(3,j)/2/)
-        end select
-
-        do i=3,imax-2
-        Dyy(i,j,1:3)=(/cdiff(i-1,j)/2+cdiff(i,j)/2, -cdiff(i-1,j)/2-cdiff(i,j)-cdiff(i+1,j)/2, cdiff(i,j)/2+cdiff(i+1,j)/2/)
-        end do
-
-        select case(param_diff%bcr)
-        case('Dirichlet')
-        Dyy(imax-1,j,1:3)=(/cdiff(imax-2,j)/2+cdiff(imax-1,j)/2, -cdiff(imax-2,j)/2-cdiff(imax-1,j)-cdiff(imax,j)/2, -cdiff(imax,j)/2+cdiff(imax-1,j)/2/)
-        Dyy(imax,j,3)=-cdiff(imax,j)-cdiff(imax-1,j)
-        Dyy(imax,j,2)=cdiff(imax-1,j)-cdiff(imax,j)
-        case('Neumann')
-        Dyy(imax-1,j,1:3)=(/cdiff(imax-2,j)/2+cdiff(imax-1,j)/2, -cdiff(imax-2,j)/2-cdiff(imax-1,j)-cdiff(imax,j)/2, cdiff(imax-1,j)/2+cdiff(imax,j)/2/)
-        Dyy(imax,j,3)=-cdiff(imax,j)/2-cdiff(imax-1,j)/2
-        Dyy(imax,j,2)=-Dyy(imax,j,3)
-        end select
-    end do
-
-    Dyy=Dyy/ds0/ds0
-
-    Amx=0d0
-    Amx(:,1,1)=0.5-h*Dxx(:,1,1)
-    Amx(:,1,2)=-h*Dxx(:,1,2)
-    do j=2,jmax-1
-      Amx(:,j,1)=-h*Dxx(:,j,1)
-      Amx(:,j,2)=0.5-h*Dxx(:,j,2)
-      Amx(:,j,3)=-h*Dxx(:,j,3)
-    end do
-    Amx(:,jmax,3)=0.5-h*Dxx(:,jmax,3)
-    Amx(:,jmax,2)=-h*Dxx(:,jmax,2)
-
-    Amy=0d0
-    Amy(1,:,1)=0.5-h*Dyy(1,:,1)
-    Amy(1,:,2)=-h*Dyy(1,:,2)
-    do i=2,imax-1
-      Amy(i,:,1)=-h*Dyy(i,:,1)
-      Amy(i,:,2)=0.5-h*Dyy(i,:,2)
-      Amy(i,:,3)=-h*Dyy(i,:,3)
-    end do
-    Amy(imax,:,3)=0.5-h*Dyy(imax,:,3)
-    Amy(imax,:,2)=-h*Dyy(imax,:,2)
-
-    SAT=0d0
-  
-    x=pf!-pfhyd !initial guess
-
-    select case(param_diff%bct)
-      case('Neumann')
-        SAT(:,1)=-param_diff%qbct/str(:,jmax)*1e-9*h/ds0*1
-      case('Dirichlet')
-        SAT(:,1)=-1.0*cdiff(:,jmax)/ds0/ds0*param_diff%pbct*h*2
-        SAT(:,2)=-0.5*cdiff(:,jmax)/ds0/ds0*param_diff%pbct*h*2
-    end select
-
-    select case(param_diff%bcb)
-      case('Neumann')
-        SAT(:,jmax)=-param_diff%qbcb/str(:,jmax)*1e-9*h/ds0*1
-      case('Dirichlet')
-        SAT(:,jmax)=-1.0*cdiff(:,jmax)/ds0/ds0*param_diff%pbcb*h*2
-        SAT(:,jmax-1)=-0.5*cdiff(:,jmax)/ds0/ds0*param_diff%pbcb*h*2
-    end select
-
-    select case(param_diff%bcl)
-      case('Neumann')
-        SAT(1,:)=-param_diff%qbcl/str(1,:)*1e-9*h/ds0*1
-      case('Dirichlet')
-        SAT(1,:)=-1.0*cdiff(1,:)/ds0/ds0*param_diff%pbcl*h*2
-        SAT(2,:)=-0.5*cdiff(1,:)/ds0/ds0*param_diff%pbcl*h*2
-    end select
-
-    select case(param_diff%bcr)
-      case('Neumann')
-        SAT(imax,:)=-param_diff%qbcr/str(imax,:)*1e-9*h/ds0*1
-      case('Dirichlet')
-        SAT(imax,:)=-1.0*cdiff(imax,:)/ds0/ds0*param_diff%pbcr*h*2
-        SAT(imax-1,:)=-0.5*cdiff(imax,:)/ds0/ds0*param_diff%pbcr*h*2
-    end select
-
-    b=pf-SAT!-pfhyd
-    !write(*,*) param_diff%setting
-    if(param_diff%injectionfromfile) then
-      qtmp=0d0
-      do kwell=1,param_diff%nwell
-        do k=1,param_diff%npoint-1
-          t0=param_diff%qtimes(k)
-          t1=param_diff%qtimes(k+1)
-          v0=param_diff%qvals(kwell,k)
-          v1=param_diff%qvals(kwell,k+1)
-          if (time >= t0 .and. time <= t1) then
-            qtmp=(v1-v0)/(t1-t0)*(time-t0)+v0
-          else if (time> t1.and. k == param_diff%npoint-1) then
-            qtmp=v1
-          end if
-        end do
-        if(qtmp<0) qtmp=0d0
-        i=param_diff%iwell(kwell)
-        j=param_diff%jwell(kwell)
-        !write(*,*)i,j,qtmp
-        b(i,j)=b(i,j)+h*qtmp/str(i,j)*1e-12/ds0/ds0
-      end do
-    else if(param_diff%injection=='flowrate' .and. time<param_diff%tinj*365*24*3600) then
-    !write(*,*) param_diff%tinj,"injection"
-      b(imax/2,jmax/2)=b(imax/2,jmax/2)+h*param_diff%qinj/str(imax/2,jmax/2)*1e-12/ds0/ds0
-    ! end if
-    end if
-
-    !b(imax/2-5:imax/2+5,jmax/2-5:jmax/2+5)=b(imax/2-5:imax/2+5,jmax/2-5:jmax/2+5)+h*q0/beta/phi0*1e-12/ds0/ds0
-    
-
-    mx=0d0
-    do i=1,imax
-        mx(i,1)=x(i,1)*Amx(i,1,1)+x(i,2)*Amx(i,1,2)
-        do j=2,jmax-1
-            mx(i,j)=x(i,j-1)*Amx(i,j,1)+x(i,j)*Amx(i,j,2)+x(i,j+1)*Amx(i,j,3)
-        end do
-        mx(i,jmax)=x(i,jmax)*Amx(i,jmax,3)+x(i,jmax-1)*Amx(i,jmax,2)
-    end do
-
-    my=0d0
-    do j=1,jmax
-        my(1,j)=x(1,j)*Amy(1,j,1)+x(2,j)*Amy(1,j,2)
-        do i=2,imax-1
-            my(i,j)=x(i-1,j)*Amy(i,j,1)+x(i,j)*Amy(i,j,2)+x(i+1,j)*Amy(i,j,3)
-        end do
-        my(imax,j)=x(imax,j)*Amy(imax,j,3)+x(imax-1,j)*Amy(imax,j,2)
-    end do
-
-    m=mx+my
-    r=b-m
-    p=r
-    rsold=sum(r*r)
-    !write(*,*)rsold
-    if(rsold<tol**2*imax*jmax)  then
-      go to 100
-    end if
-
-    niter=itermax
-    do iter=1,itermax
-        tmp1=sum(r*r)
-
-        mx=0d0
-        do i=1,imax
-            mx(i,1)=p(i,1)*Amx(i,1,1)+p(i,2)*Amx(i,1,2)
-            do j=2,jmax-1
-                mx(i,j)=p(i,j-1)*Amx(i,j,1)+p(i,j)*Amx(i,j,2)+p(i,j+1)*Amx(i,j,3)
-            end do
-            mx(i,jmax)=p(i,jmax)*Amx(i,jmax,3)+p(i,jmax-1)*Amx(i,jmax,2)
-        end do
-    
-        my=0d0
-        do j=1,jmax
-            my(1,j)=p(1,j)*Amy(1,j,1)+p(2,j)*Amy(1,j,2)
-            do i=2,imax-1
-                my(i,j)=p(i-1,j)*Amy(i,j,1)+p(i,j)*Amy(i,j,2)+p(i+1,j)*Amy(i,j,3)
-            end do
-            my(imax,j)=p(imax,j)*Amy(imax,j,3)+p(imax-1,j)*Amy(imax,j,2)
-        end do
-
-        m=mx+my
-  
-        tmp2=sum(m*p)
-        alpha=tmp1/tmp2
-        x=x+alpha*p
-        r=r-alpha*m
-        rsnew = sum(r*r)
-        !write(*,*)iter,rsnew
-        if(rsnew<tol**2*imax*jmax) then
-            niter=iter
-          exit
-        end if
-        p = r + (rsnew / rsold) * p
-        rsold = rsnew
-        !write(*,'(9e15.6)')x
-  
-      end do
-
-      if(niter==itermax) write(*,*) "Maximum iteration"
-      100 pfnew=x!+pfhyd
-
-    return
-    end subroutine
     subroutine initialize_steadystate(param_diff)
     type(t_params):: param_diff
     end subroutine

@@ -55,6 +55,9 @@ program main
   !parameters for each elements
   real(8),allocatable::a(:),b(:),dc(:),f0(:),fw(:),vw(:),vc(:),taudot(:),tauddot(:),sigdot(:)
   real(8),allocatable::vpl(:),values(:,:),etav(:),etab(:),pre(:),vflow(:),veln(:),slipn(:)
+  real(8),allocatable :: mu_elastic(:),rho_elastic(:),vs_elastic(:),eta_rad(:)
+  real(8) :: material_mu,material_rho,material_vs,material_eta
+  integer :: material_unit
   real(8),allocatable::ag(:),bg(:),dcg(:),f0g(:),vcg(:),vwg(:),fwg(:),taug(:),sigmag(:),velg(:),taudotg(:),sigdotg(:)
   real(8),allocatable::vplg(:),cslipG(:),etavg(:),etabg(:),velnG(:),pfG(:),tmparray(:)
   integer,allocatable::listG(:)
@@ -70,8 +73,11 @@ program main
   !controls
   logical::dilatancy,buffer,nuclei,slipping,outfield,structured,limitsigma,dcscale,slowslip,slipfinal,deepcreep,rakefromglobal,viscous
   logical::initcondfromfile,parameterfromfile,backslip,sigmaconst,forward,inverse,geofromfile,restart,latticeh,debug,bgstress,relax,analyticalinjection
-  logical::opening,sorted,bingham,meshisinmeter,pressurediffusion,tidaln,tidals,station
+  logical::opening,sorted,bingham,meshisinmeter,pressurediffusion,tidaln,tidals,station,noiseinsliprate
   character*128::fname,dum,law,input_file,problem,geofile,param,pvalue,slipmode,project,parameter_file,outdir,command,evlaw,param2(20),station_file
+  character(128) :: elastic_layer_file
+  integer :: elastic_wave_order
+  real(8) :: elastic_wave_cutoff
   real(8)::a0,b0,dc0,sr,omega,theta,dtau,tiny,moment,wid,normal,ieta,meanmu,meanmuG,meanslip,meanslipG,moment0,mvel,mvelG,etav0,etab0,feps
   real(8)::vc0,mu0,onset_time,tr,vw0,fw0,velmin,tauinit,intau,trelax,maxnorm,maxnormG,minnorm,minnormG,sigmainit,muinit,pfinit,tmp,r,ux,uy,uz
   real(8)::vpl0,outv,xc,zc,dr,dx,dz,lapse,dlapse,vmaxeventi,sparam,tmax,dtmax,tout,dtout,dtout_co,dtout_inter,dummy(10),tdil,cdil,nflow,MCNS,vref
@@ -100,7 +106,7 @@ program main
   allocate(rcounts(npd),displs(npd+1))
 
   if(my_rank==0) then
-    write(*,*) 'HBI ver. 2026.6.0'
+    write(*,*) 'HBI ver. 2026.10.0'
     write(*,*) '# of MPI', np
   end if
   !input file must be specified when running
@@ -159,6 +165,8 @@ program main
   ncol=0; noutloc=0; locid=0; cdiff=0.0; pf0=0.0
   pfinit=0d0; nflow=1.0; crake=1.0
   geofile="default"; parameter_file="default"
+  elastic_layer_file='none'
+  elastic_wave_order=32; elastic_wave_cutoff=30d0
   errold=1.0; ztop=0.0
   !st_bemv%fwid=1e8
   evlaw='aging'
@@ -167,6 +175,7 @@ program main
   param_diff%injection='none'
   param_diff%tinj=1e8;param_diff%permev=.false.;param_diff%permsigma=.false.;param_diff%injectionfromfile=.false.
   param_diff%ninj=0;param_diff%network=.false.
+  param_diff%network_file='default'
 
   !read input file
   call read_inputfile()
@@ -178,7 +187,7 @@ program main
       call input_well(problem,param_diff,my_rank)
     end if
     if(param_diff%network) then
-      call setup_network(param_diff, my_rank)
+      call setup_network(number,param_diff,my_rank)
     end if
     select case(problem)
     case('3dht','3dnt')
@@ -274,6 +283,8 @@ program main
   allocate(ag(NCELLg),bg(NCELLg),dcg(NCELLg),f0g(NCELLg),etavg(NCELLg),etabg(NCELLg),vcg(NCELLg),vwg(NCELLg),fwg(NCELLg))
   allocate(taug(NCELLg),sigmag(NCELLg),pfG(Ncellg),velG(NCELLg),rake(NCELLg),cslipG(NCELLg),velnG(NCELLg),tmparray(NCELLg))
   allocate(taudotg(NCELLg),sigdotg(NCELLg),vplg(NCELLg),param_diff%kpG(NCELLg),param_diff%phiG(NCELLg))
+  allocate(param_diff%wG(NCELLg))
+  param_diff%wG=param_diff%w0
   param_diff%kpG=param_diff%kp0;param_diff%phiG=param_diff%phi0;pfG=pfinit
 
   st_bemv%xcol=0d0;st_bemv%ycol=0d0;st_bemv%zcol=0d0;st_bemv%ds=0d0
@@ -391,6 +402,11 @@ program main
       stop
   end select
 
+  if(trim(elastic_layer_file)/='none') then
+    if(opening) error stop 'Layered 2dvs does not support fault opening'
+    call read_layered_2dvs(st_bemv,trim(elastic_layer_file),elastic_wave_order,elastic_wave_cutoff)
+  end if
+
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
 
    rake=crake
@@ -442,6 +458,8 @@ program main
         param_diff%kpG(:)=values(:,k)
       case('phi')
         param_diff%phiG(:)=values(:,k)
+      case('w')
+        param_diff%wG(:)=values(:,k)
       case('taudot')
         taudotg(:)=values(:,k)
       case('sigmadot')
@@ -460,6 +478,18 @@ program main
     ! end do
 
     close(99)
+  end if
+
+  call diffusion_width(param_diff,NCELLg,tmparray)
+  if(analyticalinjection) then
+    if(maxval(param_diff%wG)-minval(param_diff%wG)> &
+      1d-12*maxval(param_diff%wG)) error stop 'Analytical injection requires uniform hydraulic w'
+  end if
+  if(pressurediffusion.and.my_rank==0) then
+    write(fname,'("output/w",i0,".dat")') number
+    open(newunit=material_unit,file=fname,status='replace',form='unformatted',access='stream')
+    write(material_unit) param_diff%wG
+    close(material_unit)
   end if
 
   if(problem .ne. '2dn') st_bemv%rake=st_bemv%rake/180d0*pi
@@ -509,7 +539,7 @@ program main
   NCELL=st_vel%ndc
   if(.not.sigmaconst) then
     lrtrn=HACApK_init(NCELLg,st_ctl2,st_bemv,icomm)
-   ! st_ctl2%param(8)=20
+    st_ctl2%param(8)=20!
     st_bemv%v='n'
     lrtrn=HACApK_generate(st_leafmtxp_n,st_bemv,st_ctl2,coord,eps_h)
     lrtrn=HACApK_construct_LH(st_LHp_n,st_leafmtxp_n,st_bemv,st_ctl2,coord,eps_h)
@@ -544,6 +574,34 @@ program main
   allocate(a(NCELL),b(NCELL),dc(NCELL),f0(NCELL),vc(NCELL),vw(NCELL),fw(NCELL),taudot(NCELL),tauddot(NCELL),sigdot(NCELL),vpl(NCELL))
   taudot=0d0;sigdot=0d0
   allocate(param_diff%kp(ncell))
+  allocate(mu_elastic(ncell),rho_elastic(ncell),vs_elastic(ncell),eta_rad(ncell))
+  mu_elastic=rigid; vs_elastic=vs; rho_elastic=1000d0*rigid/(vs*vs)
+  eta_rad=0.5d0*rigid/vs
+  if(allocated(st_bemv%layered%moduli)) then
+    do i=1,ncell
+      i_=st_sum%lodc(i)
+      call layered_material_at(st_bemv%layered,st_bemv%xcol(i_), &
+        mu_elastic(i),rho_elastic(i),vs_elastic(i),eta_rad(i))
+    end do
+    if(my_rank==0) then
+      write(*,*) 'Layered radiation damping: Vs[km/s], eta[MPa*s/m] by layer'
+      do i=1,size(st_bemv%layered%moduli)
+        tmp=sqrt(st_bemv%layered%moduli(i)*1000d0/st_bemv%layered%densities(i))
+        write(*,'(i5,4es17.8)') i,st_bemv%layered%moduli(i), &
+          st_bemv%layered%densities(i),tmp,0.5d0*st_bemv%layered%moduli(i)/tmp
+      end do
+      write(fname,'("output/material",i0,".dat")') number
+      open(newunit=material_unit,file=fname,status='replace',action='write')
+      write(material_unit,'(a)') '# element depth_km mu_GPa rho_kg_m3 Vs_km_s eta_MPa_s_m'
+      do i=1,ncellg
+        call layered_material_at(st_bemv%layered,st_bemv%xcol(i), &
+          material_mu,material_rho,material_vs,material_eta)
+        write(material_unit,'(i8,5es24.15)') i,st_bemv%xcol(i), &
+          material_mu,material_rho,material_vs,material_eta
+      end do
+      close(material_unit)
+    end if
+  end if
 
    
 
@@ -565,25 +623,20 @@ program main
   if(deepcreep) then
     if(my_rank == 0) write(*,*) 'Loading rate is calculated from deep creep'
     select case(problem)
-    case('3dph')
+    case('3dph','3dhr','3dnr')
       call taudot_3dph()
     case('2dnh','2dph','2dp')
       call taudot_2dnh(nload)
+    case default
+      if(my_rank == 0) write(*,*) 'ERROR: deepcreep is not implemented for problem ', problem
+      stop
     end select
   end if
 
   !call taudot_3dph()
 
-  ! dc=2e-5
-  ! f0=0.35
-  ! taudot=taudot*1e-3
-  ! sigdot=sigdot*1e-3
-
   call MPI_BARRIER(MPI_COMM_WORLD,ierr)
-  !stop
-  !max time step
-  !if(load==0) dtmax=0.02d0*10d0/sr
-  !write(*,*) forward
+  
   if(forward) then
     if(my_rank==0)write(*,*) 'Debug mode: calculate stress from uniform slip'
     call forward_check()
@@ -841,10 +894,12 @@ program main
     pf=pfinit
     
     !random perturbation
-    ! do i=1,ncell
-    !   call random_number(r)
-    !   vel(i)=vel(i)*(1+0.1*(r-0.5))
-    ! end do
+    if (noiseinsliprate) then
+    do i=1,ncell
+      call random_number(r)
+      tau(i)=tau(i)*(1+0.1*(r-0.5))
+    end do
+    end if
   
     !if(my_rank==0) write(*,*) tau
     if(muinit.ne.0d0) tau=sigma*muinit
@@ -1121,7 +1176,9 @@ program main
   dpdt=0d0
 
   do k=kstart,NSTEP
-    dttry = dtnxt
+    ! A restarted run may already be at its requested final time.
+    if(x>=tmax) exit
+    dttry = min(dtnxt,tmax-x)
 
     call rkqs(y,dydx,x,dttry,eps_r,dtdid,dtnxt,errmax_gb,nrjct,dpdt)
     !call rkqs2(y,dydx,x,dttry,eps_r,errold,dtdid,dtnxt,errmax_gb,nrjct)
@@ -1260,7 +1317,7 @@ program main
     if(mod(k,interval)==0) then
       outfield=.true.
     end if
-    if(x>tmax) then
+    if(x>=tmax) then
       outfield=.true.
     end if
     !if(k>3800.and.k<4200.and.mod(k,10)==0) outfield=.true.
@@ -1308,8 +1365,8 @@ program main
       if(my_rank == 0) write(*,*) 'Slip rate below vmin at time step=', k
       exit
     end if
-    if(x>tmax) then
-      if(my_rank == 0) write(*,*) 'Time exceeds tmax at time step=', k
+    if(x>=tmax) then
+      if(my_rank == 0) write(*,*) 'Time reaches tmax at time step=', k
       exit
     end if
   end do
@@ -1441,6 +1498,7 @@ contains
         write(nout(10)) pfG
         if(param_diff%permev) then
           write(nout(11)) param_diff%kpG
+          write(*,*) maxval(param_diff%kpG),minval(param_diff%kpG)
         end if
       end if
     end if
@@ -1717,56 +1775,25 @@ end subroutine
     end subroutine coordinate3dns
 
   subroutine evcalc(xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,ev11,ev12,ev13,ev21,ev22,ev23,ev31,ev32,ev33,ds)
-    !calculate ev for each element
+    ! Canonical geological frame; stored vertex order is left unchanged.
     implicit none
     real(8),intent(in)::xs1(:),xs2(:),xs3(:),ys1(:),ys2(:),ys3(:),zs1(:),zs2(:),zs3(:)
     real(8),intent(out)::ev11(:),ev12(:),ev13(:),ev21(:),ev22(:),ev23(:),ev31(:),ev32(:),ev33(:),ds(:)
-    real(8)::rr,vba(0:2),vca(0:2),tmp1,tmp2,tmp3,theta
-    theta=0d0 
-    !open(50,file='cas3rake')
-    do k=1,NCELLg
-      vba(0) = xs2(k)-xs1(k)
-      vba(1) = ys2(k)-ys1(k)
-      vba(2) = zs2(k)-zs1(k)
-      vca(0) = xs3(k)-xs1(k)
-      vca(1) = ys3(k)-ys1(k)
-      vca(2) = zs3(k)-zs1(k)
-
-      ev31(k) = vba(1)*vca(2)-vba(2)*vca(1)
-      ev32(k) = vba(2)*vca(0)-vba(0)*vca(2)
-      ev33(k) = vba(0)*vca(1)-vba(1)*vca(0)
-      rr = sqrt(ev31(k)*ev31(k)+ev32(k)*ev32(k)+ev33(k)*ev33(k))
-      !// unit vectors for local coordinates of elements
-      ev31(k) = ev31(k)/rr ; ev32(k) = ev32(k)/rr ; ev33(k) = ev33(k)/rr
-      !if(my_rank==0) write(*,'(i0,3e15.6)') k,ev31(k),ev32(k),ev33(k)
-
-      if( abs(ev33(k)) < 1.0d0 ) then
-        ev11(k) = -ev32(k) ; ev12(k) = ev31(k) ; ev13(k) = 0.0d0
-        rr = sqrt(ev11(k)*ev11(k) + ev12(k)*ev12(k))
-        ev11(k) = ev11(k)/rr ; ev12(k) = ev12(k)/rr;
-      else
-        ev11(k) = 1.0d0 ; ev12(k) = 0.0d0 ; ev13(k) = 0.0d0
-      end if
-
-      ev21(k) = ev32(k)*ev13(k)-ev33(k)*ev12(k)
-      ev22(k) = ev33(k)*ev11(k)-ev31(k)*ev13(k)
-      ev23(k) = ev31(k)*ev12(k)-ev32(k)*ev11(k)
-
-      !tmp1=(ev12(k)-atan(theta)*ev11(k))/(atan(theta)*ev21(k)-ev22(k))
-      !tmp2=atan(tmp1)
-      !tmp1=atan2(-ev11(k),ev12(k))
-      !if(my_rank==0) write(50,*) ev11(k),ev12(k),90-tmp1/pi*180
-      !rake(k)=pi/2-tmp1+convangle*pi/180
-
-
-      tmp1=vba(0)*vba(0)+vba(1)*vba(1)+vba(2)*vba(2)
-      tmp2=vca(0)*vca(0)+vca(1)*vca(1)+vca(2)*vca(2)
-      tmp3=vba(0)*vca(0)+vba(1)*vca(1)+vba(2)*vca(2)
-      ds(k)=0.5d0*sqrt(tmp1*tmp2-tmp3*tmp3)
-      !if(my_rank==0) write(*,*)ev21(k),ev22(k),ev23(k)
+    real(8)::edge1(3),edge2(3),raw_normal(3),normal(3),strike(3),updip(3)
+    integer::element
+    do element=1,size(xs1)
+      edge1=(/xs2(element)-xs1(element),ys2(element)-ys1(element),zs2(element)-zs1(element)/)
+      edge2=(/xs3(element)-xs1(element),ys3(element)-ys1(element),zs3(element)-zs1(element)/)
+      call DCross(edge1,edge2,raw_normal)
+      ds(element)=0.5d0*sqrt(dot_product(raw_normal,raw_normal))
+      call geological_frame(raw_normal,normal,strike,updip)
+      ev11(element)=strike(1);ev12(element)=strike(2);ev13(element)=strike(3)
+      ev21(element)=updip(1);ev22(element)=updip(2);ev23(element)=updip(3)
+      ev31(element)=normal(1);ev32(element)=normal(2);ev33(element)=normal(3)
+      st_bemv%ang(element)=atan2(strike(2),strike(1))
+      st_bemv%angd(element)=atan2(sqrt(normal(1)**2+normal(2)**2),abs(normal(3)))
     end do
-
-  end subroutine
+  end subroutine evcalc
 
   subroutine calcrake(ev11,ev12,convangle,rake)
     real(8),intent(in)::ev11(:),ev12(:),convangle
@@ -1782,30 +1809,51 @@ end subroutine
   end subroutine
 
   subroutine taudot_3dph()
-    real(8)::rate
+    real(8)::crake=90.0/180*pi,cdip=15.0/180*pi,cang=0.0/180*pi,xs1=-0,ys1,lengx=10.0,depth
+    character(128)::vv
+
+    ys1=minval(st_bemv%ycol)-cos(cdip)*ds0/2
+    depth=-(minval(st_bemv%zcol)-sin(cdip)*ds0/2)
+    write(*,*) "ys1=",ys1,"depth=",depth
+
+
     !open(111,file='tmp')
+    open(111,file='tmp')
     do i=1,NCELL
       i_=st_sum%lodc(i)
-      taudot(i)=okada_load(st_bemv%xcol(i_),st_bemv%ycol(i_),st_bemv%zcol(i_),-ds0*imax/2,ds0*imax/2,ds0*jmax,0d0,pi/2.0,0d0)*vpl0
+      vv="s"
+      taudot(i)=okada_load(st_bemv%xcol(i_),st_bemv%ycol(i_),st_bemv%zcol(i_),st_bemv%ang(i_),st_bemv%angd(i_),st_bemv%rake(i_),xs1,ys1,lengx,depth,cang,cdip,crake,vv)*vpl0
+
+      vv="n"
+      !taudot(i)=okada_load(st_bemv%xcol(i_),st_bemv%ycol(i_),st_bemv%zcol(i_),-ds0*imax/2,ds0*imax/2,ds0*jmax,0d0,pi/2.0,pi/2.0)*vpl0
+      sigdot(i)=okada_load(st_bemv%xcol(i_),st_bemv%ycol(i_),st_bemv%zcol(i_),st_bemv%ang(i_),st_bemv%angd(i_),st_bemv%rake(i_),xs1,ys1,lengx,depth,cang,cdip,crake,vv)*vpl0
+      write(111,*) st_bemv%xcol(i_),st_bemv%ycol(i_),taudot(i),sigdot(i)
+
     end do
     !close(111)
   end subroutine
 
   subroutine taudot_2dnh(nload)
-    real(8)::rate
+    real(8)::rate,labdep=10.d0
     integer,intent(in)::nload
     character(128)::vv
+    open(111,file='tmp')
     do i=1,NCELL
       i_=st_sum%lodc(i)
       vv="s"
       taudot(i)=load2dnh(st_bemv%xcol(i_),st_bemv%ycol(i_),st_bemv%xer(Nload),st_bemv%yer(Nload),st_bemv%ang(Nload),vv)*vpl0
+      !taudot(i)=taudot(i)-load2dnh(st_bemv%xcol(i_),st_bemv%ycol(i_),0.d0,labdep,st_bemv%ang(Nload),vv)*vpl0
+      !taudot(i)=taudot(i)-load2dnh(st_bemv%xcol(i_),st_bemv%ycol(i_),0.d0,labdep,-pi,vv)*vpl0
+
       vv="n"
       sigdot(i)=load2dnh(st_bemv%xcol(i_),st_bemv%ycol(i_),st_bemv%xer(Nload),st_bemv%yer(Nload),st_bemv%ang(Nload),vv)*vpl0
+      !sigdot(i)=sigdot(i)-load2dnh(st_bemv%xcol(i_),st_bemv%ycol(i_),0.d0,labdep,st_bemv%ang(Nload),vv)*vpl0
+      !sigdot(i)=sigdot(i)-load2dnh(st_bemv%xcol(i_),st_bemv%ycol(i_),0.d0,labdep,-pi,vv)*vpl0
 
       !taudot(i)=taudot(i)+sr*0.5*sin(2*st_bemv%ang(i_))
       !sigdot(i)=sigdot(i)+sr*sin(st_bemv%ang(i_))**2
 
-      write(*,*) taudot(i),sigdot(i)
+      write(111,*) st_bemv%xcol(i_),st_bemv%ycol(i_),taudot(i),sigdot(i)
     end do
   end subroutine
 
@@ -1842,7 +1890,8 @@ end subroutine
       &p(1),p(2),p(3),p(4),p(5),p(6))
 
       sigma(i)=p(3)
-      tau(i)=-p(5)*cos(st_bemv%rake(i_))+p(6)*sin(st_bemv%rake(i_))
+      ! Background tensor above is compression positive; traction uses tensile stress.
+      tau(i)=-p(5)*cos(st_bemv%rake(i_))-p(6)*sin(st_bemv%rake(i_))
     end do
     mu=tau/sigma
     vel=velinit
@@ -1953,19 +2002,19 @@ end subroutine
       if(tidaln) sum_gn(i)=sum_gn(i)+2*pi/tidalperiod*tidalamp*sin(2*pi*x/tidalperiod)
       if(tidals) sum_gs(i)=sum_gs(i)+2*pi/tidalperiod*tidalamp*sin(2*pi*x/tidalperiod)
 
-      call deriv(sum_gs(i),sum_gn(i),psitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),vc(i),vw(i),fw(i),etab(i),dpdt(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
+      call deriv(sum_gs(i),sum_gn(i),psitmp(i),tautmp(i),sigmatmp(i),veltmp(i),a(i),b(i),dc(i),f0(i),vc(i),vw(i),fw(i),etab(i),dpdt(i),eta_rad(i),dydx(3*i-2),dydx(3*i-1),dydx(3*i))
     enddo
     !$omp end parallel do
     !write(*,*) dydx
     return
   end subroutine
 
-  subroutine deriv(sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc,vw,fw,etab,dpdt,dpsidt,dtaudt,dsigdt)
+  subroutine deriv(sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc,vw,fw,etab,dpdt,eta,dpsidt,dtaudt,dsigdt)
     implicit none
     real(8)::fss,dvdtau,dvdsig,dvdpsi,mu,psiss,dcv,f
     real(8),parameter::V0=0.5,n=4,Cr=1.0
     !type(t_deriv),intent(in) ::
-    real(8),intent(in)::sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc,vw,fw,etab,dpdt
+    real(8),intent(in)::sum_gs,sum_gn,psitmp,tautmp,sigmatmp,veltmp,a,b,dc,f0,vc,vw,fw,etab,dpdt,eta
     real(8),intent(out)::dpsidt,dtaudt,dsigdt
     dsigdt=sum_gn
     if(limitsigma)then
@@ -1999,7 +2048,7 @@ end subroutine
       fss=fw+(fss-fw)/(1.d0+(veltmp/vw)**8)**0.125d0 !flash heating
       psiss=a*dlog(2*vref/veltmp*sinh(fss/a))
       !dcv=dc*(1+(veltmp/vref)**2)**(0.5)
-      !dcv=dc*(1+log((veltmp/vref)+1))
+      dcv=dc*(1+log((veltmp/vref)+1))
       dpsidt=-veltmp/dcv*(psitmp-psiss)
     case('cutoff')
       if(b==0) then
@@ -2038,19 +2087,17 @@ end subroutine
     end if
     
     
-    dtaudt=(sum_gs-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*(dsigdt-dpdt)))/(1d0+0.5d0*rigid/vs*dvdtau)
-    !dtaudt=(sum_gs-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*dsigdt))/(1d0+0.5d0*rigid/vs*dvdtau)
+    dtaudt=(sum_gs-eta*(dvdpsi*dpsidt+dvdsig*(dsigdt-dpdt)))/(1d0+eta*dvdtau)
 
-    if(bingham) dtaudt=(sum_gs-(etab+0.5d0*rigid/vs)*(dvdpsi*dpsidt+dvdsig*dsigdt))/(1d0+(etab+0.5d0*rigid/vs)*dvdtau)
-    !write(*,*) rigid/vs*dvdtau
+    if(bingham) dtaudt=(sum_gs-(etab+eta)*(dvdpsi*dpsidt+dvdsig*dsigdt))/(1d0+(etab+eta)*dvdtau)
     if(veltmp<=0d0) then
       dvdtau=2*vref*dexp(-psitmp/a)*dcosh(tautmp/sigmatmp/a)/(a*sigmatmp)
       dvdsig=-2*vref*dexp(-psitmp/a)*dcosh(tautmp/sigmatmp/a)*tautmp/(a*sigmatmp**2)
       !sign ok?
       !dvdpsi=2*vref*exp(-psitmp(i)/a(i))*sinh(tautmp(i)/sigmatmp(i)/a(i))/a(i)
       dvdpsi=-veltmp/a
-      dtaudt=sum_gs-0.5d0*rigid/vs*(dvdpsi*dpsidt+dvdsig*dsigdt)
-      dtaudt=dtaudt/(1d0+0.5d0*rigid/vs*dvdtau)
+      dtaudt=sum_gs-eta*(dvdpsi*dpsidt+dvdsig*dsigdt)
+      dtaudt=dtaudt/(1d0+eta*dvdtau)
     end if
   end subroutine
   !---------------------------------------------------------------------
@@ -2144,7 +2191,8 @@ end subroutine
 
     hnext=min(2*h,SAFETY*h*(errmax_gb**PGROW))
     hnext=min(hnext,dtmax)
-    if(x+hnext>tmax) hnext=tmax-x+1e-5
+    ! Never rely on a fixed epsilon to advance beyond a large final time.
+    hnext=min(hnext,max(0d0,tmax-x))
 
   end subroutine
   !---------------------------------------------------------------------
@@ -2564,9 +2612,11 @@ end subroutine
             case('pressure')
               pf(i)=param_diff%pinj*erfc(abs(st_bemv%xcol(i_)-param_diff%xinj)/(2*sqrt(cdiff*x)))
             case('flowrate' )
-              pf(i)=pf1d(param_diff%pinj,cdiff,x,st_bemv%xcol(i_)-param_diff%xinj)
+              tmp=param_diff%qinj*param_diff%eta/(param_diff%kp0*param_diff%wG(1))*sqrt(cdiff)*1d-3
+              pf(i)=pf1d(tmp,cdiff,x,st_bemv%xcol(i_)-param_diff%xinj)
             case('homogeneous')
-              pf(i)=pf2d(param_diff%qinj*param_diff%eta/4/pi/param_diff%kp0,cdiff,x,st_bemv%xcol(i_)-param_diff%xinj,st_bemv%ycol(i_)-param_diff%yinj)
+              tmp=param_diff%qinj*param_diff%eta/(4*pi*param_diff%kp0*param_diff%wG(1))*1d-6
+              pf(i)=pf2d(tmp,cdiff,x,st_bemv%xcol(i_)-param_diff%xinj,st_bemv%ycol(i_)-param_diff%yinj)
             case default
               if(my_rank == 0)write(*,*) 'ERROR: invalid injection type for analytical solution'
               stop
@@ -2830,6 +2880,12 @@ end subroutine
       read (pvalue,*) interval
     case('geometry_file')
       read (pvalue,'(a)') geofile
+    case('elastic_layer_file')
+      read (pvalue,'(a)') elastic_layer_file
+    case('elastic_wave_order')
+      read (pvalue,*) elastic_wave_order
+    case('elastic_wave_cutoff')
+      read (pvalue,*) elastic_wave_cutoff
     case('velinit')
       read (pvalue,*) velinit
     case('tauinit')
@@ -2910,6 +2966,8 @@ end subroutine
       read(pvalue,*) param_diff%beta
     case('phi')
       read(pvalue,*) param_diff%phi0
+    case('w')
+      read(pvalue,*) param_diff%w0
     case('eta')
       read(pvalue,*) param_diff%eta
     case('kp')
@@ -3004,6 +3062,8 @@ end subroutine
       read(pvalue,*) bingham
     case('meshisinmeter')
       read(pvalue,*) meshisinmeter
+    case('noiseinsliprate')
+      read(pvalue,*) noiseinsliprate
     case('parameter_file_ncol')
       read(pvalue,*) ncol
     case('outloc')

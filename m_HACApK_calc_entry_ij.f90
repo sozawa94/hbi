@@ -3,6 +3,13 @@ module m_HACApK_calc_entry_ij
   use mod_constant
   use dtriangular
   use mod_okada
+  use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+
+  ! Immutable after initialization: safe for concurrent ACA entry evaluations.
+  type :: layered_antiplane_model
+    real(8), allocatable :: bottoms(:), moduli(:), wave(:), weight(:)
+    real(8), allocatable :: densities(:)
+  end type
 
   type :: st_HACApK_calc_entry
     real*8,pointer :: ao(:)
@@ -16,10 +23,114 @@ module m_HACApK_calc_entry_ij
     real(8)::w,fwid
     !real(8),pointer::ds
     character(128)::v,md
+    type(layered_antiplane_model) :: layered
   end type st_HACApK_calc_entry
 
   public :: HACApK_entry_ij
 contains
+  subroutine geological_frame(input_normal,normal,strike,updip)
+    ! z is upward. Rake is measured from RHR strike towards updip.
+    ! An unoriented plane has a unique upward normal except at vertical dip.
+    ! Vertical tie: choose ny<0, then nx>0; horizontal tie: strike is +x.
+    implicit none
+    real(8),intent(in)::input_normal(3)
+    real(8),intent(out)::normal(3),strike(3),updip(3)
+    real(8),parameter::tol=1d-12
+    real(8)::length,horizontal
+    length=sqrt(dot_product(input_normal,input_normal))
+    if(length<=0d0) error stop 'Degenerate fault normal'
+    normal=input_normal/length
+    if(normal(3)<-tol) then
+      normal=-normal
+    else if(abs(normal(3))<=tol) then
+      if(normal(2)>tol.or.(abs(normal(2))<=tol.and.normal(1)<0d0)) normal=-normal
+    end if
+    horizontal=sqrt(normal(1)**2+normal(2)**2)
+    if(horizontal>tol) then
+      strike=(/-normal(2),normal(1),0d0/)/horizontal
+    else
+      strike=(/1d0,0d0,0d0/)
+    end if
+    call DCross(normal,strike,updip)
+    updip=updip/sqrt(dot_product(updip,updip))
+  end subroutine geological_frame
+
+  subroutine geological_triangle_slip(p1,p2,p3,rake,ss,ds)
+    ! Convert geological slip to the native, vertex-order-dependent TD basis.
+    ! The native displacement jump changes side when its normal is reversed.
+    implicit none
+    real(8),intent(in)::p1(3),p2(3),p3(3),rake
+    real(8),intent(out)::ss,ds
+    real(8)::raw_normal(3),native_strike(3),native_dip(3),normal(3),strike(3),updip(3),jump(3),length,side
+    call DCross(p2-p1,p3-p1,raw_normal)
+    length=sqrt(dot_product(raw_normal,raw_normal))
+    if(length<=0d0) error stop 'Degenerate triangular fault element'
+    raw_normal=raw_normal/length
+    call geological_frame(raw_normal,normal,strike,updip)
+    call DCross((/0d0,0d0,1d0/),raw_normal,native_strike)
+    length=sqrt(dot_product(native_strike,native_strike))
+    if(length>0d0) then
+      native_strike=native_strike/length
+    else
+      ! Same horizontal-plane fallback as the TD kernels.
+      native_strike=(/0d0,raw_normal(3),0d0/)
+    end if
+    call DCross(raw_normal,native_strike,native_dip)
+    side=sign(1d0,dot_product(raw_normal,normal))
+    jump=side*(strike*cos(rake)+updip*sin(rake))
+    ss=dot_product(jump,native_strike)
+    ds=dot_product(jump,native_dip)
+  end subroutine geological_triangle_slip
+
+  real(8) function geological_triangle_entry(i,j,st_bemv,halfspace) result(value)
+    implicit none
+    integer,intent(in)::i,j
+    logical,intent(in)::halfspace
+    type(st_HACApK_calc_entry),intent(in)::st_bemv
+    real(8)::p1(3),p2(3),p3(3),ss,ds,ts,source_rake,lambda
+    real(8)::sxx,syy,szz,sxy,sxz,syz,normal(3),strike(3),updip(3),traction(3),slip_direction(3)
+    p1=(/st_bemv%xs1(j),st_bemv%ys1(j),st_bemv%zs1(j)/)
+    p2=(/st_bemv%xs2(j),st_bemv%ys2(j),st_bemv%zs2(j)/)
+    p3=(/st_bemv%xs3(j),st_bemv%ys3(j),st_bemv%zs3(j)/)
+    ts=0d0
+    select case(trim(st_bemv%md))
+    case('st')
+      source_rake=0d0
+    case('dp')
+      source_rake=pi/2
+    case('s','o')
+      source_rake=st_bemv%rake(j)
+    case('open')
+      ts=1d0;source_rake=0d0
+    case default
+      error stop 'Unsupported triangular slip mode'
+    end select
+    call geological_triangle_slip(p1,p2,p3,source_rake,ss,ds)
+    if(ts/=0d0) then
+      ss=0d0;ds=0d0
+    end if
+    lambda=2*pois*rigid/(1-2*pois)
+    if(halfspace) then
+      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),p1,p2,p3,ss,ds,ts,rigid,lambda, &
+        sxx,syy,szz,sxy,sxz,syz)
+    else
+      call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),p1,p2,p3,ss,ds,ts,rigid,lambda, &
+        sxx,syy,szz,sxy,sxz,syz)
+    end if
+    call geological_frame((/st_bemv%ev31(i),st_bemv%ev32(i),st_bemv%ev33(i)/),normal,strike,updip)
+    traction=(/sxx*normal(1)+sxy*normal(2)+sxz*normal(3), &
+      sxy*normal(1)+syy*normal(2)+syz*normal(3),sxz*normal(1)+syz*normal(2)+szz*normal(3)/)
+    select case(trim(st_bemv%v))
+    case('n')
+      value=-dot_product(normal,traction)
+    case('s','o')
+      slip_direction=strike*cos(st_bemv%rake(i))+updip*sin(st_bemv%rake(i))
+      value=dot_product(slip_direction,traction)
+    case default
+      error stop 'Unsupported triangular traction component'
+    end select
+  end function geological_triangle_entry
+
   !***HACApK_entry_ij
   real*8 function HACApK_entry_ij(i, j, st_bemv)
     ! zbemv is data needed for calculating the value of the element
@@ -53,8 +164,20 @@ contains
       & st_bemv%xel,st_bemv%xer,st_bemv%yel,st_bemv%yer,st_bemv%ang)
 
     case('2dvs')
-      HACApK_entry_ij=matels2dpa_ij(i,j,st_bemv%xcol,st_bemv%xel,st_bemv%xer)-&
-      & matels2dpa_ij(i,j,st_bemv%xcol,-st_bemv%xel,-st_bemv%xer)
+      if(allocated(st_bemv%layered%moduli)) then
+        select case(trim(st_bemv%v))
+        case('s')
+          if(trim(st_bemv%md)/='s') error stop 'Layered 2dvs supports strike slip only'
+          HACApK_entry_ij=matel2dvs_layered_ij(i,j,st_bemv)
+        case('n')
+          HACApK_entry_ij=0d0 ! Antiplane slip produces no normal traction.
+        case default
+          error stop 'Unsupported layered 2dvs traction component'
+        end select
+      else
+        HACApK_entry_ij=matels2dpa_ij(i,j,st_bemv%xcol,st_bemv%xel,st_bemv%xer)-&
+        & matels2dpa_ij(i,j,st_bemv%xcol,-st_bemv%xel,-st_bemv%xer)
+      end if
       !   &tensor2d3_ij(i,j,st_bemv%xcol,st_bemv%ycol,&
       !   & st_bemv%xel,st_bemv%xer,-st_bemv%yel,-st_bemv%yer,st_bemv%ang)
 
@@ -91,6 +214,312 @@ contains
     return
   end function HACApK_entry_ij
 
+  subroutine init_layered_2dvs(st_bemv,bottoms,moduli,wave_order,cutoff,densities)
+    ! depths in km, mu in GPa: returned GPa/km equals HBI's MPa/m.
+    ! xcol/xel/xer are POSITIVE DOWNWARD depths for problem='2dvs'.
+    ! Initialize on every MPI rank, before HACApK_generate (never inside ACA).
+    implicit none
+    type(st_HACApK_calc_entry), intent(inout) :: st_bemv
+    real(8), intent(in) :: bottoms(:),moduli(:)
+    integer, optional, intent(in) :: wave_order
+    real(8), optional, intent(in) :: cutoff
+    real(8), optional, intent(in) :: densities(:) ! kg/m^3; optional for static-only API use
+    integer :: n,nq,l,p,panels,offset
+    real(8) :: d,scale,qmax,lo,hi,cut,tol
+    real(8), allocatable :: nodes(:),weights(:)
+    n=size(bottoms); nq=32; cut=30d0
+    if(present(wave_order)) nq=wave_order
+    if(present(cutoff)) cut=cutoff
+    if(trim(st_bemv%problem)/='2dvs') error stop 'Layered elasticity requires problem=2dvs'
+    if(size(moduli)/=n+1) error stop 'Need n layer bottoms and n+1 moduli'
+    if(any(.not.ieee_is_finite(bottoms)).or.any(.not.ieee_is_finite(moduli))) &
+      error stop 'Nonfinite layered material'
+    if(any(bottoms<=0d0).or.any(moduli<=0d0)) error stop 'Layer depths and moduli must be positive'
+    if(present(densities)) then
+      if(size(densities)/=n+1) error stop 'Need n+1 layer densities'
+      if(any(.not.ieee_is_finite(densities)).or.any(densities<=0d0)) &
+        error stop 'Layer densities must be finite and positive'
+    end if
+    do l=2,n
+      if(bottoms(l)<=bottoms(l-1)) error stop 'Layer bottoms must increase'
+    end do
+    if(nq<2.or.nq>512.or..not.ieee_is_finite(cut).or.cut<=0d0) error stop 'Invalid wave quadrature'
+    if(.not.associated(st_bemv%xcol).or..not.associated(st_bemv%xel).or..not.associated(st_bemv%xer)) &
+      error stop 'Initialize 2dvs geometry before layered elasticity'
+    if(size(st_bemv%xcol)==0.or.size(st_bemv%xel)/=size(st_bemv%xcol).or. &
+      size(st_bemv%xer)/=size(st_bemv%xcol)) error stop 'Invalid layered 2dvs geometry sizes'
+    if(any(.not.ieee_is_finite(st_bemv%xcol)).or.any(.not.ieee_is_finite(st_bemv%xel)).or. &
+      any(.not.ieee_is_finite(st_bemv%xer))) error stop 'Nonfinite 2dvs geometry'
+    if(any(st_bemv%xel<0d0).or.any(st_bemv%xer<=st_bemv%xel).or. &
+      any(st_bemv%xcol<=st_bemv%xel).or.any(st_bemv%xcol>=st_bemv%xer)) &
+      error stop 'Require positive-depth elements and interior collocation points'
+    do l=2,size(st_bemv%xcol)
+      if(st_bemv%xel(l)<st_bemv%xer(l-1)) error stop 'Layered 2dvs elements must be ordered and nonoverlapping'
+    end do
+    scale=maxval(st_bemv%xer)
+    if(n>0) scale=max(scale,maxval(bottoms))
+    tol=64d0*epsilon(1d0)*scale
+    ! For ordered nonoverlapping intervals the closest tip is an own-element tip.
+    d=min(minval(st_bemv%xcol-st_bemv%xel),minval(st_bemv%xer-st_bemv%xcol))
+    do l=1,size(st_bemv%xcol)
+      if(n>0) d=min(d,minval(abs(st_bemv%xcol(l)-bottoms)))
+    end do
+    if(d<=tol) error stop 'Collocation on a source tip or material interface is unsupported'
+    if(allocated(st_bemv%layered%moduli)) then
+      deallocate(st_bemv%layered%bottoms,st_bemv%layered%moduli,st_bemv%layered%wave,st_bemv%layered%weight)
+    end if
+    if(allocated(st_bemv%layered%densities)) deallocate(st_bemv%layered%densities)
+    ! Fujitsu's default flags do not enable automatic allocatable assignment.
+    allocate(st_bemv%layered%bottoms(n),st_bemv%layered%moduli(n+1))
+    st_bemv%layered%bottoms(:)=bottoms; st_bemv%layered%moduli(:)=moduli
+    if(present(densities)) then
+      allocate(st_bemv%layered%densities(n+1))
+      st_bemv%layered%densities(:)=densities
+    end if
+    ! Geometric panels resolve both long wavelengths and small tip/interface distances.
+    qmax=cut/d; lo=0d0; hi=min(1d0/scale,qmax); panels=1
+    do while(hi<qmax)
+      hi=min(2d0*hi,qmax); panels=panels+1
+    end do
+    allocate(nodes(nq),weights(nq))
+    call layered_gauss_legendre(nodes,weights)
+    allocate(st_bemv%layered%wave(nq*panels),st_bemv%layered%weight(nq*panels))
+    hi=min(1d0/scale,qmax)
+    do p=1,panels
+      offset=(p-1)*nq
+      st_bemv%layered%wave(offset+1:offset+nq)=lo+(nodes+1d0)*(hi-lo)/2d0
+      st_bemv%layered%weight(offset+1:offset+nq)=weights*(hi-lo)/(2d0*pi)
+      lo=hi; hi=min(2d0*hi,qmax)
+    end do
+  end subroutine
+
+  subroutine read_layered_2dvs(st_bemv,filename,wave_order,cutoff)
+    ! File: n; n rows (bottom[km], mu[GPa], rho[kg/m^3]); half-space (mu,rho).
+    implicit none
+    type(st_HACApK_calc_entry), intent(inout) :: st_bemv
+    character(*), intent(in) :: filename
+    integer, optional, intent(in) :: wave_order
+    real(8), optional, intent(in) :: cutoff
+    integer :: unit,ios,n,l
+    real(8), allocatable :: bottoms(:),moduli(:),densities(:)
+    character(512) :: line
+    open(newunit=unit,file=filename,status='old',action='read',iostat=ios)
+    if(ios/=0) error stop 'Cannot open elastic_layer_file'
+    read(unit,*,iostat=ios) n
+    if(ios/=0) error stop 'Cannot read elastic layer count'
+    if(n<0.or.n>10000) error stop 'Invalid elastic layer count'
+    allocate(bottoms(n),moduli(n+1),densities(n+1))
+    do l=1,n
+      read(unit,'(a)',iostat=ios) line
+      if(ios/=0) error stop 'Cannot read elastic layer row'
+      read(line,*,iostat=ios) bottoms(l),moduli(l),densities(l)
+      if(ios/=0) error stop 'Layer row requires bottom[km], mu[GPa], rho[kg/m^3]'
+    end do
+    read(unit,'(a)',iostat=ios) line
+    if(ios/=0) error stop 'Cannot read half-space row'
+    read(line,*,iostat=ios) moduli(n+1),densities(n+1)
+    if(ios/=0) error stop 'Half-space row requires mu[GPa], rho[kg/m^3]'
+    close(unit)
+    call init_layered_2dvs(st_bemv,bottoms,moduli,wave_order,cutoff,densities)
+  end subroutine
+
+  subroutine layered_material_at(model,z,mu,rho,vs_local,eta)
+    ! mu [GPa], rho [kg/m^3], Vs [km/s], eta [MPa*s/m].
+    ! sqrt(mu*1e9/rho)/1000 = sqrt(mu*1000/rho).
+    ! GPa/(km/s) has the same numerical value as MPa*s/m.
+    implicit none
+    type(layered_antiplane_model), intent(in) :: model
+    real(8), intent(in) :: z
+    real(8), intent(out) :: mu,rho,vs_local,eta
+    integer :: l
+    if(.not.allocated(model%densities)) error stop 'Radiation damping requires layer densities'
+    if(.not.ieee_is_finite(z).or.z<0d0) error stop 'Invalid material evaluation depth'
+    l=1
+    do while(l<=size(model%bottoms))
+      if(z<model%bottoms(l)) exit
+      l=l+1
+    end do
+    mu=model%moduli(l); rho=model%densities(l)
+    vs_local=sqrt(mu*1000d0/rho)
+    eta=0.5d0*mu/vs_local
+  end subroutine
+
+  real(8) function matel2dvs_layered_ij(i,j,st_bemv) result(value)
+    ! Midpoint collocation, unit CONSTANT source slip; no extra element width.
+    ! Analytic homogeneous finite part + inverse Fourier layered correction.
+    ! Self traction includes subtraction of the plastic slip jump, never zeroed.
+    implicit none
+    integer, intent(in) :: i,j
+    type(st_HACApK_calc_entry), intent(in) :: st_bemv
+    real(8) :: z,a,b,mu,q,spectrum,homogeneous
+    integer :: k
+    z=st_bemv%xcol(i); a=st_bemv%xel(j); b=st_bemv%xer(j)
+    mu=layered_modulus(st_bemv%layered,z)
+    value=mu/(2d0*pi)*(1d0/(z-b)-1d0/(z-a)-1d0/(z+b)+1d0/(z+a))
+    if(all(st_bemv%layered%moduli==mu)) return
+    do k=1,size(st_bemv%layered%wave)
+      q=st_bemv%layered%wave(k)
+      spectrum=layered_patch_spectrum(st_bemv%layered,q,a,b,z)
+      if(z<a) then
+        homogeneous=0.5d0*mu*(exp(-q*(a-z))-exp(-q*(b-z)))
+      else if(z>b) then
+        homogeneous=0.5d0*mu*(exp(-q*(z-b))-exp(-q*(z-a)))
+      else
+        homogeneous=mu*(1d0-0.5d0*(exp(-q*(z-a))+exp(-q*(b-z))))
+      end if
+      homogeneous=homogeneous+0.5d0*mu*(exp(-q*(z+a))-exp(-q*(z+b)))
+      ! Both spectra contain the same -mu*slip plastic term: it cancels here.
+      value=value+st_bemv%layered%weight(k)*(spectrum-homogeneous)
+    end do
+  end function
+
+  real(8) function layered_modulus(model,z) result(mu)
+    implicit none
+    type(layered_antiplane_model), intent(in) :: model
+    real(8), intent(in) :: z
+    integer :: l
+    l=1
+    do while(l<=size(model%bottoms))
+      if(z<model%bottoms(l)) exit
+      l=l+1
+    end do
+    mu=model%moduli(l) ! At an interface use the deeper material.
+  end function
+
+  real(8) function layered_admittance(model,q,z,upward) result(y)
+    ! Y=sigma23/(q*u3); free solution downwards, decaying solution upwards.
+    implicit none
+    type(layered_antiplane_model), intent(in) :: model
+    real(8), intent(in) :: q,z
+    logical, intent(in) :: upward
+    real(8) :: lo,hi,mu,t
+    integer :: l,n
+    n=size(model%bottoms)
+    if(upward) then
+      y=-model%moduli(n+1)
+      do l=n,1,-1
+        lo=0d0
+        if(l>1) lo=model%bottoms(l-1)
+        lo=max(lo,z); hi=model%bottoms(l)
+        if(hi<=lo) cycle
+        mu=model%moduli(l); t=tanh(q*(hi-lo))
+        y=(y-mu*t)/(1d0-y/mu*t)
+      end do
+    else
+      y=0d0; lo=0d0
+      do l=1,n+1
+        hi=z
+        if(l<=n) hi=min(z,model%bottoms(l))
+        if(hi>lo) then
+          mu=model%moduli(l); t=tanh(q*(hi-lo))
+          y=(y+mu*t)/(1d0+y/mu*t)
+        end if
+        if(hi>=z) exit
+        lo=hi
+      end do
+    end if
+  end function
+
+  real(8) function layered_log_gain(model,q,a,b,y_start,upward) result(gain)
+    ! Only propagate in a growing direction; log amplitudes avoid overflow.
+    implicit none
+    type(layered_antiplane_model), intent(in) :: model
+    real(8), intent(in) :: q,a,b,y_start
+    logical, intent(in) :: upward
+    real(8) :: lo,hi,mu,r,t,y,direction
+    integer :: l,first,last,step,n
+    n=size(model%bottoms); gain=0d0; y=y_start
+    first=1; last=n+1; step=1; direction=1d0
+    if(upward) then
+      first=n+1; last=1; step=-1; direction=-1d0
+    end if
+    do l=first,last,step
+      lo=0d0
+      if(l>1) lo=model%bottoms(l-1)
+      lo=max(a,lo); hi=b
+      if(l<=n) hi=min(b,model%bottoms(l))
+      if(hi<=lo) cycle
+      mu=model%moduli(l); r=q*(hi-lo); t=tanh(r)
+      gain=gain+r+log(0.5d0*(1d0+exp(-2d0*r)))+log(1d0+direction*y/mu*t)
+      y=(y+direction*mu*t)/(1d0+direction*y/mu*t)
+    end do
+  end function
+
+  real(8) function layered_line_traction(model,q,s,z,mu_source) result(value)
+    implicit none
+    type(layered_antiplane_model), intent(in) :: model
+    real(8), intent(in) :: q,s,z,mu_source
+    real(8) :: yf,yd,y,gain
+    yf=layered_admittance(model,q,s,.false.)
+    yd=layered_admittance(model,q,s,.true.)
+    if(z<s) then
+      y=layered_admittance(model,q,z,.false.)
+      gain=layered_log_gain(model,q,z,s,y,.false.)
+    else
+      y=layered_admittance(model,q,z,.true.)
+      gain=layered_log_gain(model,q,s,z,y,.true.)
+    end if
+    value=layered_modulus(model,z)*q*(mu_source/(yf-yd))*exp(-gain)
+  end function
+
+  real(8) function layered_patch_spectrum(model,q,a,b,z) result(value)
+    ! Exact source-depth integral within each layer and each side of receiver.
+    ! Integral of f(s)/f(hi) or d(s)/d(lo), using bounded hyperbolic ratios.
+    implicit none
+    type(layered_antiplane_model), intent(in) :: model
+    real(8), intent(in) :: q,a,b,z
+    real(8) :: lo,hi,mu,s,y,r,t,e,one_minus_sech,integral,end_hi
+    integer :: l,side
+    value=0d0
+    do l=1,size(model%moduli)
+      lo=0d0
+      if(l>1) lo=model%bottoms(l-1)
+      lo=max(a,lo); end_hi=b
+      if(l<=size(model%bottoms)) end_hi=min(b,model%bottoms(l))
+      if(end_hi<=lo) cycle
+      mu=model%moduli(l)
+      do side=1,2
+        if(side==1) then
+          hi=min(end_hi,z)
+          if(hi<=lo) cycle
+          s=hi; y=layered_admittance(model,q,lo,.false.)/mu
+        else
+          hi=end_hi; lo=max(lo,z)
+          if(hi<=lo) cycle
+          s=lo; y=-layered_admittance(model,q,hi,.true.)/mu
+        end if
+        r=q*(hi-lo); t=tanh(r); e=exp(-r)
+        one_minus_sech=(1d0-e)**2/(1d0+e*e)
+        integral=(t+y*one_minus_sech)/(q*(1d0+y*t))
+        value=value+layered_line_traction(model,q,s,z,mu)*integral
+      end do
+    end do
+  end function
+
+  subroutine layered_gauss_legendre(nodes,weights)
+    implicit none
+    real(8), intent(out) :: nodes(:),weights(:)
+    real(8) :: x,old,p0,p1,p2,derivative
+    integer :: n,i,j,iteration
+    n=size(nodes)
+    do i=1,(n+1)/2
+      x=cos(pi*(real(i,8)-0.25d0)/(real(n,8)+0.5d0))
+      do iteration=1,100
+        p0=1d0; p1=x
+        do j=2,n
+          p2=((2d0*j-1d0)*x*p1-(j-1d0)*p0)/j
+          p0=p1; p1=p2
+        end do
+        derivative=n*(x*p1-p0)/(x*x-1d0)
+        old=x; x=old-p1/derivative
+        if(abs(x-old)<=4d0*epsilon(1d0)) exit
+      end do
+      if(iteration>100) error stop 'Gauss-Legendre iteration failed'
+      nodes(i)=-x; nodes(n+1-i)=x
+      weights(i)=2d0/((1d0-x*x)*derivative**2); weights(n+1-i)=weights(i)
+    end do
+  end subroutine
+
   real(8) function matel2dph2_ij(i,j,xcol,ycol,xel,xer,yel,yer,ang,v)
   implicit none
   real(8)::angle,dx
@@ -114,6 +543,8 @@ contains
     matel2dph2_ij=-0.5d0*(sxx-syy)*dsin(2*ang(i))+sxy*dcos(2*ang(i))
   case('n')
     matel2dph2_ij=-0.5d0*(sxx+syy)+0.5d0*(sxx-syy)*dcos(2*ang(i))+sxy*dsin(2*ang(i))
+  case('k')
+    matel2dph2_ij=sxx+syy+pois*(sxx+syy)
   end select
 end function
 
@@ -811,101 +1242,15 @@ end function matels2dpa_ij
   end function matels1_ij
   real(8) function matel3dn_ij(i,j,st_bemv)
     implicit none
-    type(st_HACApK_calc_entry) :: st_bemv
     integer,intent(in)::i,j
-    real(8)::P1(3),P2(3),P3(3)
-    real(8)::Sxx,Syy,Szz,Sxy,Sxz,Syz
-    real(8)::p(6),Arot(3,3),rr,theta,lambda
-
-    lambda=2*pois/(1-2*pois)*rigid
-    !write(*,*) pois
-    P1=(/st_bemv%xs1(j),st_bemv%ys1(j),st_bemv%zs1(j)/)
-    P2=(/st_bemv%xs2(j),st_bemv%ys2(j),st_bemv%zs2(j)/)
-    P3=(/st_bemv%xs3(j),st_bemv%ys3(j),st_bemv%zs3(j)/)
-
-    select case(st_bemv%md)
-    case('st')
-      call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,1.d0,0.d0,0.d0,rigid,lambda,&
-      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
-    case('dp')
-      call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,1.d0,0.d0,rigid,lambda,&
-      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
-    case('s','o')
-      call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake(i)),&
-      &sin(st_bemv%rake(i)),0.d0,rigid,lambda,Sxx,Syy,Szz,Sxy,Sxz,Syz)
-    case('open')
-      call TDstressFS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,&
-      &0.d0,1.d0,rigid,lambda,Sxx,Syy,Szz,Sxy,Sxz,Syz)
-    end select
-
-
-    Arot(1,:)=(/st_bemv%ev11(i),st_bemv%ev21(i),st_bemv%ev31(i)/)
-    Arot(2,:)=(/st_bemv%ev12(i),st_bemv%ev22(i),st_bemv%ev32(i)/)
-    Arot(3,:)=(/st_bemv%ev13(i),st_bemv%ev23(i),st_bemv%ev33(i)/)
-    call TensTrans(Sxx,Syy,Szz,Sxy,Sxz,Syz,Arot,&
-    &p(1),p(2),p(3),p(4),p(5),p(6))
-
-    select case(st_bemv%v)
-    !case('s')
-    !  matel3dn_ij=p(5)
-    !case('d')
-    !  matel3dn_ij=p(6)
-    case('n')
-      matel3dn_ij=-p(3)
-    case('s','o')
-      matel3dn_ij=p(5)*cos(st_bemv%rake(i))+p(6)*sin(st_bemv%rake(i))
-    !case('power')
-    !  rr=(st_bemv%ycol(i)-st_bemv%ys1(j))**2+(st_bemv%zcol(i)-st_bemv%zs1(j))**2
-    !  theta=atan2(st_bemv%ycol(i)-st_bemv%ys1(j),st_bemv%zcol(i)-st_bemv%zs1(j))
-    !  matel3dn_ij=1.d0/rr**(1+cos(theta))
-    end select
+    type(st_HACApK_calc_entry)::st_bemv
+    matel3dn_ij=geological_triangle_entry(i,j,st_bemv,.false.)
   end function matel3dn_ij
   real(8) function matel3dh_ij(i,j,st_bemv)
     implicit none
-    type(st_HACApK_calc_entry) :: st_bemv
     integer,intent(in)::i,j
-    real(8)::P1(3),P2(3),P3(3)
-    real(8)::Sxx,Syy,Szz,Sxy,Sxz,Syz
-    real(8)::p(6),Arot(3,3),lambda
-    
-    lambda=2*pois/(1-2*pois)*rigid
-    P1=(/st_bemv%xs1(j),st_bemv%ys1(j),st_bemv%zs1(j)/)
-    P2=(/st_bemv%xs2(j),st_bemv%ys2(j),st_bemv%zs2(j)/)
-    P3=(/st_bemv%xs3(j),st_bemv%ys3(j),st_bemv%zs3(j)/)
-
-    select case(st_bemv%md)
-    case('st')
-      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,1.d0,0.d0,0.d0,rigid,lambda,&
-      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
-    case('dp')
-      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,1.d0,0.d0,rigid,lambda,&
-      & Sxx,Syy,Szz,Sxy,Sxz,Syz)
-    case('s','o')
-      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,cos(st_bemv%rake(j)),&
-      & sin(st_bemv%rake(j)),0.d0,rigid,lambda,Sxx,Syy,Szz,Sxy,Sxz,Syz)
-    case('open')
-      call TDstressHS(st_bemv%xcol(i),st_bemv%ycol(i),st_bemv%zcol(i),P1,P2,P3,0.d0,&
-      &0.d0,1.d0,rigid,lambda,Sxx,Syy,Szz,Sxy,Sxz,Syz)
-    end select
-
-    Arot(1,:)=(/st_bemv%ev11(i),st_bemv%ev21(i),st_bemv%ev31(i)/)
-    Arot(2,:)=(/st_bemv%ev12(i),st_bemv%ev22(i),st_bemv%ev32(i)/)
-    Arot(3,:)=(/st_bemv%ev13(i),st_bemv%ev23(i),st_bemv%ev33(i)/)
-    call TensTrans(Sxx,Syy,Szz,Sxy,Sxz,Syz,Arot,&
-    &p(1),p(2),p(3),p(4),p(5),p(6))
-
-    select case(st_bemv%v)
-    ! case('s')
-    !   matel3dh_ij=p(5)
-    ! case('d')
-    !   matel3dh_ij=p(6)
-    case('n')
-      matel3dh_ij=-p(3)
-    case('s','o')
-      matel3dh_ij=p(5)*cos(st_bemv%rake(i))+p(6)*sin(st_bemv%rake(i))
-    ! case('c')
-    !   matel3dh_ij=p(5)-0.6*p(3)
-    end select
+    type(st_HACApK_calc_entry)::st_bemv
+    matel3dh_ij=geological_triangle_entry(i,j,st_bemv,.true.)
   end function matel3dh_ij
 
   real(8) function matelh1_ij(i,j,xcol,ycol,zcol,xs1,xs2,xs3,ys1,ys2,ys3,zs1,zs2,zs3,v,md)
@@ -1085,7 +1430,7 @@ end function matels2dpa_ij
     logical,intent(in)::fullspace
     integer::iret
     real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha
-    real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,z,depth,dip,rs,rd
+    real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,z,depth,dip,rs,rd,lambda
 
     alpha=(1d0+(0.5d0/pois-1d0))/(1d0+2d0*(0.5d0/pois-1d0))
     !rotation so that strike is parallel to y axis
@@ -1111,7 +1456,7 @@ end function matels2dpa_ij
    !write(*,*)w
    !
 
-    call okada(alpha,dx/w,dy/w,z/w,depth/w,dip,-0.5d0*rs,0.5d0*rs,-0.5d0*rd,0.5d0*rd,-cos(rake(j)),-sin(rake(j)),0d0,&
+    call okada(alpha,dx/w,dy/w,z/w,depth/w,dip,-0.5d0*rs,0.5d0*rs,-0.5d0*rd,0.5d0*rd,cos(rake(j)),sin(rake(j)),0d0,&
    &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,fullspace)
   ! write(*,*) st_bemv%zcol(i),-st_bemv%zcol(j),st_bemv%angd(j)*180/pi
    ! write(*,*)uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz
@@ -1124,9 +1469,11 @@ end function matels2dpa_ij
     exy=0.5d0*(uxy+uyx)
     eyz=0.5d0*(uyz+uzy)
     ezx=0.5d0*(uzx+uxz)
-    sxx=rigid*(exx+eyy+ezz)+2*rigid*exx
-    syy=rigid*(exx+eyy+ezz)+2*rigid*eyy
-    szz=rigid*(exx+eyy+ezz)+2*rigid*ezz
+    ! Isotropic Hooke law: lambda equals rigid only for pois=0.25.
+    lambda=2*rigid*pois/(1-2*pois)
+    sxx=lambda*(exx+eyy+ezz)+2*rigid*exx
+    syy=lambda*(exx+eyy+ezz)+2*rigid*eyy
+    szz=lambda*(exx+eyy+ezz)+2*rigid*ezz
     sxy=2*rigid*exy
     sxz=2*rigid*ezx
     syz=2*rigid*eyz
@@ -1147,9 +1494,11 @@ end function matels2dpa_ij
    !write(*,*)st_bemv%v
     select case(v)
       case('n')
-        okada_ij=p(3)
+        ! Compression positive, consistent with the 2-D and triangular entries.
+        okada_ij=-p(3)
       case('s','o')
-        okada_ij=p(5)*cos(rake(i))+p(6)*sin(rake(i))
+        ! The local third axis is downward; geological traction uses its opposite.
+        okada_ij=-p(5)*cos(rake(i))-p(6)*sin(rake(i))
     end select
  ! write(*,*) okada_ij
     ! rr=(st_bemv%xcol(i)-st_bemv%xs1(j))**2+(st_bemv%zcol(i)-st_bemv%zs1(j))**2
@@ -1158,39 +1507,47 @@ end function matels2dpa_ij
 
   end function okada_ij
 
-  real(8) function okada_load(x,y,z,xs1,xs2,depth,ang,angd,rake)
+  real(8) function okada_load(x,y,z,angs,angd,rake,xs1,ys1,lengx,depth,cangs,cangd,crake,v)
     implicit none
-    real(8),intent(in)::x,y,z,xs1,xs2,ang,angd,depth,rake
+    real(8),intent(in)::x,y,z,rake,angs,angd,xs1,ys1,lengx,depth,cangs,cangd,crake
+    character(1),intent(in)::v
     logical::fullspace=.false.
     integer::iret
     real(8)::dx,dy,ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,sxx,syy,szz,sxy,sxz,syz,alpha
-    real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,dip,fwid=100d0
+    real(8)::exx,eyy,ezz,exy,eyz,ezx,rotang,dpang,Arot(3,3),p(6),rr,dip,lambda,fwid=100d0
     alpha=(1d0+(0.5d0/pois-1d0))/(1d0+2d0*(0.5d0/pois-1d0))
     !rotation so that strike is parallel to y axis
-    dx=x-xs1
-    dy=y
-    dip=90d0
+    dx=cos(cangs)*(x-xs1)+sin(cangs)*(y-ys1)
+    dy=-sin(cangs)*(x-xs1)+cos(cangs)*(y-ys1)
 
-    call okada(alpha,dx,0d0,z,depth+0.5*fwid,dip,0d0,xs2-xs1,-0.5d0*fwid,0.5d0*fwid,cos(rake),sin(rake),0d0,&
+    dip=cangd*180/pi
+
+    !write(*,*)'okada_load',dx,dy,z,depth,ang,dip,crake,rake
+    call okada(alpha,dx,dy,z,depth,dip,-lengx/2,lengx/2,-fwid,0d0,cos(crake),sin(crake),0d0,&
    &ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,fullspace)
 
-    exx=-uxx
-    eyy=-uyy
-    ezz=-uzz
-    exy=-0.5d0*(uxy+uyx)
-    eyz=-0.5d0*(uyz+uzy)
-    ezx=-0.5d0*(uzx+uxz)
-    sxx=rigid*(exx+eyy+ezz)+2*rigid*exx
-    syy=rigid*(exx+eyy+ezz)+2*rigid*eyy
-    szz=rigid*(exx+eyy+ezz)+2*rigid*ezz
+   !write(*,*)'okada_load',ux,uy,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz
+
+    exx=uxx
+    eyy=uyy
+    ezz=uzz
+    exy=0.5d0*(uxy+uyx)
+    eyz=0.5d0*(uyz+uzy)
+    ezx=0.5d0*(uzx+uxz)
+    ! Use the same elastic constants and normal-stress convention as okada_ij.
+    lambda=2*rigid*pois/(1-2*pois)
+    sxx=lambda*(exx+eyy+ezz)+2*rigid*exx
+    syy=lambda*(exx+eyy+ezz)+2*rigid*eyy
+    szz=lambda*(exx+eyy+ezz)+2*rigid*ezz
     sxy=2*rigid*exy
     sxz=2*rigid*ezx
     syz=2*rigid*eyz
     
     !write(*,*)sxx,syy,szz,sxy,syz,sxz
 
-    rotang=ang
+    rotang=cangs-angs !fixed Nov 24 2024
     dpang=angd
+    !write(*,*)'okada_load',rotang,dpang
 
     Arot(:,1)=(/cos(rotang),-sin(rotang),0d0/)
     Arot(:,2)=(/sin(rotang)*cos(dpang),cos(rotang)*cos(dpang),sin(dpang)/)
@@ -1200,16 +1557,16 @@ end function matels2dpa_ij
    ! write(*,*)Arot
    call TensTrans(Sxx,Syy,Szz,Sxy,Sxz,Syz,Arot,&
    &p(1),p(2),p(3),p(4),p(5),p(6))
+   !write(*,*)'okada_load',p(1),p(2),p(3),p(4),p(5),p(6)
 
+   select case(v)
+      case('n')
+        okada_load=-p(3)
+      case('s','o')
+        okada_load=-p(5)*cos(rake)-p(6)*sin(rake)
+    end select
 
-  !write(*,*)p
-
-        okada_load=p(5)
-
-    ! rr=(st_bemv%xcol(i)-st_bemv%xs1(j))**2+(st_bemv%zcol(i)-st_bemv%zs1(j))**2
-    ! okada_ij=1/rr
    return
-
  end function okada_load
  subroutine okada_surface(xst,yst,x,y,z,ang,angd,rake,dsl,dsd,ux,uy,uz)
     implicit none
@@ -1231,8 +1588,8 @@ end function matels2dpa_ij
    &ux1,uy1,uz,uxx,uyx,uzx,uxy,uyy,uzy,uxz,uyz,uzz,fullspace)
 
     !rotation so that strike is parallel to y axis
-    ux=ux1*cos(ang)+uy1*sin(ang)
-    uy=-ux1*sin(ang)+uy1*cos(ang)
+    ux=ux1*cos(ang)-uy1*sin(ang)
+    uy=ux1*sin(ang)+uy1*cos(ang)
     
     ! Arot(:,1)=(/cos(rotang),-sin(rotang),0d0/)
     ! Arot(:,2)=(/sin(rotang)*cos(dpang),cos(rotang)*cos(dpang),sin(dpang)/)

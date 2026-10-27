@@ -450,41 +450,96 @@ def momentvsduration(jobid,velth):
     plt.xlabel('Moment')
     plt.ylabel('Duration [s]')
       
-def animation_plot(jobid, field, xax='x', yax='z', nt=0):
-    d = np.loadtxt(f'time{jobid}.dat')
-    time = d[:, 1] / year
+def animation_plot(jobid, field, xax='x', yax='z', nt=0, *,
+                   output_file=None, tmin=None, tmax=None, vmin=-14, vmax=2,
+                   fps=20, dpi=120, label=None, radius=None, show_vmax=False,
+                   gif_file=None, preview_file=None):
+    """Animate saved fields from the current data directory.
 
-    ary1 = np.loadtxt(f'xyz{jobid}.dat')
-    nc = len(ary1)
-    print("Number of coordinates:", nc)
+    Time limits are in years. Each frame is one saved snapshot: playback
+    does not imply uniform physical-time spacing. Existing positional
+    arguments remain supported; outputs default to the current directory.
+    """
+    from pathlib import Path
 
-    switcher = {"x": 0, "y": 1, "z": 2}
-    x = ary1[:, switcher.get(xax)]
-    y = ary1[:, switcher.get(yax)]
-
-    # Read binary field data
-    with open(f'{field}{jobid}.dat', 'rb') as fp:
-        data = np.fromfile(fp, np.float64)
-
-    if nt == 0:
-        nt = int(len(data) / nc)
-
-    if field in ['vel', 'veln']:
-        data = np.log10(np.abs(data) + 1e-20)  # prevent log10(0)
-
-    # Set up figure and axis once
-    fig, ax = plt.subplots(figsize=(6, 6))
+    time_data = np.atleast_2d(np.loadtxt(f'time{jobid}.dat'))
+    coord = np.atleast_2d(np.loadtxt(f'xyz{jobid}.dat'))
+    nc = len(coord)
+    raw = np.fromfile(f'{field}{jobid}.dat', np.float64)
+    if raw.size % nc or raw.size // nc != len(time_data):
+        raise ValueError('Saved field frames and time rows must match exactly')
+    data = raw.reshape(-1, nc)
+    if not np.all(np.isfinite(data)) or not np.all(np.diff(time_data[:, 1]) > 0):
+        raise ValueError('Nonfinite field or nonincreasing snapshot times')
+    time = time_data[:, 1] / year
+    selected = np.arange(len(time))
+    if nt:
+        selected = selected[:nt]
+    if tmin is not None:
+        selected = selected[time[selected] >= tmin]
+    if tmax is not None:
+        selected = selected[time[selected] <= tmax]
+    if not len(selected):
+        raise ValueError('No snapshots within the requested window')
+    is_velocity = field in ['vel', 'veln']
+    values = np.log10(np.maximum(np.abs(data), 1e-20)) if is_velocity else data
+    switcher = {'x': 0, 'y': 1, 'z': 2}
+    x, z = coord[:, switcher[xax]], coord[:, switcher[yax]]
+    if show_vmax:
+        if not is_velocity:
+            raise ValueError('show_vmax requires a velocity field')
+        fig = plt.figure(figsize=(8, 8))
+        grid = fig.add_gridspec(2, 1, height_ratios=[3, 1])
+        ax, trace = fig.add_subplot(grid[0]), fig.add_subplot(grid[1])
+        monitor_path = Path(f'monitor{jobid}.dat')
+        if field == 'vel' and monitor_path.exists():
+            monitor = np.atleast_2d(np.loadtxt(monitor_path))
+            trace.plot(monitor[:, 1] / year, monitor[:, 2], color='0.4', lw=1)
+        else:
+            trace.plot(time, values.max(axis=1), color='0.4', lw=1)
+        cursor = trace.axvline(time[selected[0]], color='crimson', lw=1.5)
+        point, = trace.plot([], [], 'o', color='crimson', ms=4)
+        trace.set(xlim=(time[selected[0]], time[selected[-1]]), ylim=(vmin, vmax),
+                  xlabel='Time (years)', ylabel='log10 Vmax')
+        trace.grid(alpha=0.2)
+    else:
+        fig, ax = plt.subplots(figsize=(6, 6))
     ax.set_aspect('equal')
-    sc = ax.scatter(x, y, c=data[:nc], vmin=-14, vmax=2, s=3, cmap='viridis')
-    plt.colorbar(sc, ax=ax, label="log10 V (m/s)")
+    sc = ax.scatter(x, z, c=values[selected[0]], vmin=vmin, vmax=vmax,
+                    s=12, marker='s', linewidths=0, cmap='viridis', rasterized=True)
+    ax.set(xlabel=f'{xax} (km)', ylabel=f'{yax} (km)')
+    if radius is not None:
+        angle = np.linspace(0, 2*np.pi, 300)
+        ax.plot(radius*np.cos(angle), radius*np.sin(angle), 'k--', lw=0.8)
+    fig.colorbar(sc, ax=ax, label='log10 |V| (m/s)' if is_velocity else field)
+    fig.suptitle(label or f'{field}, run {jobid}', fontsize=13)
+    fig.text(0.5, 0.015, 'One frame per saved snapshot; physical time spacing varies',
+             ha='center', fontsize=9)
+    fig.tight_layout(rect=(0, 0.045, 1, 0.94))
 
-    def animate(i):
-        dd = data[i * nc:(i + 1) * nc]
-        sc.set_array(dd)
-        ax.set_title('Time = %.2f yr' % time[i])
-        return sc,
+    def animate(index):
+        sc.set_array(values[index])
+        ax.set_title(f'Time = {time[index]:.4f} yr; step {int(time_data[index, 0])}', fontsize=11)
+        if show_vmax:
+            cursor.set_xdata([time[index], time[index]])
+            point.set_data([time[index]], [values[index].max()])
+        return (sc,)
 
-    anim = animation.FuncAnimation(fig, animate, interval=100, frames=nt, blit=False)
-
-    writervideo = animation.FFMpegWriter(fps=20)
-    anim.save(f'/home/i25004/.notebook/HBI/{field}{jobid}.mp4', writer=writervideo, dpi=300)
+    target = Path(output_file or f'{field}{jobid}.mp4')
+    target.parent.mkdir(parents=True, exist_ok=True)
+    anim = animation.FuncAnimation(fig, animate, interval=1000/fps,
+                                   frames=selected, blit=False)
+    anim.save(str(target), writer=animation.FFMpegWriter(fps=fps, codec='libx264',
+              extra_args=['-pix_fmt', 'yuv420p']), dpi=dpi)
+    if gif_file:
+        Path(gif_file).parent.mkdir(parents=True, exist_ok=True)
+        anim.save(str(gif_file), writer=animation.PillowWriter(fps=fps), dpi=70)
+    if preview_file:
+        peak_index = selected[np.argmax(np.max(values[selected], axis=1))]
+        animate(peak_index)
+        fig.savefig(preview_file, dpi=dpi)
+    plt.close(fig)
+    return {'run': jobid, 'frames': len(selected), 'start_year': float(time[selected[0]]),
+            'end_year': float(time[selected[-1]]), 'fps': fps,
+            'snapshot_max_velocity': float(np.abs(data[selected]).max()) if is_velocity else None,
+            'output': str(target)}
