@@ -1,22 +1,6 @@
 # HBI
 Multi-dimensional earthquake cycle simulation code based on Boundary Element Method with H-matrices.
 
-What's new in Version 2026.1.0
-
-- Modified the format of well files
-- Rigidity, S-wave speed, and poisson ratio can be set in the input file
-
-What's new in Version 2025.10.0
-
-- Merged fluid versions (main_fv.f90 and main_fv3dp.d90) to main_LH.f90 with more flexible parameters and boundary conditions
-- Simulations using analytical solutions of fluid pressure for point injection source
-- Improved output (now the arrays are NOT reordered in output)
-
-Future extensions
-
-- Fault opening
-- GPU optimization
-
 Features
 
 - 2D and 3D planar/nonplanar faults in a full/half space
@@ -46,6 +30,12 @@ So Ozawa, Akihiro Ida, Tetsuya Hoshino, Ryosuke Ando (2023),
 If you write a paper using this code with fluid pressure evolution, please cite the following paper:
 
 So Ozawa, Yuyun Yang, Eric M. Dunham (2024), "Fault Valve Instability: A mechanism for slow slip events", Journal of Geophysical Research: Solid Earth, 129,  https://doi.org/10.1029/2024JB029165,
+
+Papers from other groups using HBI:
+
+Sun, H., & Becker, T. W. (2026). Single fault earthquake cycle complexity. Geophysical Journal International, 247(1), ggag316.
+
+Liu, Y., Xu, B., Yang, Y., & Huang, F. (2026). Aseismic fault-valve leakage and hydraulic memory during underground gas storage. Geoenergy Science and Engineering, 214795.
 
 https://github.com/user-attachments/assets/d1331cee-73f1-4077-9a82-a148b9e94dba
 
